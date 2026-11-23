@@ -1,6 +1,6 @@
 # LOCALDECK
 
-Your personal library for learning, games, tools, and all the little things you make. A small, dependency-free offline-first web app for GitHub Pages.
+Your personal library for learning, games, tools, and all the little things you make. A local-first web app for GitHub Pages.
 
 ## What it does
 
@@ -10,6 +10,7 @@ Your personal library for learning, games, tools, and all the little things you 
 - Search, favorite, rename, and remove projects; browse learning and games separately.
 - Export a portable ZIP backup and restore it later.
 - Generate an AI-ready project brief in AI Studio.
+- Share a project with an expiring, end-to-end encrypted link when the optional Cloudflare service is configured.
 - Cache the app shell for offline use after the first visit. Install it as an app from a compatible browser.
 - Adapt to phone and tablet screens and respect reduced-motion preferences.
 
@@ -17,17 +18,18 @@ Your personal library for learning, games, tools, and all the little things you 
 
 Service workers require HTTPS or a localhost address. Opening `index.html` directly as a `file://` URL will show the library, but offline caching and the local project player need a local web server.
 
-With Python installed, open a terminal in this folder and run:
+Open a terminal in this folder and run:
 
 ```powershell
-python -m http.server 49283
+npm ci
+npm run dev -- --host 127.0.0.1 --port 5468
 ```
 
-Then visit <http://localhost:49283>. Import a project, reload once if the browser is setting up offline support, and try opening it from your library.
+Then visit <http://127.0.0.1:5468>. The development server uses 5468 so it does not collide with other tools using 5173. Import a project, then open it from your library.
 
 ## Live site and GitHub CLI
 
-LOCALDECK is live at <https://b1progame.github.io/LOCALDECK/>. The public source is <https://github.com/B1progame/LOCALDECK>. GitHub Pages deploys the repository root from `main`; pushing a new commit publishes the update.
+LOCALDECK is live at <https://b1progame.github.io/LOCALDECK/>. The public source is <https://github.com/B1progame/LOCALDECK>. GitHub Actions builds and deploys `dist/` when `main` changes.
 
 ```powershell
 gh auth status
@@ -68,4 +70,31 @@ Supported `type` values include `learning`, `game`, `app`, `simulation`, `presen
 
 ## Project files
 
-This is a static app: HTML, CSS, JavaScript, a manifest, an icon, and a service worker. There is no build step, server database, account, analytics, external font, or runtime dependency.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) describes the local app and optional Worker boundaries.
+- [`docs/LOCAL_RUNTIME.md`](docs/LOCAL_RUNTIME.md) documents sandboxing and offline behavior.
+- [`docs/SECURITY.md`](docs/SECURITY.md) summarizes import, runtime, and sharing protections.
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) covers Pages and local verification.
+
+## Build and deploy
+
+Install Node.js 22 or newer, then run:
+
+```powershell
+npm ci
+npm run dev -- --host 127.0.0.1 --port 5468
+npm test
+npm run typecheck
+npm run build
+```
+
+GitHub Actions builds the app and deploys `dist/` to GitHub Pages after pushes to `main`. Set the repository's Pages source to **GitHub Actions** once. The app has no server database or analytics. Its runtime dependencies are bundled into the static build.
+
+## Optional encrypted sharing
+
+The app works without Cloudflare. To enable expiring share links, deploy the Worker and bind its D1 and R2 resources as described in [`docs/SHARING.md`](docs/SHARING.md). Add `VITE_SHARE_API_BASE=https://your-worker.workers.dev` to the GitHub Actions variable `VITE_SHARE_API_BASE` (or a local `.env.local`) and rebuild. Set the owner token in the Worker with `wrangler secret put OWNER_TOKEN`; it is only requested for sharing or managing links and is never saved by the app. Shared ZIPs are encrypted in the browser with AES-GCM before upload; the decryption key stays in the URL fragment query and is never sent to the Worker.
+
+## Icon prompt
+
+Use this prompt if you want to regenerate the supplied icon in an image model:
+
+> Create a premium app icon for LOCALDECK, a private offline library for HTML projects. Square 1:1 canvas, no text or letters. A small stack of three softly folded rounded sheets, the front sheet warm ivory with a subtle pink-to-cream sheen, two lavender and vivid violet sheets behind it, one tiny four-point cream sparkle at the upper right. Centered, sculpted paper with smooth beveled edges, delicate realistic soft shadows, gentle luminous violet gradient background. Clean Apple-quality icon craft, tactile, elegant, instantly recognizable at small sizes, refined 3D illustration, no border, no watermark.

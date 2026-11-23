@@ -1,0 +1,20 @@
+name = "localdeck-share"
+main = "worker/src/index.ts"
+compatibility_date = "2026-11-23"
+
+[[d1_databases]]
+binding = "SHARES_DB"
+database_name = "localdeck-shares"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "SHARES_BUCKET"
+bucket_name = "localdeck-shares"
+preview_bucket_name = "localdeck-shares-preview"
+
+[triggers]
+crons = ["17 * * * *"]
+
+[vars]
+ALLOWED_ORIGIN = "https://b1progame.github.io"
+MAX_SHARE_BYTES = "52428800"
