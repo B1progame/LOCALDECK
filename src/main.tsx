@@ -412,7 +412,8 @@ function LibraryPage({ page, items, query, setQuery, sort, setSort, open, edit, 
 
 function ItemCard({ item,index,onOpen,onFavorite,onEdit,onEditCode,onUpdate,onCollect,onShare,onDelete,onExport,onDuplicate,compact=false,simple=false }: { item:LibraryItem; index:number; onOpen:()=>void; onFavorite:()=>void; onEdit:()=>void; onEditCode?:()=>void; onUpdate?:(file:File)=>Promise<void>; onCollect?:()=>void; onShare?:()=>void; onDelete:()=>void; onExport:()=>void; onDuplicate:()=>void; compact?:boolean; simple?:boolean }) {
   const [menu,setMenu]=useState(false); const Icon=TYPE_ICON[item.type]; const updateInput=useRef<HTMLInputElement>(null); const [updating,setUpdating]=useState(false);
-  const coverImage=item.artworkReferences.cover?`url("${formatRoutePath(item.id,item.artworkReferences.cover)}")`:generatedCoverImage(item);
+  const fallbackCover=generatedCoverImage(item);
+  const coverImage=item.artworkReferences.cover?`url("${formatRoutePath(item.id,item.artworkReferences.cover)}"), ${fallbackCover}`:fallbackCover;
   const handleUpdate=async(event:React.ChangeEvent<HTMLInputElement>)=>{const file=event.target.files?.[0];event.target.value='';if(!file||!onUpdate)return;setUpdating(true);try{await onUpdate(file);}finally{setUpdating(false);}};
   return <motion.article className={`item-card ${compact?'item-card-compact':''}`} layout initial={{opacity:0,y:7}} animate={{opacity:1,y:0}} transition={{duration:.2,delay:Math.min(index*.025,.18)}}>
     <button className={`item-cover cover-${item.type}`} onClick={onOpen} aria-label={`Open ${item.title}`}><span className="cover-type"><Icon size={21}/></span><span className="cover-title">{item.title}</span><span className="cover-meta">{item.subject || TYPE_LABEL[item.type]}</span><span className="cover-play"><Play size={14} fill="currentColor"/></span><span className={`cover-art ${item.artworkReferences.cover?'cover-art-user':''}`} style={{backgroundImage:coverImage}} aria-hidden="true" /></button>
