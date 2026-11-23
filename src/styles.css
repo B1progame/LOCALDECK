@@ -696,7 +696,7 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 .share-orbit.orbit-one { width: 190px; height: 190px; animation: orbit 20s linear infinite; }
 .share-orbit.orbit-two { width: 290px; height: 290px; animation: orbit 34s linear infinite reverse; }
 .share-lock { position: relative; display: grid; place-items: center; width: 96px; height: 96px; border-radius: 28px; background: var(--accent); color: var(--on-accent); box-shadow: 0 20px 50px rgb(var(--accent-rgb) / .45); }
-.share-lock > span { position: absolute; right: -6px; bottom: -6px; display: grid; place-items: center; width: 32px; height: 32px; border: 3px solid var(--elevated); border-radius: 50%; background: var(--success); color: #06140E; }
+.share-lock > span:not(.lock-shine) { position: absolute; right: -6px; bottom: -6px; display: grid; place-items: center; width: 32px; height: 32px; border: 3px solid var(--elevated); border-radius: 50%; background: var(--success); color: #06140E; }
 .share-sparkle { position: absolute; top: 24%; right: 24%; color: var(--accent-2); font-size: 22px; }
 .share-login-content { display: flex; flex-direction: column; justify-content: center; padding: 40px; }
 .login-back-link { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 20px; color: var(--text-2); font-size: 13px; font-weight: 550; }
@@ -1215,7 +1215,7 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 .hero-banner:not(.has-art) .hero-art::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle closest-side, rgb(var(--accent-rgb) / .25), transparent); animation: glow-breathe 6s ease-in-out infinite; }
 .hero-core { position: relative; animation: lock-float 6s ease-in-out infinite; }
 .hero-spark { animation: twinkle 3.4s ease-in-out infinite; }
-.share-lock > .lock-shine { right: auto; bottom: auto; inset: 0; display: block; width: auto; height: auto; border: 0; background: none; color: inherit; animation: none; }
+.share-lock > .lock-shine { right: auto; bottom: auto; inset: 0; border-radius: inherit; overflow: hidden; place-items: initial; display: block; width: auto; height: auto; border: 0; background: none; color: inherit; animation: none; }
 
 /* Package builder: start from an AI */
 .pb-start { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
