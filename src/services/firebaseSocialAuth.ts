@@ -5,6 +5,7 @@ import {
   getAuth,
   getRedirectResult,
   GithubAuthProvider,
+  GoogleAuthProvider,
   reload,
   sendEmailVerification,
   setPersistence,
@@ -12,7 +13,7 @@ import {
   type UserCredential,
 } from '@firebase/auth';
 
-export type FirebaseSocialProvider = 'github' | 'facebook';
+export type FirebaseSocialProvider = 'google' | 'github' | 'facebook';
 export type FirebaseSocialConfig = { apiKey: string; projectId: string; appId: string };
 export type FirebaseSocialProfile = { email: string; name: string; picture: string };
 let redirectResultCheck: Promise<{ token?: string; profile?: FirebaseSocialProfile; verificationSent?: boolean } | null> | null = null;
@@ -29,7 +30,9 @@ function getAuthClient(config: FirebaseSocialConfig) {
 }
 
 function createProvider(providerName: FirebaseSocialProvider) {
-  const provider = providerName === 'github' ? new GithubAuthProvider() : new FacebookAuthProvider();
+  const provider = providerName === 'google'
+    ? new GoogleAuthProvider()
+    : providerName === 'github' ? new GithubAuthProvider() : new FacebookAuthProvider();
   provider.addScope(providerName === 'github' ? 'user:email' : 'email');
   return provider;
 }
