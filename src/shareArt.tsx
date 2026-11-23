@@ -4,13 +4,13 @@ import { useEffect, useRef } from 'react';
 
 const HEX = ['7f3a', 'c91e', '04bd', 'e27a', '9f10', '5ac3', 'b86d', '31f4', 'd0a9', '6e2c'];
 
-export function ShareArt() {
+export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   const svg = useRef<SVGSVGElement>(null);
   useEffect(() => {
     const reduce = document.documentElement.classList.contains('reduce-motion') || matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduce) svg.current?.pauseAnimations();
   }, []);
-  return <div className="share-art" aria-hidden="true">
+  return <div className={`share-art share-art-${mode}`} aria-hidden="true">
     <svg ref={svg} viewBox="10 96 400 300" className="share-art-svg">
       <defs>
         <linearGradient id="sa-vault" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#c4b5fd"/><stop offset=".55" stopColor="#8b5cf6"/><stop offset="1" stopColor="#5b21b6"/></linearGradient>
@@ -115,8 +115,7 @@ export function ShareArt() {
       <g className="sa-tag"><rect x="138" y="298" width="144" height="22" rx="11" fill="#1e1442" stroke="#a78bfa" strokeOpacity=".45"/><text x="210" y="313" textAnchor="middle" className="sa-label sa-label-strong">Encrypted on your device</text></g>
     </svg>
     <div className="share-art-chips">
-      <span><i className="dot-violet"/> AES-256</span>
-      <span><i className="dot-green"/> Key stays in the link</span>
+      {mode === 'signup' ? <><span><i className="dot-green"/> Free account</span><span><i className="dot-violet"/> Library stays on your device</span></> : <><span><i className="dot-violet"/> AES-256</span><span><i className="dot-green"/> Key stays in the link</span></>}
     </div>
   </div>;
 }

@@ -1,0 +1,138 @@
+/* Sign-in / create-account screen for sharing. The two modes look clearly different and animate between each other. */
+import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { ArrowLeft, ArrowRight, Check, Clock3, Eye, EyeOff, KeyRound, LoaderCircle, Mail, ShieldCheck, Sparkles, UserRound, WandSparkles } from 'lucide-react';
+import { firebaseAuthRequest } from './services/firebaseAuth';
+import { useProfile } from './profile';
+import { ShareArt } from './shareArt';
+
+export type AuthMode = 'signin' | 'signup';
+export const EMAIL_FOR_LINK_KEY = 'localdeck-email-for-signin';
+
+function strength(password: string): { score: number; label: string } {
+  let score = 0;
+  if (password.length >= 12) score++;
+  if (password.length >= 16) score++;
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
+  if (/\d/.test(password)) score++;
+  if (/[^A-Za-z0-9]/.test(password)) score++;
+  if (password.length < 12) score = Math.min(score, 1);
+  return { score, label: ['Too short', 'Weak', 'Okay', 'Good', 'Strong', 'Excellent'][score]! };
+}
+
+export function LoginExperience({ apiKey, social, onCredential, error, backHref }: {
+  apiKey: string;
+  social: (mode: AuthMode) => React.ReactNode;
+  onCredential: (credential: string) => Promise<void>;
+  error?: string;
+  backHref: string;
+}) {
+  const [mode, setMode] = useState<AuthMode>('signin');
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState<'' | 'submit' | 'link' | 'reset'>('');
+  const [message, setMessage] = useState('');
+  const [formError, setFormError] = useState('');
+  const pw = strength(password);
+
+  const switchMode = (next: AuthMode) => { setMode(next); setFormError(''); setMessage(''); setPassword(''); setConfirm(''); };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setFormError(''); setMessage(''); setBusy('submit');
+    try {
+      if (mode === 'signup') {
+        const name = username.trim();
+        if (!/^[\p{L}\p{N} ._-]{2,30}$/u.test(name)) throw new Error('Choose a username with 2–30 letters, numbers, spaces, dots, dashes or underscores.');
+        if (password.length < 12) throw new Error('Choose a password with at least 12 characters.');
+        if (password !== confirm) throw new Error('The two passwords do not match.');
+        const created = await firebaseAuthRequest(apiKey, 'signUp', { email: email.trim(), password, returnSecureToken: true });
+        if (!created.idToken) throw new Error('Firebase did not return an account session.');
+        await firebaseAuthRequest(apiKey, 'update', { idToken: created.idToken, displayName: name, returnSecureToken: false }).catch(() => undefined);
+        await firebaseAuthRequest(apiKey, 'sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: created.idToken });
+        if (!useProfile.getState().name) useProfile.getState().update({ name });
+        setMessage(`Welcome, ${name}! We sent a confirmation link to ${email.trim()}. Open it, then sign in here.`);
+        setPassword(''); setConfirm(''); setMode('signin');
+      } else {
+        const result = await firebaseAuthRequest(apiKey, 'signInWithPassword', { email: email.trim(), password, returnSecureToken: true });
+        if (!result.idToken || !result.email) throw new Error('Email sign-in could not be completed.');
+        const account = await firebaseAuthRequest(apiKey, 'lookup', { idToken: result.idToken });
+        if (account.users?.[0]?.emailVerified !== true) {
+          await firebaseAuthRequest(apiKey, 'sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: result.idToken });
+          throw new Error('Confirm your email first. We just sent you a fresh link.');
+        }
+        setPassword('');
+        await onCredential(result.idToken);
+      }
+    } catch (reason) { setFormError(reason instanceof Error ? reason.message : 'That did not work. Please try again.'); }
+    finally { setBusy(''); }
+  };
+
+  const sendLink = async () => {
+    setFormError(''); setMessage('');
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setFormError('Enter your email address first.'); return; }
+    setBusy('link');
+    try {
+      await firebaseAuthRequest(apiKey, 'sendOobCode', { requestType: 'EMAIL_SIGNIN', email: email.trim(), continueUrl: `${location.origin}${import.meta.env.BASE_URL}`, canHandleCodeInApp: true });
+      try { localStorage.setItem(EMAIL_FOR_LINK_KEY, email.trim()); } catch { /* the link page will ask for the email */ }
+      setMessage(`Sign-in link sent to ${email.trim()}. Open it on this device and you’re in — no password needed.`);
+    } catch (reason) {
+      const text = reason instanceof Error ? reason.message : '';
+      setFormError(/not enabled/i.test(text) ? 'Email-link sign-in isn’t switched on yet. In Firebase → Authentication → Email/Password, enable “Email link (passwordless sign-in)”.' : text || 'The sign-in link could not be sent.');
+    } finally { setBusy(''); }
+  };
+
+  const reset = async () => {
+    setFormError(''); setMessage('');
+    if (!email.trim()) { setFormError('Enter your email address first.'); return; }
+    setBusy('reset');
+    try { await firebaseAuthRequest(apiKey, 'sendOobCode', { requestType: 'PASSWORD_RESET', email: email.trim() }); setMessage('If an account uses that address, a password reset link is on its way.'); }
+    catch (reason) { setFormError(reason instanceof Error ? reason.message : 'Could not send a reset link.'); }
+    finally { setBusy(''); }
+  };
+
+  const signup = mode === 'signup';
+  return <section className={`share-login-card share-login-card-full auth-card beam mode-${mode}`}>
+    <div className="share-login-art auth-art">
+      <ShareArt mode={mode}/>
+    </div>
+    <div className="share-login-content auth-content">
+      <a className="login-back-link" href={backHref}><ArrowLeft size={15}/> Back to shared links</a>
+      <div className="auth-switch" role="tablist" aria-label="Account">
+        {(['signin', 'signup'] as const).map(value => <button key={value} type="button" role="tab" aria-selected={mode === value} className={mode === value ? 'active' : ''} onClick={() => switchMode(value)}>
+          {mode === value && <motion.span layoutId="auth-pill" className="auth-pill" transition={{ type: 'spring', bounce: .25, visualDuration: .35 }}/>}
+          {value === 'signin' ? <><KeyRound size={15}/> Sign in</> : <><Sparkles size={15}/> Create account</>}
+        </button>)}
+      </div>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div key={mode} className="auth-body" initial={{ opacity: 0, x: signup ? 24 : -24, filter: 'blur(6px)' }} animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }} exit={{ opacity: 0, x: signup ? -24 : 24, filter: 'blur(6px)' }} transition={{ type: 'spring', bounce: .1, visualDuration: .35 }}>
+          <span className={`share-login-kicker ${signup ? 'kicker-new' : ''}`}>{signup ? <><Sparkles size={14}/> FREE · NO CARD NEEDED</> : <><ShieldCheck size={14}/> PRIVATE BY DESIGN</>}</span>
+          <h2>{signup ? <>Create your<br/><em>free account.</em></> : <>Welcome<br/><em>back to LocalDeck.</em></>}</h2>
+          <p>{signup ? 'Only needed for sharing links. Your library itself never leaves this device.' : 'Sign in to create and manage encrypted links. People you send a link to don’t need an account.'}</p>
+          {signup && <ul className="auth-perks"><li><Check size={14}/> Encrypted share links</li><li><Check size={14}/> 48 MiB free storage</li><li><Check size={14}/> No ads, no tracking</li></ul>}
+          {social(mode)}
+          <div className="auth-divider"><span>{signup ? 'or sign up with email' : 'or with email'}</span></div>
+          <form onSubmit={event => void submit(event)} className="auth-form">
+            {signup && <label className="email-auth-field"><span>Username</span><span className="auth-input"><UserRound size={16}/><input value={username} onChange={e => setUsername(e.target.value)} autoComplete="nickname" placeholder="How LocalDeck greets you" required minLength={2} maxLength={30}/></span></label>}
+            <label className="email-auth-field"><span>Email address</span><span className="auth-input"><Mail size={16}/><input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required maxLength={254}/></span></label>
+            <label className="email-auth-field"><span className="auth-label-row">Password{!signup && <button type="button" className="text-button" disabled={Boolean(busy)} onClick={() => void reset()}>Forgot?</button>}</span>
+              <span className="auth-input"><KeyRound size={16}/><input type={show ? 'text' : 'password'} autoComplete={signup ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} required minLength={signup ? 12 : 1} maxLength={128} placeholder={signup ? 'At least 12 characters' : ''}/><button type="button" className="icon-button auth-eye" onClick={() => setShow(v => !v)} aria-label={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
+            {signup && <>
+              <div className={`auth-meter s${pw.score}`} aria-live="polite"><span><i/><i/><i/><i/><i/></span><small>{password ? pw.label : 'Use 12+ characters with a mix of letters, numbers and symbols'}</small></div>
+              <label className="email-auth-field"><span>Repeat password</span><span className={`auth-input ${confirm && confirm !== password ? 'mismatch' : confirm ? 'match' : ''}`}><KeyRound size={16}/><input type={show ? 'text' : 'password'} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} required maxLength={128}/>{confirm && confirm === password && <Check size={16} className="auth-ok"/>}</span></label>
+            </>}
+            <button className="button primary auth-submit" disabled={Boolean(busy)}>{busy === 'submit' ? <LoaderCircle size={16} className="spin"/> : signup ? <Sparkles size={16}/> : <ShieldCheck size={16}/>} {busy === 'submit' ? 'Please wait…' : signup ? 'Create free account' : 'Sign in'} {!busy && <ArrowRight size={16}/>}</button>
+          </form>
+          {!signup && <button type="button" className="auth-magic" disabled={Boolean(busy)} onClick={() => void sendLink()}>{busy === 'link' ? <LoaderCircle size={15} className="spin"/> : <WandSparkles size={15}/>} Email me a sign-in link instead</button>}
+          {formError && <p className="dialog-error" role="alert">{formError}</p>}
+          {error && <p className="dialog-error" role="alert">{error}</p>}
+          {message && <p className="email-auth-message" role="status">{message}</p>}
+          <p className="auth-switch-hint">{signup ? <>Already have an account? <button type="button" className="text-button" onClick={() => switchMode('signin')}>Sign in</button></> : <>New here? <button type="button" className="text-button" onClick={() => switchMode('signup')}>Create a free account</button></>}</p>
+        </motion.div>
+      </AnimatePresence>
+      <div className="share-login-foot"><span><ShieldCheck size={14}/> Encrypted before upload</span><span><Clock3 size={14}/> Links expire after 3 days</span></div>
+    </div>
+  </section>;
+}
