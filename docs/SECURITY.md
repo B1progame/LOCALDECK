@@ -11,3 +11,5 @@
 - Browser storage is not a backup. Anyone with a complete share link can decrypt and keep a downloaded copy; revocation only blocks future downloads.
 
 Report a security issue privately to the repository owner rather than publishing a working exploit.
+
+- AI Studio's structural inspection always parses HTML locally without executing scripts. Its optional browser-native AI uses only a bounded summary with script/style/template/SVG and embedded browsing contexts removed; there is no cloud AI fallback or API key. Treat model output as advisory. The native model is created only after the user clicks the scan button and may download browser-managed model data to the device.

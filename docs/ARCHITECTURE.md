@@ -19,3 +19,7 @@ When a signed-in user chooses **Create encrypted link**, the browser exports one
 ## Tradeoffs
 
 The service worker is needed for local multi-file URLs while the iframe has an opaque origin. It is served from the Pages app origin but only returns blobs for a validated item ID and normalized path. Some projects still need a server, cross-origin features, or browser capabilities that this static runtime cannot provide; compatibility reports are estimates, not guarantees.
+
+## Optional local HTML review
+
+AI Studio first inspects HTML with DOMParser, without executing it. An optional browser-native Prompt API enhancement is only offered when the browser exposes that API. It receives a bounded JSON summary and visible text after removing scripts, styles, templates, SVG, and embedded browsing contexts; it never receives raw HTML or runs as a cloud service. The user starts model creation explicitly, and its result is advisory. Browsers without the feature retain the full deterministic local outline and prompt builder.
