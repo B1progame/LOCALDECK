@@ -20,22 +20,25 @@ Service workers require HTTPS or a localhost address. Opening `index.html` direc
 With Python installed, open a terminal in this folder and run:
 
 ```powershell
-python -m http.server 4173
+python -m http.server 49283
 ```
 
-Then visit <http://localhost:4173>. Import a project, reload once if the browser is setting up offline support, and try opening it from your library.
+Then visit <http://localhost:49283>. Import a project, reload once if the browser is setting up offline support, and try opening it from your library.
 
-## Publish with GitHub CLI
+## Live site and GitHub CLI
 
-Create a GitHub repository whose root is this folder, then enable GitHub Pages for the `main` branch and `/ (root)` in the repository's Pages settings. For a new public repository, from this folder:
+LOCALDECK is live at <https://b1progame.github.io/LOCALDECK/>. The public source is <https://github.com/B1progame/LOCALDECK>. GitHub Pages deploys the repository root from `main`; pushing a new commit publishes the update.
 
 ```powershell
 gh auth status
-gh repo create localdeck --public --source . --remote origin --push
-gh browse --settings
+gh repo view B1progame/LOCALDECK
+git add .
+git commit -m "Update LOCALDECK"
+git push
+gh api repos/B1progame/LOCALDECK/pages/builds/latest
 ```
 
-In **Settings → Pages**, choose **Deploy from a branch**, `main`, and `/ (root)`. The published app files are public; projects imported into the app remain in each visitor's browser and are never part of the repository.
+The app files are public; projects imported into the app remain in each visitor's browser and are never part of the repository.
 
 If `gh auth status` reports an expired token, run `gh auth login` in your terminal and then repeat the commands. LOCALDECK does not need a GitHub token at runtime.
 
