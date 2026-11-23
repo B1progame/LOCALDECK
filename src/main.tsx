@@ -30,6 +30,7 @@ import { CollectionsPage, HomePage, ItemDetailsPage, LibraryView } from './views
 import { AuthActionPage, readAuthAction } from './authAction';
 import { demosEnabled, installDemos, removeDemos, syncDemos } from './demos';
 import { PackageBuilder } from './packageBuilder';
+import { ShareArt } from './shareArt';
 import { AccountProfileOffer, Avatar, ProfileSettings, useProfile } from './profile';
 import { BUNDLE_FORMAT } from './services/aiBundle';
 import './styles.css';
@@ -608,7 +609,7 @@ function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boo
   };
   const signOut=()=>{sessionStorage.removeItem(SHARE_SESSION_KEY);setSession(null);setShares([]);setLoaded(false);setError('');notify('Signed out of sharing.');};
   const loginCard=<section className={`share-login-card beam ${loginOnly?'share-login-card-full':''}`}>
-    <div className="share-login-art" aria-hidden="true"><span className="art-glow"/><span className="pulse-ring"/><span className="pulse-ring delay-1"/><span className="pulse-ring delay-2"/><div className="share-orbit orbit-one"><i/></div><div className="share-orbit orbit-two"><i/><i/></div><div className="chip-orbit"><span className="orbit-chip chip-a"><Gamepad2 size={15}/></span><span className="orbit-chip chip-b"><FileText size={15}/></span><span className="orbit-chip chip-c"><Image size={15}/></span></div><div className="share-lock"><span className="lock-shine"/><Cloud size={30}/><span className="lock-badge"><Check size={15}/></span></div><span className="share-sparkle s1">✦</span><span className="share-sparkle s2">✦</span><span className="share-sparkle s3">✦</span></div>
+    <div className="share-login-art"><ShareArt/></div>
     <div className="share-login-content">
       {loginOnly&&<a className="login-back-link" href="#/sharing"><ArrowLeft size={15}/> Back to shared links</a>}
       <span className="share-login-kicker"><ShieldCheck size={14}/> PRIVATE BY DESIGN</span>
