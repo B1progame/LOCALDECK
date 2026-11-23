@@ -507,6 +507,19 @@ img { display: block; max-width: 100%; }
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 .share-manager { max-width:960px; padding:22px; }
 .share-login-card { display:grid; grid-template-columns:minmax(240px,.86fr) minmax(0,1.14fr); max-width:900px; min-height:355px; overflow:hidden; border:1px solid rgba(255,255,255,.8); border-radius:20px; background:linear-gradient(135deg,#fff 0%,#fbfaff 58%,#f3f1fc 100%); box-shadow:0 18px 52px rgba(60,47,105,.09); }
+.auth-shell { min-height:100vh; overflow:auto; background:radial-gradient(ellipse at 12% 10%,rgba(202,190,255,.3),transparent 38%),radial-gradient(ellipse at 88% 90%,rgba(220,213,255,.27),transparent 36%),#f8f8fb; }
+.auth-main { min-height:100vh; margin-left:0; }
+.login-page-wrap { display:flex; min-height:100vh; flex-direction:column; align-items:center; justify-content:center; gap:28px; padding:38px 22px; }
+.login-brand { display:flex; align-items:center; gap:9px; color:#32313a; font-size:17px; font-weight:740; letter-spacing:-.04em; }
+.login-brand img { width:31px; height:31px; overflow:hidden; border-radius:9px; box-shadow:0 3px 9px rgba(93,61,191,.19); }
+.share-login-card-full { width:min(940px,100%); max-width:940px; min-height:0; grid-template-columns:minmax(260px,.84fr) minmax(0,1.16fr); }
+.share-login-card-full .share-login-art { min-height:610px; }
+.share-login-card-full .share-login-content { padding:38px clamp(27px,5vw,58px); }
+.share-login-card-full .share-login-content h2 { font-size:clamp(30px,4vw,43px); }
+.share-login-card-full .share-login-content>p { font-size:12px; }
+.login-back-link { display:inline-flex; align-items:center; gap:6px; width:max-content; margin-bottom:24px; color:#777783; font-size:11px; transition:color .18s ease,transform .18s ease; }
+.login-back-link:hover { color:#5d49ad; transform:translateX(-2px); }
+.share-login-cta { width:100%; min-height:43px; justify-content:center; }
 .share-login-art { position:relative; display:grid; min-height:300px; overflow:hidden; place-items:center; background:radial-gradient(ellipse at 52% 45%,#9b84ee 0%,#755bc9 33%,#51409a 69%,#332c62 100%); }
 .share-login-art::before,.share-login-art::after { position:absolute; width:270px; height:270px; border:1px solid rgba(255,255,255,.17); border-radius:50%; content:""; }
 .share-login-art::after { width:350px; height:350px; border-color:rgba(255,255,255,.1); }

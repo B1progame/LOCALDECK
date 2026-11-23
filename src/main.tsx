@@ -25,7 +25,7 @@ import {
 import type { Collection, ContentType, ImportPreview, LibraryAsset, LibraryItem } from './types';
 import './styles.css';
 
-type Page = 'home' | 'library' | 'favorites' | 'recent' | 'learning' | 'games' | 'collections' | 'import' | 'studio' | 'storage' | 'sharing' | 'settings';
+type Page = 'home' | 'library' | 'favorites' | 'recent' | 'learning' | 'games' | 'collections' | 'import' | 'studio' | 'storage' | 'sharing' | 'login' | 'settings';
 type AppRoute = { page: Page | 'shared'; shareId?: string; shareQuery?: string; collectionId?: string };
 type ModalState = { kind: 'edit' | 'collect' | 'collection' | 'subject' | 'entry' | 'restore' | 'share'; item?: LibraryItem; preview?: ImportPreview; conflicts?: number; shareUrl?: string; shareArchive?: Blob };
 type ShareSession = { token:string; exp:number; email:string; name:string; picture:string };
@@ -57,7 +57,7 @@ function routeFromHash(): AppRoute {
   const raw = location.hash.replace(/^#\/?/, '');
   const [path, query = ''] = raw.split('?');
   if (path.startsWith('shared/')) return { page: 'shared', shareId: path.slice(7), shareQuery: query };
-  const valid = new Set<Page>(['home','library','favorites','recent','learning','games','collections','import','studio','storage','sharing','settings']);
+  const valid = new Set<Page>(['home','library','favorites','recent','learning','games','collections','import','studio','storage','sharing','login','settings']);
   return { page: valid.has(path as Page) ? path as Page : 'home', ...(path === 'collections' && new URLSearchParams(query).has('collection') ? { collectionId: new URLSearchParams(query).get('collection') ?? undefined } : {}) };
 }
 
@@ -164,7 +164,7 @@ function App() {
     return result;
   }, [items, currentPage, query, route.collectionId, sort]);
 
-  const pageTitle = currentPage === 'collections' && route.collectionId ? collections.find(x => x.id === route.collectionId)?.name ?? 'Collection' : ({ home:'Home', library:'All items', favorites:'Favorites', recent:'Recently opened', learning:'Learning hub', games:'Games & apps', collections:'Collections', import:'Import center', studio:'AI studio', storage:'Storage & backups', sharing:'Shared links', settings:'Settings', shared:'Shared project' } as Record<string,string>)[currentPage];
+  const pageTitle = currentPage === 'collections' && route.collectionId ? collections.find(x => x.id === route.collectionId)?.name ?? 'Collection' : ({ home:'Home', library:'All items', favorites:'Favorites', recent:'Recently opened', learning:'Learning hub', games:'Games & apps', collections:'Collections', import:'Import center', studio:'AI studio', storage:'Storage & backups', sharing:'Shared links', login:'Sign in', settings:'Settings', shared:'Shared project' } as Record<string,string>)[currentPage];
 
   const openProject = (item: LibraryItem) => setPlaying(item);
 
@@ -288,11 +288,12 @@ function App() {
 
   const routeMotion = reduceMotion || reducedMotion ? { initial: false, animate: { opacity: 1 }, exit: { opacity: 1 } } : { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -4 }, transition: { duration: .2, ease: 'easeOut' as const } };
 
-  return <MotionConfig reducedMotion={reduceMotion || reducedMotion ? 'always' : 'never'}><div className="app-shell">
+  const isLoginPage = currentPage === 'login';
+  return <MotionConfig reducedMotion={reduceMotion || reducedMotion ? 'always' : 'never'}><div className={`app-shell ${isLoginPage ? 'auth-shell' : ''}`}>
     <input ref={fileInput} className="visually-hidden" type="file" accept=".html,.htm,.zip,.pdf,text/html,application/pdf,application/zip" multiple onChange={event => void handlePickedFiles(event.target.files)} />
     <input ref={folderInput} className="visually-hidden" type="file" {...{ webkitdirectory: '', directory: '' } as React.InputHTMLAttributes<HTMLInputElement>} multiple onChange={event => void handlePickedFiles(event.target.files)} />
     <input ref={restoreInput} className="visually-hidden" type="file" accept=".zip,application/zip" onChange={event => void handleRestore(event.target.files?.[0])} />
-    <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}>
+    {!isLoginPage && <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}>
       <a className="brand" href="#/home" aria-label="LOCALDECK home"><span className="brand-mark"><img src={`${base}icon-192.png`} alt="" /></span><span>localdeck</span></a>
       <div className="workspace-card"><span className="workspace-icon">L</span><span><b>My library</b><small>Private space</small></span><ChevronDown size={15} /></div>
       <div className="nav-heading">Library</div>
@@ -310,14 +311,14 @@ function App() {
       <StorageMini storage={storage} items={items} />
       <NavItem page="settings" active={currentPage === 'settings'} label="Settings" icon={Settings} onNavigate={() => setMobileNav(false)} />
       <div className="profile-row"><span className="profile-avatar">Y</span><span><b>Your space</b><small>Saved on this device</small></span><ShieldCheck size={16} /></div>
-    </aside>
-    {mobileNav && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
-    <main className="main-area">
-      <header className="topbar">
+    </aside>}
+    {!isLoginPage && mobileNav && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
+    <main className={`main-area ${isLoginPage ? 'auth-main' : ''}`}>
+      {!isLoginPage && <header className="topbar">
         <button className="mobile-menu icon-button" aria-label="Open menu" onClick={() => setMobileNav(true)}><Menu size={19} /></button>
         <div className="breadcrumbs"><span>My library</span><span className="crumb-separator">/</span><b>{pageTitle}</b></div>
         <div className="top-actions"><span className={`offline-pill ${navigator.onLine ? '' : 'offline'}`}><i />{navigator.onLine ? 'Offline-ready' : 'Offline mode'}</span><button className="search-trigger" onClick={() => setSearchOpen(true)}><Search size={16} /><span>{query || 'Search anything'}</span><kbd>⌘ K</kbd></button><button className="avatar-small" aria-label="User profile">Y</button></div>
-      </header>
+      </header>}
       <AnimatePresence mode="wait" initial={false}>
         <motion.div key={`${currentPage}-${route.shareId ?? ''}`} className="page-content" {...routeMotion}>
           {currentPage === 'home' && <HomePage items={items} open={openProject} add={() => fileInput.current?.click()} navigate={go} update={updateProject} favorite={async item=>{try{await toggleFavorite(item.id);await refresh();}catch(error){notify(safeError(error),true);}}} />}
@@ -327,6 +328,7 @@ function App() {
           {currentPage === 'studio' && <StudioPage items={items} notify={notify} />}
           {currentPage === 'storage' && <StoragePage items={items} storage={storage} integrity={integrity} busy={busy} backup={performBackup} restore={() => restoreInput.current?.click()} requestPersistent={requestPersistentStorage} checkIntegrity={checkIntegrity} repair={runRepair} />}
           {currentPage === 'sharing' && <SharingPage notify={notify} />}
+          {currentPage === 'login' && <SharingPage notify={notify} loginOnly />}
           {currentPage === 'settings' && <SettingsPage reducedMotion={reducedMotion} onMotion={async value => { setReducedMotion(value); await db.settings.put({ id:'reduced-motion', value, updatedAt:Date.now() }); }} />}
           {currentPage === 'shared' && <SharedPage shareId={route.shareId ?? ''} shareQuery={route.shareQuery ?? ''} notify={notify} />}
         </motion.div>
@@ -569,7 +571,7 @@ function FirebaseEmailAuth({apiKey,onCredential}:{apiKey:string;onCredential:(cr
   return <div className="email-auth-panel"><div className="auth-divider"><span>or continue with email</span></div><div className="email-auth-switch" role="tablist" aria-label="Email account action"><button type="button" role="tab" aria-selected={mode==='signin'} className={mode==='signin'?'active':''} onClick={()=>{setMode('signin');setError('');setMessage('');}}>Sign in</button><button type="button" role="tab" aria-selected={mode==='signup'} className={mode==='signup'?'active':''} onClick={()=>{setMode('signup');setError('');setMessage('');}}>Create account</button></div><form onSubmit={event=>void submit(event)}><label className="email-auth-field"><span>Email address</span><input type="email" autoComplete="email" value={email} onChange={event=>setEmail(event.target.value)} required maxLength={254} /></label><label className="email-auth-field"><span>Password</span><input type="password" autoComplete={mode==='signup'?'new-password':'current-password'} value={password} onChange={event=>setPassword(event.target.value)} required minLength={mode==='signup'?12:1} maxLength={128} /></label><button className="button primary email-auth-submit" disabled={busy} type="submit">{busy?<LoaderCircle size={15} className="spin"/>:mode==='signup'?<Mail size={15}/>:<ShieldCheck size={15}/>} {busy?'Please wait…':mode==='signup'?'Create email account':'Sign in with email'}</button></form>{mode==='signin'&&<button type="button" className="text-button email-reset" disabled={busy} onClick={()=>void reset()}>Forgot password?</button>}{error&&<p className="dialog-error" role="alert">{error}</p>}{message&&<p className="email-auth-message" role="status">{message}</p>}<p className="email-auth-help">Email verification and password resets are sent by Firebase. No custom domain or mail server is needed. This email login is a separate share account from Google sign-in.</p></div>;
 }
 
-function SharingPage({notify}:{notify:(message:string,error?:boolean)=>void}) {
+function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boolean)=>void;loginOnly?:boolean}) {
   const api=(import.meta.env.VITE_SHARE_API_BASE??'').replace(/\/$/,'');
   const clientId=import.meta.env.VITE_GOOGLE_CLIENT_ID??'';
   const firebaseApiKey=import.meta.env.VITE_FIREBASE_API_KEY??'';
@@ -583,10 +585,10 @@ function SharingPage({notify}:{notify:(message:string,error?:boolean)=>void}) {
   const signIn=useCallback(async(credential:string,provider:'google'|'firebase'='google')=>{
     if(!api){setError('Sharing is not connected to a Cloudflare Worker yet.');return;}
     setError('');setLoading(true);
-    try{const response=await fetch(`${api}/api/v1/shares/auth/${provider}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credential})});if(!response.ok)throw new Error(response.status===429?'Too many sign-in attempts. Please wait and try again.':provider==='google'?'Google could not verify this account for sharing.':'The sharing service could not verify this account.');const profile=await response.json() as {email:string;name:string;picture:string};const next=saveShareSession(credential,profile);setSession(next);notify(`Signed in as ${profile.email}.`);}
+    try{const response=await fetch(`${api}/api/v1/shares/auth/${provider}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credential})});if(!response.ok)throw new Error(response.status===429?'Too many sign-in attempts. Please wait and try again.':provider==='google'?'Google could not verify this account for sharing.':'The sharing service could not verify this account.');const profile=await response.json() as {email:string;name:string;picture:string};const next=saveShareSession(credential,profile);setSession(next);notify(`Signed in as ${profile.email}.`);if(loginOnly)go('sharing');}
     catch(err){setError(safeError(err));}
     finally{setLoading(false);}
-  },[api,notify]);
+  },[api,notify,loginOnly]);
   const load=useCallback(async(current:ShareSession)=>{
     setLoading(true);
     try{const response=await fetch(`${api}/api/v1/shares/owner/shares`,{headers:{Authorization:`Bearer ${current.token}`}});if(!response.ok){if(response.status===401){sessionStorage.removeItem(SHARE_SESSION_KEY);setSession(null);}throw new Error(response.status===429?'Sharing requests are temporarily rate limited.':'Your sign-in expired. Please sign in again.');}setShares(await response.json() as ShareRecord[]);setLoaded(true);}
@@ -600,8 +602,25 @@ function SharingPage({notify}:{notify:(message:string,error?:boolean)=>void}) {
     catch(err){setError(safeError(err));}
   };
   const signOut=()=>{sessionStorage.removeItem(SHARE_SESSION_KEY);setSession(null);setShares([]);setLoaded(false);setError('');notify('Signed out of sharing.');};
+  const loginCard=<section className={`share-login-card ${loginOnly?'share-login-card-full':''}`}>
+    <div className="share-login-art" aria-hidden="true"><div className="share-orbit orbit-one"/><div className="share-orbit orbit-two"/><div className="share-lock"><Cloud size={29}/><span><Check size={15}/></span></div><div className="share-sparkle">✦</div></div>
+    <div className="share-login-content">
+      {loginOnly&&<a className="login-back-link" href="#/sharing"><ArrowLeft size={15}/> Back to shared links</a>}
+      <span className="share-login-kicker"><ShieldCheck size={14}/> PRIVATE BY DESIGN</span>
+      <h2>{loginOnly?<>Welcome<br/><em>back to LOCALDECK.</em></>:<>Your links,<br/><em>under your control.</em></>}</h2>
+      <p>{loginOnly?'Sign in to create and manage encrypted links. People who receive your links can open them without an account.':'Create and manage encrypted links from a separate sign-in screen. Anyone you send a link to can open it without signing in.'}</p>
+      {loginOnly?(firebaseConfigured&&api?<FirebaseSocialButtons apiKey={firebaseApiKey} projectId={firebaseProjectId} appId={firebaseAppId} githubEnabled={firebaseGithubEnabled} facebookEnabled={firebaseFacebookEnabled} onCredential={credential=>signIn(credential,'firebase')}/>:clientId&&api?<GoogleIdentityButton clientId={clientId} onCredential={credential=>void signIn(credential)}/>:<div className="share-config-note"><Info size={16}/><span><b>Google sign-in is not connected yet</b><small>Set the Firebase web app values in GitHub Actions and deploy the Pages site. The Firebase project ID also belongs in the Cloudflare Worker settings.</small></span></div>):<a className="button primary share-login-cta" href="#/login"><ShieldCheck size={15}/> Continue to sign in</a>}
+      {loginOnly&&firebaseApiKey&&api&&<FirebaseEmailAuth apiKey={firebaseApiKey} onCredential={credential=>signIn(credential,'firebase')}/>}
+      {loginOnly&&firebaseApiKey&&api&&(!firebaseProjectId||!firebaseAppId)&&<div className="share-config-note email-auth-config"><Info size={16}/><span><b>Firebase setup incomplete</b><small>Add the web app Project ID and App ID to GitHub Actions variables.</small></span></div>}
+      {loginOnly&&!firebaseApiKey&&<div className="share-config-note email-auth-config"><Mail size={16}/><span><b>Email sign-up needs Firebase</b><small>Connect the Firebase Web API key in GitHub Actions to enable email and password login.</small></span></div>}
+      {!api&&<p className="share-setup-hint">The Cloudflare sharing Worker URL is not configured in this build.</p>}
+      {error&&<p className="dialog-error" role="alert">{error}</p>}
+      <div className="share-login-foot"><span><ShieldCheck size={14}/> Encrypted before upload</span><span><Clock3 size={14}/> Auto-deletes in 3 days</span></div>
+    </div>
+  </section>;
+  if(loginOnly)return <div className="login-page-wrap"><a className="login-brand" href="#/home"><img src={`${base}icon-192.png`} alt=""/> localdeck</a>{loginCard}</div>;
   return <><PageHeading eyebrow="Private sharing" title="Shared links" description="Sign in to create and manage your encrypted links. Anyone with a link can open it without an account."/>
-    {!session?<section className="share-login-card"><div className="share-login-art" aria-hidden="true"><div className="share-orbit orbit-one"/><div className="share-orbit orbit-two"/><div className="share-lock"><Cloud size={29}/><span><Check size={15}/></span></div><div className="share-sparkle">✦</div></div><div className="share-login-content"><span className="share-login-kicker"><ShieldCheck size={14}/> PRIVATE BY DESIGN</span><h2>Your links,<br/><em>under your control.</em></h2><p>Sign in to create and manage expiring links. Anyone you send a link to can open it without signing in.</p>{firebaseConfigured&&api?<FirebaseSocialButtons apiKey={firebaseApiKey} projectId={firebaseProjectId} appId={firebaseAppId} githubEnabled={firebaseGithubEnabled} facebookEnabled={firebaseFacebookEnabled} onCredential={credential=>signIn(credential,'firebase')}/>:clientId&&api?<GoogleIdentityButton clientId={clientId} onCredential={credential=>void signIn(credential)}/>:<div className="share-config-note"><Info size={16}/><span><b>Google sign-in not configured</b><small>Add the Firebase web app settings to GitHub Actions, or a Google web client ID and its Worker value.</small></span></div>}{firebaseApiKey&&api?<FirebaseEmailAuth apiKey={firebaseApiKey} onCredential={credential=>signIn(credential,'firebase')}/>:<div className="share-config-note email-auth-config"><Mail size={16}/><span><b>Email sign-up setup needed</b><small>Email sign-up can use your regular email address without owning a domain. Add the Firebase Web API key to GitHub Actions and the Firebase project ID to Cloudflare.</small></span></div>}{firebaseApiKey&&api&&(!firebaseProjectId||!firebaseAppId)&&<div className="share-config-note email-auth-config"><Info size={16}/><span><b>Firebase setup incomplete</b><small>Add the web app Project ID and App ID to GitHub Actions variables.</small></span></div>}{!api&&<p className="share-setup-hint">The Worker URL is not configured in this build.</p>}{error&&<p className="dialog-error" role="alert">{error}</p>}<div className="share-login-foot"><span><ShieldCheck size={14}/> Encrypted before upload</span><span><Clock3 size={14}/> Auto-deletes in 3 days</span></div></div></section>:<section className="share-manager panel"><div className="share-manager-heading"><span className="share-manager-icon"><Cloud size={19}/></span><div><h2>Your encrypted links</h2><p>Signed in as {session.email}. Link data is encrypted before upload.</p></div><div className="share-session-actions"><button className="button" disabled={loading} onClick={()=>void load(session)}>{loading?<LoaderCircle size={15} className="spin"/>:<Activity size={15}/>} Refresh</button><button className="button subtle" onClick={signOut}>Sign out</button></div></div><div className="share-quota-note"><ShieldCheck size={16}/><span>Per account: 48 MiB active storage · 24 MiB per link · 5 uploads/hour, 15/day · links expire in 3 days.</span></div>{error&&<p className="dialog-error" role="alert">{error}</p>}{loaded&&(shares.length?<div className="share-list">{shares.map(share=><div className="share-row" key={share.id}><span className="share-state active"/><span className="share-row-main"><b>{share.label}</b><small>{Date.parse(share.expiresAt)<=Date.now()?'Expired':`Expires ${friendlyDate(Date.parse(share.expiresAt))}`} · {bytes(share.sizeBytes)}</small></span><button className="button danger-button" onClick={()=>void remove(share.id)}><Trash2 size={14}/> Delete link</button></div>)}</div>:<EmptyState icon={Share2} title="No active links" detail="Create an encrypted link from a project's actions menu."/>)}{!loaded&&!loading&&<p className="share-setup-hint">Your share list will load after sign-in. You can sign out at any time.</p>}</section>}
+    {!session?loginCard:<section className="share-manager panel"><div className="share-manager-heading"><span className="share-manager-icon"><Cloud size={19}/></span><div><h2>Your encrypted links</h2><p>Signed in as {session.email}. Link data is encrypted before upload.</p></div><div className="share-session-actions"><button className="button" disabled={loading} onClick={()=>void load(session)}>{loading?<LoaderCircle size={15} className="spin"/>:<Activity size={15}/>} Refresh</button><button className="button subtle" onClick={signOut}>Sign out</button></div></div><div className="share-quota-note"><ShieldCheck size={16}/><span>Per account: 48 MiB active storage · 24 MiB per link · 5 uploads/hour, 15/day · links expire in 3 days.</span></div>{error&&<p className="dialog-error" role="alert">{error}</p>}{loaded&&(shares.length?<div className="share-list">{shares.map(share=><div className="share-row" key={share.id}><span className="share-state active"/><span className="share-row-main"><b>{share.label}</b><small>{Date.parse(share.expiresAt)<=Date.now()?'Expired':`Expires ${friendlyDate(Date.parse(share.expiresAt))}`} · {bytes(share.sizeBytes)}</small></span><button className="button danger-button" onClick={()=>void remove(share.id)}><Trash2 size={14}/> Delete link</button></div>)}</div>:<EmptyState icon={Share2} title="No active links" detail="Create an encrypted link from a project's actions menu."/>)}{!loaded&&!loading&&<p className="share-setup-hint">Your share list will load after sign-in. You can sign out at any time.</p>}</section>}
   </>;
 }
 
