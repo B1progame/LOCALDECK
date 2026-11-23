@@ -77,3 +77,19 @@ Paste these into the **Message** field. Firebase replaces `%LINK%`, `%EMAIL%` an
 ## 5. Authorized domains
 
 **Authentication → Settings → Authorized domains** must include `b1progame.github.io`. Otherwise the action page and Google sign-in are refused.
+
+## 6. Passwordless sign-in link (optional, free)
+
+**Authentication → Sign-in method → Email/Password → ✏️ → turn on “Email link (passwordless sign-in)” → Save.**
+
+LocalDeck then shows “Email me a sign-in link instead” on the sign-in screen. The link returns to `https://b1progame.github.io/LOCALDECK/`, where LocalDeck finishes the sign-in automatically. If it is opened on another device, LocalDeck asks for the email address first.
+
+## 7. Test everything
+
+1. Open the live site in a private window and go to **Shared links → Continue to sign in → Create account**.
+2. Sign up with a real address you can read. Check the email's sender name, subject and design, then click the button. LocalDeck should show “Your email is verified.”
+3. Sign in with that email and password.
+4. Sign out, use **Forgot?**, and check the reset email and LocalDeck's “Choose a new password” page.
+5. Try **Email me a sign-in link instead** and **Continue with Google**.
+
+Emails sometimes land in spam at first. Marking them “Not spam” once helps.
