@@ -42,4 +42,3 @@ export async function decryptSharePackage(payload: ArrayBuffer, fragmentKey: str
   }
 }
 
-

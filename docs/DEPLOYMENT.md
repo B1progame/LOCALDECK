@@ -19,4 +19,3 @@ npm run dev -- --host 127.0.0.1 --port 5468
 ```
 
 For service-worker and multi-file player checks, use the production build on an HTTPS or localhost origin. Keep development and production Worker secrets separate.
-

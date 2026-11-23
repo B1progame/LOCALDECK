@@ -29,4 +29,3 @@ CREATE TABLE IF NOT EXISTS storage_state (
 );
 
 INSERT OR IGNORE INTO storage_state (id, reserved_bytes, active_uploads) VALUES (1, 0, 0);
-

@@ -18,4 +18,3 @@ When the user explicitly chooses **Create encrypted link**, the browser exports 
 ## Tradeoffs
 
 The service worker is needed for local multi-file URLs while the iframe has an opaque origin. It is served from the Pages app origin but only returns blobs for a validated item ID and normalized path. Some projects still need a server, cross-origin features, or browser capabilities that this static runtime cannot provide; compatibility reports are estimates, not guarantees.
-

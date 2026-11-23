@@ -98,4 +98,3 @@ The app works without Cloudflare. To enable expiring share links on the Workers 
 Use this prompt if you want to regenerate the supplied icon in an image model:
 
 > Create a premium app icon for LOCALDECK, a private offline library for HTML projects. Square 1:1 canvas, no text or letters. A small stack of three softly folded rounded sheets, the front sheet warm ivory with a subtle pink-to-cream sheen, two lavender and vivid violet sheets behind it, one tiny four-point cream sparkle at the upper right. Centered, sculpted paper with smooth beveled edges, delicate realistic soft shadows, gentle luminous violet gradient background. Clean Apple-quality icon craft, tactile, elegant, instantly recognizable at small sizes, refined 3D illustration, no border, no watermark.
-

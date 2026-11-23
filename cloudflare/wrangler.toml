@@ -17,4 +17,3 @@ crons = ["17 * * * *"]
 
 [vars]
 ALLOWED_ORIGIN = "https://b1progame.github.io"
-

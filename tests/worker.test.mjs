@@ -36,4 +36,3 @@ test('sharing API rejects unknown endpoints without revealing backend details', 
   assert.equal(response.status, 404);
   assert.deepEqual(await response.json(), { error: 'not_found' });
 });
-

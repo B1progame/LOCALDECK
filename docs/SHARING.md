@@ -51,4 +51,3 @@ The free KV setup intentionally stays below 1 GB. A 4 GB allowance requires movi
 - Anyone who receives the full link can open it while it is active. Revocation blocks future access but cannot erase a copy already imported.
 - Share links are not included in local library backups; projects remain on each device.
 - Free-plan quota exhaustion can temporarily make sharing unavailable. The Worker cannot upgrade the account or enable paid services.
-

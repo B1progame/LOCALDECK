@@ -9,4 +9,3 @@
 - Browser storage is not a backup. Anyone with a complete share link can decrypt and keep a downloaded copy; revocation only blocks future downloads.
 
 Report a security issue privately to the repository owner rather than publishing a working exploit.
-
