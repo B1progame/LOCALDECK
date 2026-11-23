@@ -33,15 +33,15 @@ The Worker is designed for Cloudflare's free plan: 512 MiB active storage is bel
 
 Google's [client ID setup guide](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid) covers the current console fields. Google's [server verification guide](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token) explains why the Worker validates the signature and audience rather than trusting profile data sent by the browser.
 
-## Set up email sign-up (free, no custom domain)
+## Set up Firebase sign-in (free, no custom domain)
 
 1. Create a Firebase project and keep it on the **Spark (no-cost)** plan. Do not add a billing account or enable unrelated products.
-2. In **Authentication → Sign-in method**, enable **Email/Password**. Keep email verification enabled; choose a password policy of at least 12 characters.
+2. In **Authentication → Sign-in method**, enable **Google** and **Email/Password**. Keep email verification enabled; choose a password policy of at least 12 characters.
 3. In **Authentication → Settings → Authorized domains**, add `b1progame.github.io`. This is the app host you already use, not a domain you need to buy or own.
 4. In **Project settings → General**, copy the Firebase **Project ID** and the web app's **Web API key**. The key is public Firebase config, not a password. In Google Cloud **APIs & Services → Credentials**, restrict it to Firebase Authentication / Identity Toolkit. Keep quotas small and do not allow unrelated paid APIs.
-5. In the `B1progame/LOCALDECK` repository, open **Settings → Secrets and variables → Actions → Variables** and add `VITE_FIREBASE_API_KEY` with the Web API key. It is intentionally public in the frontend build.
+5. In the `B1progame/LOCALDECK` repository, open **Settings → Secrets and variables → Actions → Variables** and add these three variables from Firebase: `VITE_FIREBASE_API_KEY` (Web API key), `VITE_FIREBASE_PROJECT_ID` (`login-localdeck`), and `VITE_FIREBASE_APP_ID` (the Web App ID beginning `1:175953444466:web:`). These are public web-app settings, not passwords. The API key is intended to appear in a browser build; restrict it to Firebase Authentication / Identity Toolkit and set a small quota.
 6. In Cloudflare, open the `localdeck-share` Worker settings and add a plain-text variable named `FIREBASE_PROJECT_ID` with that project ID. The project ID is not a secret. Do not put a service-account key, password, private API key, or Cloudflare token in the Pages variables.
-7. Deploy the Worker from `cloudflare/` with `npx wrangler deploy`, then run the Pages workflow on `main` so it builds with the new Firebase variable.
+7. Deploy the Worker from `cloudflare/` with `npx wrangler deploy`, then run the Pages workflow on `main` so it builds with the Firebase variables. The Google sign-in button uses Firebase's Google provider; you do not need a separate Google OAuth client ID for that button. Keep `VITE_GOOGLE_CLIENT_ID` only if you want the older direct Google sign-in option instead.
 
 Firebase Authentication sends verification and password-reset messages from its managed sender; you do not need to set up SMTP, buy a domain, or publish your own mail server. Keep the project on Spark and check its current quotas before enabling more services. Google's Firebase [email/password guide](https://firebase.google.com/docs/auth/web/password-auth) and [free-plan limits](https://firebase.google.com/docs/auth/limits) document the current behavior.
 
