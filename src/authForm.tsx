@@ -1,5 +1,5 @@
 /* Sign-in / create-account screen for sharing. The two modes look clearly different and animate between each other. */
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, Clock3, Eye, EyeOff, KeyRound, LoaderCircle, Mail, ShieldCheck, Sparkles, UserRound, WandSparkles } from 'lucide-react';
 import { firebaseAuthRequest } from './services/firebaseAuth';
@@ -37,6 +37,15 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
   const [message, setMessage] = useState('');
   const [formError, setFormError] = useState('');
   const pw = strength(password);
+  // Measure the active form so the card height glides instead of snapping when switching modes.
+  const inner = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | 'auto'>('auto');
+  useLayoutEffect(() => {
+    const el = inner.current; if (!el) return;
+    const observer = new ResizeObserver(() => setHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const switchMode = (next: AuthMode) => { setMode(next); setFormError(''); setMessage(''); setPassword(''); setConfirm(''); };
 
@@ -106,8 +115,12 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
           {value === 'signin' ? <><KeyRound size={15}/> Sign in</> : <><Sparkles size={15}/> Create account</>}
         </button>)}
       </div>
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div key={mode} className="auth-body" initial={{ opacity: 0, x: signup ? 24 : -24, filter: 'blur(6px)' }} animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }} exit={{ opacity: 0, x: signup ? -24 : 24, filter: 'blur(6px)' }} transition={{ type: 'spring', bounce: .1, visualDuration: .35 }}>
+      <motion.div className="auth-stage" animate={{ height }} transition={{ type: 'spring', bounce: 0, visualDuration: .45 }}>
+      <div ref={inner} className="auth-stage-inner">
+      <AnimatePresence mode="popLayout" initial={false} custom={signup}>
+        <motion.div key={mode} className="auth-body" custom={signup}
+          variants={{ enter: (toSignup: boolean) => ({ opacity: 0, x: toSignup ? 40 : -40 }), center: { opacity: 1, x: 0 }, exit: (toSignup: boolean) => ({ opacity: 0, x: toSignup ? -40 : 40 }) }}
+          initial="enter" animate="center" exit="exit" transition={{ type: 'spring', bounce: 0, visualDuration: .4 }}>
           <span className={`share-login-kicker ${signup ? 'kicker-new' : ''}`}>{signup ? <><Sparkles size={14}/> FREE · NO CARD NEEDED</> : <><ShieldCheck size={14}/> PRIVATE BY DESIGN</>}</span>
           <h2>{signup ? <>Create your<br/><em>free account.</em></> : <>Welcome<br/><em>back to LocalDeck.</em></>}</h2>
           <p>{signup ? 'Only needed for sharing links. Your library itself never leaves this device.' : 'Sign in to create and manage encrypted links. People you send a link to don’t need an account.'}</p>
@@ -132,6 +145,8 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
           <p className="auth-switch-hint">{signup ? <>Already have an account? <button type="button" className="text-button" onClick={() => switchMode('signin')}>Sign in</button></> : <>New here? <button type="button" className="text-button" onClick={() => switchMode('signup')}>Create a free account</button></>}</p>
         </motion.div>
       </AnimatePresence>
+      </div>
+      </motion.div>
       <div className="share-login-foot"><span><ShieldCheck size={14}/> Encrypted before upload</span><span><Clock3 size={14}/> Links expire after 3 days</span></div>
     </div>
   </section>;

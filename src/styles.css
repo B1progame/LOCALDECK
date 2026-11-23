@@ -1397,3 +1397,7 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 .sa-label { font-size: 12px; }
 .sa-hex { font-size: 10px; }
 .sa-path { stroke-width: 2.4; stroke-opacity: .7; }
+/* Mode switch glides: the stage animates its height, forms cross-slide */
+.auth-stage { position: relative; overflow: hidden; margin: -6px; padding: 0; }
+.auth-stage-inner { position: relative; padding: 6px; }
+.auth-body { min-height: 0; width: 100%; }
