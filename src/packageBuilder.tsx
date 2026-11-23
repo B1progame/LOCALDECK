@@ -3,11 +3,12 @@
    index.html + localdeck.json + cover image + assets, checked for missing references. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowDownToLine, Check, FileCode2, FileText, Image as ImageIcon, LoaderCircle, PackageCheck, Paperclip, Plus, Sparkles, Trash2, Upload, Wand2, X,
+  ArrowDownToLine, Bot, Check, ClipboardPaste, Copy, FileArchive, FileCode2, FileText, Image as ImageIcon, LoaderCircle, PackageCheck, Paperclip, Plus, Sparkles, Trash2, Upload, Wand2, X,
 } from 'lucide-react';
-import { analyzeFiles, diagnoseCompatibility } from './services/importer';
+import { analyzeFiles, diagnoseCompatibility, isJunkPath } from './services/importer';
+import { buildProjectPrompt, parseBundle, type BundleFile, type PromptKind } from './services/aiBundle';
 import { createItem } from './services/library';
-import { createStoredZip, normalizePackagePath } from './services/zip';
+import { createStoredZip, normalizePackagePath, readZip } from './services/zip';
 import { CONTENT_TYPES, type ContentType, type LibraryItem, type ProjectManifest } from './types';
 import { TYPE_ICON, TYPE_LABEL, bytes, generatedCoverImage, go } from './shared';
 
@@ -45,13 +46,69 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
   const [extras, setExtras] = useState<Extra[]>([]);
   const [cover, setCover] = useState<{ blob: Blob; url: string; name: string; generated: boolean } | null>(null);
   const [meta, setMeta] = useState({ title: '', type: 'learning' as ContentType, subject: '', topic: '', genre: '', description: '', tags: '', language: '', orientation: 'any' as 'any' | 'portrait' | 'landscape' });
-  const [busy, setBusy] = useState<'' | 'zip' | 'library' | 'cover'>('');
+  const [busy, setBusy] = useState<'' | 'zip' | 'library' | 'cover' | 'read'>('');
+  const [source, setSource] = useState<'' | 'ask' | 'paste'>('');
+  const [answer, setAnswer] = useState('');
+  const [idea, setIdea] = useState('');
+  const [promptKind, setPromptKind] = useState<PromptKind>('learning');
+  const [loadNote, setLoadNote] = useState<string[]>([]);
+  const zipInput = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState(0);
   const htmlInput = useRef<HTMLInputElement>(null);
   const extraInput = useRef<HTMLInputElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => () => { if (cover) URL.revokeObjectURL(cover.url); }, [cover]);
+
+  /** Fills the whole builder from a set of files (an AI bundle or a ZIP). */
+  const loadFiles = async (input: BundleFile[], origin: string) => {
+    let files = input.filter(f => !isJunkPath(f.path));
+    const first = files[0]?.path.split('/')[0];
+    if (first && files.length > 1 && files.every(f => f.path.startsWith(`${first}/`))) files = files.map(f => ({ ...f, path: f.path.slice(first.length + 1) }));
+    const byPath = new Map(files.map(f => [f.path.toLowerCase(), f]));
+    let manifest: Partial<ProjectManifest> = {};
+    const manifestFile = byPath.get('localdeck.json');
+    if (manifestFile) { try { manifest = JSON.parse(await manifestFile.blob.text()) as Partial<ProjectManifest>; } catch { /* reported by the package check */ } }
+    const entryPath = (manifest.entry && byPath.has(manifest.entry.toLowerCase()) ? manifest.entry : files.find(f => /^index\.html?$/i.test(f.path))?.path ?? files.find(f => /\.html?$/i.test(f.path))?.path) ?? '';
+    const entry = byPath.get(entryPath.toLowerCase());
+    if (!entry) { notify(`No HTML page was found in the ${origin}.`, true); return; }
+    const text = await entry.blob.text();
+    const coverPath = (manifest.cover && byPath.has(manifest.cover.replace(/^\.\//, '').toLowerCase()) ? manifest.cover.replace(/^\.\//, '') : files.find(f => /^cover\.(png|jpe?g|webp|svg|avif)$/i.test(f.path))?.path) ?? '';
+    const coverFile = coverPath ? byPath.get(coverPath.toLowerCase()) : undefined;
+    setHtml(text); setHtmlName(`${entry.path} from ${origin}`); setPasteMode(false);
+    setCover(coverFile ? { blob: coverFile.blob, url: URL.createObjectURL(coverFile.blob), name: coverFile.path, generated: false } : null);
+    setExtras(files.filter(f => f !== entry && f !== manifestFile && f !== coverFile).map(f => ({ path: f.path, file: f.blob, url: f.blob.type.startsWith('image/') ? URL.createObjectURL(f.blob) : undefined })));
+    const doc = new DOMParser().parseFromString(text, 'text/html');
+    setMeta(m => ({
+      ...m,
+      title: manifest.title || doc.title || m.title,
+      type: manifest.type && CONTENT_TYPES.includes(manifest.type) ? manifest.type : m.type,
+      subject: manifest.subject ?? m.subject, topic: manifest.topic ?? m.topic, genre: manifest.genre ?? m.genre,
+      description: manifest.description ?? m.description, tags: manifest.tags?.join(', ') ?? m.tags, language: manifest.language ?? (doc.documentElement.lang || m.language),
+      orientation: manifest.preferredOrientation ?? m.orientation,
+    }));
+    if (entry.path !== 'index.html') setLoadNote(n => [...n, `${entry.path} will be saved as index.html. Links to it from other pages may need updating.`]);
+    notify(`Loaded ${files.length} file${files.length === 1 ? '' : 's'} from the ${origin}.`);
+  };
+
+  const importAnswer = async () => {
+    const { files, warnings } = parseBundle(answer);
+    setLoadNote(warnings);
+    if (!files.length) { notify('No project files were found in that answer. Ask the AI to use the LocalDeck file format from the prompt.', true); return; }
+    await loadFiles(files, 'AI answer');
+    setSource('');
+  };
+
+  const openZip = async (file?: File) => {
+    if (!file) return;
+    setBusy('read'); setLoadNote([]);
+    try { await loadFiles(await readZip(file), 'ZIP'); }
+    catch (error) { notify(error instanceof Error ? error.message : 'That ZIP could not be opened.', true); }
+    finally { setBusy(''); }
+  };
+
+  const aiPrompt = useMemo(() => buildProjectPrompt({ idea, kind: promptKind, title: meta.title, subject: meta.subject || meta.genre, language: meta.language }), [idea, promptKind, meta.title, meta.subject, meta.genre, meta.language]);
+  const copyPrompt = async () => { try { await navigator.clipboard.writeText(aiPrompt); notify('Prompt copied. Paste it into ChatGPT, Claude, Gemini or any AI chat.'); } catch { notify('Clipboard is unavailable. Select the prompt and copy it manually.', true); } };
 
   const readHtml = async (file: File) => {
     if (!/\.html?$/i.test(file.name)) { notify('Choose an .html file for the project code.', true); return; }
@@ -162,6 +219,26 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
 
   return <section className="panel package-builder" aria-labelledby="pb-title">
     <div className="panel-heading"><span className="panel-icon violet"><PackageCheck size={18}/></span><div><h2 id="pb-title">Package builder</h2><p>Bring the HTML your AI made, add images and files, and get a finished LocalDeck ZIP with cover, manifest and every asset.</p></div></div>
+    <div className="pb-start" role="group" aria-label="Start from">
+      <button type="button" className={`pb-start-card ${source === 'ask' ? 'active' : ''}`} onClick={() => setSource(s => s === 'ask' ? '' : 'ask')}><Bot size={20}/><b>Ask an AI</b><small>Get a prompt that makes any AI return the whole project</small></button>
+      <button type="button" className={`pb-start-card ${source === 'paste' ? 'active' : ''}`} onClick={() => setSource(s => s === 'paste' ? '' : 'paste')}><ClipboardPaste size={20}/><b>Paste the AI’s answer</b><small>LocalDeck turns it into files, cover and manifest</small></button>
+      <button type="button" className="pb-start-card" onClick={() => zipInput.current?.click()} disabled={busy === 'read'}>{busy === 'read' ? <LoaderCircle size={20} className="spin"/> : <FileArchive size={20}/>}<b>Open a ZIP from the AI</b><small>Check it, fix details and export it again</small></button>
+      <input ref={zipInput} type="file" accept=".zip,application/zip" className="visually-hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; void openZip(f); }}/>
+    </div>
+    {source === 'ask' && <div className="pb-source">
+      <div className="pb-fields">
+        <label className="form-field pb-wide"><span>What should the AI build?</span><textarea rows={3} value={idea} onChange={e => setIdea(e.target.value)} placeholder="e.g. A Lernzettel about the Pythagorean theorem with an interactive triangle and 5 practice tasks"/></label>
+        <label className="form-field"><span>Kind of project</span><select value={promptKind} onChange={e => setPromptKind(e.target.value as PromptKind)}><option value="learning">Lernzettel</option><option value="quiz">Quiz</option><option value="game">Game</option><option value="simulation">Simulation</option><option value="presentation">Presentation</option><option value="app">App</option><option value="tool">Tool</option><option value="other">Other</option></select></label>
+        <div className="form-field"><span>Then</span><small className="muted-text">Paste the AI’s full answer back here with “Paste the AI’s answer”. Title, subject and language from the Details step are included.</small></div>
+      </div>
+      <div className="output-heading"><b>Prompt for your AI</b><button type="button" className="text-button" onClick={() => void copyPrompt()}><Copy size={15}/> Copy prompt</button></div>
+      <pre className="prompt-output pb-prompt">{aiPrompt}</pre>
+    </div>}
+    {source === 'paste' && <div className="pb-source">
+      <label className="form-field"><span>The AI’s complete answer</span><textarea className="pb-paste" value={answer} onChange={e => setAnswer(e.target.value)} placeholder={'=== LOCALDECK FILE: index.html ===\n<!doctype html>…\n=== END FILE ==='} spellCheck={false}/></label>
+      <div className="pb-cover-row"><button type="button" className="button primary" disabled={!answer.trim()} onClick={() => void importAnswer()}><Sparkles size={15}/> Build files from answer</button><span className="muted-text">Works with the LocalDeck format, and with answers that list files as code blocks.</span></div>
+    </div>}
+    {loadNote.length > 0 && <ul className="finding-list pb-notes">{loadNote.map(n => <li key={n}>{n}</li>)}</ul>}
     <div className="pb-grid">
       <div className="pb-steps">
         <div className="pb-step">
