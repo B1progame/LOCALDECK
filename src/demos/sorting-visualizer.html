@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sorting Algorithms Visualized</title>
+<script id="localdeck-manifest" type="application/json">{"schemaVersion":1,"title":"Sorting Algorithms Visualized","type":"simulation","subject":"Informatik","topic":"Algorithmen","description":"Watch bubble, insertion, merge and quick sort work step by step. Compare comparisons and swaps.","tags":["demo","algorithms","informatik"],"controls":["mouse","touch"]}</script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column; background: #0c0a14; color: #ede9fe; font: 15px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 14px 18px; border-bottom: 1px solid #ffffff14; }
+  h1 { margin: 0 auto 0 0; font-size: 18px; }
+  select, button { height: 38px; padding: 0 14px; border: 1px solid #ffffff26; border-radius: 10px; background: #1c1830; color: #fff; font: 600 14px system-ui; cursor: pointer; }
+  button.primary { border: 0; background: linear-gradient(90deg, #8b5cf6, #ec4899); }
+  label { display: flex; gap: 8px; align-items: center; font-size: 13px; color: #c4b5fd; } input[type=range] { accent-color: #a78bfa; }
+  .stage { flex: 1; display: flex; align-items: flex-end; gap: 2px; padding: 20px 18px 8px; }
+  .bar { flex: 1; border-radius: 4px 4px 0 0; background: linear-gradient(180deg, #a78bfa, #6d28d9); transition: height .05s; }
+  .bar.cmp { background: #fbbf24; } .bar.swap { background: #f472b6; } .bar.done { background: linear-gradient(180deg, #6ee7b7, #059669); }
+  footer { display: flex; gap: 22px; padding: 12px 18px 16px; color: #c4b5fd; font: 600 13px ui-monospace, monospace; }
+  footer b { color: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sorting Visualized</h1>
+  <select id="algo" aria-label="Algorithm"><option value="bubble">Bubble sort</option><option value="insertion">Insertion sort</option><option value="merge">Merge sort</option><option value="quick">Quick sort</option></select>
+  <label>Size <input id="size" type="range" min="10" max="120" value="48"></label>
+  <label>Speed <input id="speed" type="range" min="1" max="100" value="60"></label>
+  <button id="shuffle">Shuffle</button>
+  <button class="primary" id="run">Sort</button>
+</header>
+<div class="stage" id="stage"></div>
+<footer><span>Comparisons <b id="cmp">0</b></span><span>Writes <b id="sw">0</b></span><span id="status">Ready</span></footer>
+<script>
+const $ = id => document.getElementById(id);
+let a = [], bars = [], running = false, cmp = 0, sw = 0;
+function shuffle() { if (running) return; const n = +$('size').value; a = Array.from({ length: n }, (_, i) => (i + 1) / n); for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } $('stage').innerHTML = a.map(() => '<div class="bar"></div>').join(''); bars = [...$('stage').children]; cmp = sw = 0; paint(); $('status').textContent = 'Ready'; }
+function paint(marks = {}) { a.forEach((v, i) => { bars[i].style.height = `${v * 100}%`; bars[i].className = 'bar' + (marks[i] ? ' ' + marks[i] : ''); }); $('cmp').textContent = cmp; $('sw').textContent = sw; }
+const wait = () => new Promise(r => setTimeout(r, 101 - +$('speed').value));
+async function show(marks) { paint(marks); await wait(); }
+async function bubble() { for (let i = 0; i < a.length; i++) for (let j = 0; j < a.length - i - 1; j++) { cmp++; await show({ [j]: 'cmp', [j + 1]: 'cmp' }); if (a[j] > a[j + 1]) { [a[j], a[j + 1]] = [a[j + 1], a[j]]; sw++; await show({ [j]: 'swap', [j + 1]: 'swap' }); } } }
+async function insertion() { for (let i = 1; i < a.length; i++) { let j = i; while (j > 0) { cmp++; await show({ [j]: 'cmp', [j - 1]: 'cmp' }); if (a[j - 1] <= a[j]) break; [a[j], a[j - 1]] = [a[j - 1], a[j]]; sw++; j--; } } }
+async function merge(lo = 0, hi = a.length - 1) { if (lo >= hi) return; const mid = (lo + hi) >> 1; await merge(lo, mid); await merge(mid + 1, hi); const tmp = a.slice(lo, hi + 1); let i = 0, j = mid - lo + 1, k = lo; while (i <= mid - lo && j <= hi - lo) { cmp++; a[k] = tmp[i] <= tmp[j] ? tmp[i++] : tmp[j++]; sw++; await show({ [k]: 'swap' }); k++; } while (i <= mid - lo) { a[k] = tmp[i++]; sw++; await show({ [k++]: 'swap' }); } while (j <= hi - lo) { a[k] = tmp[j++]; sw++; await show({ [k++]: 'swap' }); } }
+async function quick(lo = 0, hi = a.length - 1) { if (lo >= hi) return; const p = a[hi]; let i = lo; for (let j = lo; j < hi; j++) { cmp++; await show({ [j]: 'cmp', [hi]: 'swap' }); if (a[j] < p) { [a[i], a[j]] = [a[j], a[i]]; sw++; i++; } } [a[i], a[hi]] = [a[hi], a[i]]; sw++; await quick(lo, i - 1); await quick(i + 1, hi); }
+$('run').onclick = async () => {
+  if (running) return; running = true; cmp = sw = 0; $('status').textContent = 'Sorting…'; $('run').disabled = $('shuffle').disabled = true;
+  await ({ bubble, insertion, merge, quick })[$('algo').value]();
+  for (let i = 0; i < a.length; i++) { bars[i].className = 'bar done'; await new Promise(r => setTimeout(r, 6)); }
+  $('status').textContent = `Done with ${$('algo').selectedOptions[0].text}`; running = false; $('run').disabled = $('shuffle').disabled = false;
+};
+$('shuffle').onclick = shuffle; $('size').oninput = shuffle;
+shuffle();
+</script>
+</body>
+</html>

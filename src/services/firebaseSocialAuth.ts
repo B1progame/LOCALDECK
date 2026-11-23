@@ -9,6 +9,7 @@ import {
   reload,
   sendEmailVerification,
   setPersistence,
+  signInWithPopup,
   signInWithRedirect,
   type UserCredential,
 } from '@firebase/auth';
@@ -53,11 +54,21 @@ async function finishSignIn(result: UserCredential): Promise<{ token?: string; p
   };
 }
 
-export async function beginFirebaseSocialSignIn(providerName: FirebaseSocialProvider, config: FirebaseSocialConfig): Promise<void> {
+/** Opens the provider in a popup. Resolves null when the browser forced a redirect instead. */
+export async function beginFirebaseSocialSignIn(providerName: FirebaseSocialProvider, config: FirebaseSocialConfig): Promise<{ token?: string; profile?: FirebaseSocialProfile; verificationSent?: boolean } | null> {
   const auth = getAuthClient(config);
   await setPersistence(auth, browserSessionPersistence);
   auth.useDeviceLanguage();
-  await signInWithRedirect(auth, createProvider(providerName));
+  try {
+    return await finishSignIn(await signInWithPopup(auth, createProvider(providerName)));
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
+      await signInWithRedirect(auth, createProvider(providerName));
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function finishFirebaseSocialSignIn(config: FirebaseSocialConfig) {

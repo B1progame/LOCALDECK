@@ -45,12 +45,14 @@ function parseEmbeddedManifest(html: string): { manifest: ProjectManifest | null
 
 export function diagnoseCompatibility(entryHtml: string, packagePaths: string[] = [], entryPath = 'index.html'): CompatibilityReport {
   const findings: string[] = [];
+  let concerns = 0;
   const localPaths = new Set(packagePaths.map(path => path.toLocaleLowerCase('en-US')));
   const references = new Set<string>();
   for (const match of entryHtml.matchAll(/\b(?:src|href|poster|data)\s*=\s*(["'])(.*?)\1/gi)) references.add(match[2].trim());
   for (const match of entryHtml.matchAll(/url\(\s*(["']?)(.*?)\1\s*\)/gi)) references.add(match[2].trim());
   for (const match of entryHtml.matchAll(/@import\s+(?:url\()?\s*(["'])(.*?)\1\s*\)?/gi)) references.add(match[2].trim());
   const external = [...references].filter(ref => /^https?:\/\//i.test(ref) || ref.startsWith('//'));
+  if (external.length) concerns++;
   if (external.length) findings.push(`${external.length} remote file reference${external.length === 1 ? '' : 's'} detected. The isolated player blocks remote scripts, images, fonts, and styles; they may also be unavailable offline.`);
   const missing = new Set<string>();
   for (const ref of references) {
@@ -64,13 +66,14 @@ export function diagnoseCompatibility(entryHtml: string, packagePaths: string[] 
       if (ref.startsWith('/')) missing.add(ref);
     } catch { missing.add(ref); }
   }
+  if (missing.size) concerns++;
   if (missing.size) findings.push(`${missing.size} local file reference${missing.size === 1 ? '' : 's'} could not be matched to the package: ${[...missing].slice(0,3).join(', ')}${missing.size > 3 ? ', …' : ''}.`);
-  if (/\bfetch\s*\(|XMLHttpRequest|WebSocket\s*\(/i.test(entryHtml)) findings.push('The page appears to use network requests. The isolated player restricts requests to local project files and offline cache.');
-  if (/serviceWorker|navigator\.serviceWorker/i.test(entryHtml)) findings.push('The project references its own service worker; embedded projects cannot register one from the isolated player.');
+  if (/\bfetch\s*\(|XMLHttpRequest|WebSocket\s*\(/i.test(entryHtml)) { concerns++; findings.push('The page appears to use network requests. The isolated player restricts requests to local project files and offline cache.'); }
+  if (/serviceWorker|navigator\.serviceWorker/i.test(entryHtml)) { concerns++; findings.push('The project references its own service worker; embedded projects cannot register one from the isolated player.'); }
   if (/\btype\s*=\s*["']module["']/i.test(entryHtml)) findings.push('The entry page uses JavaScript modules. Modules with multi-file local imports need to pass the compatibility check in the player.');
   if (/\b(?:indexedDB|localStorage|sessionStorage)\b/.test(entryHtml)) findings.push('The isolated player does not share LOCALDECK storage. Project-owned storage may be unavailable in the opaque sandbox.');
   if (!findings.length) findings.push('No common remote-resource, missing-file, or server dependency was found in the entry page. Runtime compatibility still depends on the project code and browser.');
-  return { score: findings.some(x => /remote|network|server|service worker|missing|could not be matched/i.test(x)) ? 'partial' : 'likely', findings, checkedAt: Date.now() };
+  return { score: concerns ? 'partial' : 'likely', findings, checkedAt: Date.now() };
 }
 
 function commonRoot(entries: ZipEntry[]): string | null {
@@ -80,7 +83,16 @@ function commonRoot(entries: ZipEntry[]): string | null {
   return first && segments.every(parts => parts.length > 1 && parts[0] === first) ? first : null;
 }
 
-function chooseEntries(entries: ZipEntry[]): ZipEntry[] {
+const JUNK_SEGMENTS = new Set(['__macosx', '.git', '.svn', '.hg', 'node_modules', '.idea', '.vscode']);
+const JUNK_FILES = new Set(['.ds_store', 'thumbs.db', 'desktop.ini']);
+/** OS metadata and version-control folders are never part of a project. */
+export function isJunkPath(path: string): boolean {
+  const parts = path.split('/').map(part => part.toLowerCase());
+  return parts.some(part => JUNK_SEGMENTS.has(part)) || JUNK_FILES.has(parts[parts.length - 1] ?? '') || (parts[parts.length - 1] ?? '').startsWith('._');
+}
+
+function chooseEntries(input: ZipEntry[]): ZipEntry[] {
+  const entries = input.filter(entry => !isJunkPath(entry.path));
   const root = commonRoot(entries);
   const mapped = entries.map(entry => ({
     path: root ? entry.path.slice(root.length + 1) : entry.path,
@@ -155,7 +167,9 @@ async function attachFileData(preview: ImportPreview, entries: ZipEntry[]): Prom
 
 async function manifestFor(entries: ZipEntry[]): Promise<{ manifest: ProjectManifest | null; warnings: string[] }> {
   const warnings: string[] = [];
-  const file = entries.find(x => x.path.toLowerCase() === 'localdeck.json');
+  const firstEntry = candidateEntries(entries)[0] ?? '';
+  const entryDir = firstEntry.includes('/') ? firstEntry.slice(0, firstEntry.lastIndexOf('/') + 1).toLowerCase() : '';
+  const file = entries.find(x => x.path.toLowerCase() === 'localdeck.json') ?? (entryDir ? entries.find(x => x.path.toLowerCase() === `${entryDir}localdeck.json`) : undefined);
   if (file) {
     try {
       const raw = JSON.parse(await file.blob.text());
@@ -188,11 +202,13 @@ async function packagePreview(name: string, original: ZipEntry[], initialWarning
 export async function analyzeFiles(input: FileList | File[]): Promise<ImportPreview[]> {
   const selected = [...input];
   if (!selected.length) return [];
-  const total = selected.reduce((sum, x) => sum + x.size, 0);
+  const total = selected.filter(file => !isJunkPath((file as File & { webkitRelativePath?: string }).webkitRelativePath ?? '')).reduce((sum, x) => sum + x.size, 0);
   if (total > MAX_IMPORT_BYTES) throw new Error('The selected files exceed the 120 MB import limit. Try importing a smaller project.');
   const results: ImportPreview[] = [];
-  const folderFiles = selected.filter(file => 'webkitRelativePath' in file && Boolean((file as File & { webkitRelativePath?: string }).webkitRelativePath));
-  const standalone = selected.filter(file => !folderFiles.includes(file));
+  const relativeOf = (file: File) => (file as File & { webkitRelativePath?: string }).webkitRelativePath ?? '';
+  const folderFiles = selected.filter(file => Boolean(relativeOf(file)) && !isJunkPath(relativeOf(file)));
+  const skippedFolderFiles = selected.filter(file => Boolean(relativeOf(file)) && isJunkPath(relativeOf(file)));
+  const standalone = selected.filter(file => !folderFiles.includes(file) && !skippedFolderFiles.includes(file));
 
   if (folderFiles.length) {
     const oversized = folderFiles.find(file => file.size > ZIP_LIMITS.maxFileBytes);

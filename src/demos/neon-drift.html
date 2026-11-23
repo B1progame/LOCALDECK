@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neon Drift</title>
+<script id="localdeck-manifest" type="application/json">{"schemaVersion":1,"title":"Neon Drift","type":"game","genre":"Arcade","description":"Dodge the traffic on a neon highway. Arrow keys, A/D or swipe to change lanes.","tags":["demo","arcade","keyboard","touch"],"controls":["keyboard","touch"],"preferredOrientation":"any"}</script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #07060f; color: #f4f0ff; font-family: system-ui, -apple-system, Segoe UI, sans-serif; overflow: hidden; touch-action: none; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .hud { position: fixed; top: 16px; left: 16px; right: 16px; display: flex; justify-content: space-between; font-weight: 700; letter-spacing: .02em; pointer-events: none; text-shadow: 0 0 12px #c084fc; }
+  .hud small { display: block; opacity: .6; font-size: 11px; font-weight: 600; letter-spacing: .12em; }
+  .overlay { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; background: radial-gradient(circle at 50% 40%, #2a0f4daa, #07060fee); text-align: center; }
+  .overlay h1 { margin: 0; font-size: clamp(40px, 9vw, 76px); letter-spacing: -.04em; background: linear-gradient(90deg, #f0abfc, #818cf8, #22d3ee); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 18px #a855f7aa); }
+  .overlay p { margin: 0; opacity: .75; }
+  button { padding: 14px 26px; border: 0; border-radius: 14px; background: linear-gradient(90deg, #a855f7, #6366f1); color: white; font: 700 16px system-ui; cursor: pointer; box-shadow: 0 10px 30px #a855f766; }
+  button:hover { filter: brightness(1.1); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud"><div><small>SCORE</small><span id="score">0</span></div><div style="text-align:right"><small>BEST</small><span id="best">0</span></div></div>
+<div class="overlay" id="menu">
+  <h1>NEON DRIFT</h1>
+  <p id="msg">Change lanes with ← → / A D, or swipe.</p>
+  <button id="start">Start driving</button>
+</div>
+<script>
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+const scoreEl = document.getElementById('score'), bestEl = document.getElementById('best');
+const menu = document.getElementById('menu'), msg = document.getElementById('msg');
+let W, H, lanes = 3, laneW, player, cars, speed, score, running = false, t = 0, best = 0;
+try { best = +localStorage.getItem('neon-best') || 0; } catch {}
+bestEl.textContent = best;
+function resize() { W = c.width = innerWidth * devicePixelRatio; H = c.height = innerHeight * devicePixelRatio; laneW = Math.min(W / lanes, 180 * devicePixelRatio); }
+addEventListener('resize', resize); resize();
+const roadX = () => (W - laneW * lanes) / 2;
+function reset() { player = { lane: 1, x: 1 }; cars = []; speed = 6 * devicePixelRatio; score = 0; t = 0; }
+function move(d) { if (running) player.lane = Math.max(0, Math.min(lanes - 1, player.lane + d)); }
+addEventListener('keydown', e => { if (['ArrowLeft', 'a', 'A'].includes(e.key)) move(-1); if (['ArrowRight', 'd', 'D'].includes(e.key)) move(1); if ((e.key === ' ' || e.key === 'Enter') && !running) start(); });
+let sx = null; addEventListener('pointerdown', e => sx = e.clientX); addEventListener('pointerup', e => { if (sx === null) return; const dx = e.clientX - sx; if (Math.abs(dx) > 24) move(Math.sign(dx)); else if (running) move(e.clientX < innerWidth / 2 ? -1 : 1); sx = null; });
+document.getElementById('start').onclick = start;
+function start() { reset(); running = true; menu.classList.add('hidden'); }
+function over() { running = false; if (score > best) { best = score; try { localStorage.setItem('neon-best', best); } catch {} } bestEl.textContent = best; msg.textContent = `Crashed at ${score} points. Try again?`; menu.classList.remove('hidden'); document.getElementById('start').textContent = 'Drive again'; }
+function car(x, y, w, h, color) { ctx.shadowColor = color; ctx.shadowBlur = 24 * devicePixelRatio; ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(x, y, w, h, 10 * devicePixelRatio); ctx.fill(); ctx.shadowBlur = 0; ctx.fillStyle = '#ffffffcc'; ctx.fillRect(x + w * .18, y + h * .12, w * .64, h * .18); }
+function frame() {
+  t++;
+  ctx.fillStyle = '#07060f'; ctx.fillRect(0, 0, W, H);
+  const rx = roadX();
+  const grd = ctx.createLinearGradient(0, 0, 0, H); grd.addColorStop(0, '#12082a'); grd.addColorStop(1, '#1d0b3d'); ctx.fillStyle = grd; ctx.fillRect(rx, 0, laneW * lanes, H);
+  ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 3 * devicePixelRatio; ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.moveTo(rx, 0); ctx.lineTo(rx, H); ctx.moveTo(rx + laneW * lanes, 0); ctx.lineTo(rx + laneW * lanes, H); ctx.stroke(); ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#ffffff33'; ctx.setLineDash([30 * devicePixelRatio, 30 * devicePixelRatio]); ctx.lineDashOffset = -(t * (running ? speed : 2)) % (60 * devicePixelRatio);
+  for (let i = 1; i < lanes; i++) { ctx.beginPath(); ctx.moveTo(rx + laneW * i, 0); ctx.lineTo(rx + laneW * i, H); ctx.stroke(); } ctx.setLineDash([]);
+  const cw = laneW * .56, ch = cw * 1.7, py = H - ch - 40 * devicePixelRatio;
+  if (running) {
+    player.x += (player.lane - player.x) * .25;
+    speed += .002 * devicePixelRatio; score += 1;
+    if (t % Math.max(18, 55 - Math.floor(score / 300)) === 0) { const lane = Math.floor(Math.random() * lanes); cars.push({ lane, y: -ch, hue: Math.random() < .5 ? '#22d3ee' : '#f472b6' }); }
+    for (const k of cars) k.y += speed;
+    cars = cars.filter(k => k.y < H + ch);
+    for (const k of cars) if (k.lane === player.lane && Math.abs(player.x - player.lane) < .4 && k.y + ch > py + ch * .12 && k.y < py + ch * .88) over();
+    scoreEl.textContent = score;
+  }
+  for (const k of cars) car(rx + laneW * k.lane + (laneW - cw) / 2, k.y, cw, ch, k.hue);
+  car(rx + laneW * player.x + (laneW - cw) / 2, py, cw, ch, '#c084fc');
+  requestAnimationFrame(frame);
+}
+reset(); frame();
+</script>
+</body>
+</html>

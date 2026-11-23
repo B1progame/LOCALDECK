@@ -67,7 +67,7 @@ async function sha256(blob: Blob): Promise<string> {
 function newId(): string { return crypto.randomUUID(); }
 
 export async function restoreLibrary(file: File, conflictMode: RestoreConflictMode = 'keep-both'): Promise<{ restored: number; skipped: number; remapped: number }> {
-  if (file.size > ZIP_LIMITS.maxArchiveBytes) throw new Error('Backups are limited to 80 MB for safe browser restoration.');
+  if (file.size > ZIP_LIMITS.maxArchiveBytes) throw new Error('Backups are limited to 140 MB for safe browser restoration.');
   const entries = await readZip(file);
   const manifestFile = entries.find(x => x.path === 'localdeck-backup.json');
   if (!manifestFile) throw new Error('This ZIP does not contain a LOCALDECK backup manifest.');
@@ -79,9 +79,8 @@ export async function restoreLibrary(file: File, conflictMode: RestoreConflictMo
   const existing = new Set((await db.items.toArray()).map(x => x.id));
   const existingCollectionIds = new Set((await db.collections.toArray()).map(x => x.id));
   const idMap = new Map<string, string>(), skippedIds = new Set<string>();
-  const collectionMap = new Map(manifest.collections.map(collection => [collection.id,
-    existingCollectionIds.has(collection.id) && conflictMode === 'keep-both' ? newId() : collection.id,
-  ]));
+  // A collection that already exists keeps its id; restored projects are merged into it.
+  const collectionMap = new Map(manifest.collections.map(collection => [collection.id, collection.id]));
   let remapped = 0;
   for (const snapshot of manifest.items) {
     const oldId = snapshot.item.id;
@@ -126,7 +125,10 @@ export async function restoreLibrary(file: File, conflictMode: RestoreConflictMo
     for (const collection of manifest.collections) {
       const mappedItems = collection.orderedItemIds.map(x => idMap.get(x)).filter((x): x is string => Boolean(x));
       const collectionId = collectionMap.get(collection.id) ?? collection.id;
-      await db.collections.put({ ...collection, id: collectionId, orderedItemIds: mappedItems, updatedAt: Date.now() });
+      const current = existingCollectionIds.has(collectionId) ? await db.collections.get(collectionId) : undefined;
+      await db.collections.put(current
+        ? { ...current, orderedItemIds: [...new Set([...current.orderedItemIds, ...mappedItems])], updatedAt: Date.now() }
+        : { ...collection, id: collectionId, orderedItemIds: mappedItems, updatedAt: Date.now() });
     }
     for (const subject of manifest.subjects) {
       const collision = await db.subjects.where('name').equalsIgnoreCase(subject.name).first();

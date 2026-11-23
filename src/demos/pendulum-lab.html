@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pendulum Lab</title>
+<script id="localdeck-manifest" type="application/json">{"schemaVersion":1,"title":"Pendulum Lab","type":"simulation","subject":"Physik","topic":"Mechanik","description":"Explore a damped pendulum in real time. Drag the bob, change length, gravity and damping, and watch the energy flow.","tags":["demo","physics","mechanics"],"controls":["mouse","touch"]}</script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; display: grid; grid-template-columns: 1fr 300px; background: #0b1220; color: #e2e8f0; font: 15px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; }
+  canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+  aside { padding: 24px; border-left: 1px solid #ffffff14; background: #0f172a; overflow: auto; }
+  h1 { margin: 0 0 4px; font-size: 22px; } p { margin: 0 0 18px; color: #94a3b8; font-size: 14px; }
+  label { display: block; margin: 16px 0 6px; font-weight: 600; font-size: 13px; }
+  label span { float: right; color: #67e8f9; font-family: ui-monospace, monospace; }
+  input[type=range] { width: 100%; accent-color: #22d3ee; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 22px; }
+  .stat { padding: 10px; border-radius: 12px; background: #ffffff0a; } .stat small { display: block; color: #94a3b8; font-size: 11px; } .stat b { font-family: ui-monospace, monospace; }
+  .energy { height: 10px; margin-top: 18px; border-radius: 9px; overflow: hidden; display: flex; background: #ffffff10; }
+  .energy i { display: block; height: 100%; transition: width .05s linear; }
+  button { width: 100%; margin-top: 18px; padding: 11px; border: 0; border-radius: 12px; background: #22d3ee; color: #082f49; font-weight: 700; cursor: pointer; }
+  @media (max-width: 760px) { body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; } aside { border-left: 0; border-top: 1px solid #ffffff14; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<aside>
+  <h1>Pendulum Lab</h1>
+  <p>Drag the bob to set a starting angle. Period for small angles: T ≈ 2π√(L/g).</p>
+  <label>Length L <span id="Lv"></span></label><input id="L" type="range" min="0.5" max="3" step="0.01" value="1.6">
+  <label>Gravity g <span id="gv"></span></label><input id="g" type="range" min="1" max="25" step="0.1" value="9.81">
+  <label>Damping <span id="dv"></span></label><input id="d" type="range" min="0" max="1" step="0.01" value="0.08">
+  <div class="stats"><div class="stat"><small>Angle</small><b id="ang"></b></div><div class="stat"><small>Period (small angle)</small><b id="per"></b></div><div class="stat"><small>Speed</small><b id="spd"></b></div><div class="stat"><small>Time</small><b id="time"></b></div></div>
+  <div class="energy" title="Kinetic (cyan) vs potential (violet) energy"><i id="ke" style="background:#22d3ee"></i><i id="pe" style="background:#a78bfa"></i></div>
+  <button id="reset">Release from 45°</button>
+</aside>
+<script>
+const c = document.getElementById('c'), x = c.getContext('2d'), $ = id => document.getElementById(id);
+let th = Math.PI / 4, w = 0, t = 0, drag = false, trail = [];
+function size() { c.width = c.clientWidth * devicePixelRatio; c.height = c.clientHeight * devicePixelRatio; }
+addEventListener('resize', size); size();
+const P = () => ({ L: +$('L').value, g: +$('g').value, d: +$('d').value });
+function geo() { const { L } = P(), s = Math.min(c.width, c.height) / 3.6; return { ox: c.width / 2, oy: c.height * .12, r: L * s }; }
+c.addEventListener('pointerdown', e => { drag = true; c.setPointerCapture(e.pointerId); c.style.cursor = 'grabbing'; aim(e); });
+c.addEventListener('pointermove', e => drag && aim(e));
+c.addEventListener('pointerup', () => { drag = false; c.style.cursor = 'grab'; });
+function aim(e) { const r = c.getBoundingClientRect(), { ox, oy } = geo(); const px = (e.clientX - r.left) * devicePixelRatio, py = (e.clientY - r.top) * devicePixelRatio; th = Math.atan2(px - ox, py - oy); w = 0; trail = []; }
+$('reset').onclick = () => { th = Math.PI / 4; w = 0; t = 0; trail = []; };
+let last = performance.now();
+function step(now) {
+  const dt = Math.min(.033, (now - last) / 1000); last = now;
+  const { L, g, d } = P();
+  if (!drag) { for (let i = 0; i < 8; i++) { const h = dt / 8; const a = -(g / L) * Math.sin(th) - d * w; w += a * h; th += w * h; } t += dt; }
+  const { ox, oy, r } = geo(), bx = ox + r * Math.sin(th), by = oy + r * Math.cos(th);
+  trail.push([bx, by]); if (trail.length > 90) trail.shift();
+  x.clearRect(0, 0, c.width, c.height);
+  x.strokeStyle = '#ffffff0d'; x.lineWidth = 1; for (let i = 0; i < c.width; i += 40 * devicePixelRatio) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, c.height); x.stroke(); }
+  x.beginPath(); trail.forEach(([a, b], i) => { x.strokeStyle = `rgba(34,211,238,${i / trail.length * .6})`; }); x.lineWidth = 3 * devicePixelRatio; x.strokeStyle = '#22d3ee55'; trail.forEach(([a, b], i) => i ? x.lineTo(a, b) : x.moveTo(a, b)); x.stroke();
+  x.strokeStyle = '#cbd5e1'; x.lineWidth = 2 * devicePixelRatio; x.beginPath(); x.moveTo(ox, oy); x.lineTo(bx, by); x.stroke();
+  x.fillStyle = '#64748b'; x.fillRect(ox - 60 * devicePixelRatio, oy - 6 * devicePixelRatio, 120 * devicePixelRatio, 6 * devicePixelRatio);
+  const grad = x.createRadialGradient(bx - 8, by - 8, 4, bx, by, 26 * devicePixelRatio); grad.addColorStop(0, '#a5f3fc'); grad.addColorStop(1, '#0891b2');
+  x.shadowColor = '#22d3ee'; x.shadowBlur = 30; x.fillStyle = grad; x.beginPath(); x.arc(bx, by, 22 * devicePixelRatio, 0, 7); x.fill(); x.shadowBlur = 0;
+  const v = Math.abs(w * L), ke = .5 * v * v, pe = g * L * (1 - Math.cos(th)), tot = ke + pe || 1;
+  $('ke').style.width = `${ke / tot * 100}%`; $('pe').style.width = `${pe / tot * 100}%`;
+  $('ang').textContent = `${(th * 180 / Math.PI).toFixed(1)}°`; $('spd').textContent = `${v.toFixed(2)} m/s`; $('time').textContent = `${t.toFixed(1)} s`;
+  $('per').textContent = `${(2 * Math.PI * Math.sqrt(L / g)).toFixed(2)} s`;
+  $('Lv').textContent = `${L.toFixed(2)} m`; $('gv').textContent = `${g.toFixed(1)} m/s²`; $('dv').textContent = d.toFixed(2);
+  requestAnimationFrame(step);
+}
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

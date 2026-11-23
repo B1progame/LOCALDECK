@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photosynthese Quiz</title>
+<script id="localdeck-manifest" type="application/json">{"schemaVersion":1,"title":"Photosynthese Quiz","type":"quiz","subject":"Biologie","topic":"Zellbiologie","description":"Acht Fragen zur Photosynthese mit sofortigem Feedback und Erklärungen.","tags":["demo","quiz","biologie"],"language":"de"}</script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 20px; background: linear-gradient(160deg, #0f3d2e, #14532d 50%, #1a2e05); color: #f0fdf4; font: 16px/1.55 system-ui, -apple-system, Segoe UI, sans-serif; }
+  .card { width: min(640px, 100%); padding: 28px; border-radius: 26px; background: #052e1bcc; border: 1px solid #ffffff1f; box-shadow: 0 30px 80px #0008; backdrop-filter: blur(10px); }
+  .top { display: flex; justify-content: space-between; align-items: center; color: #bbf7d0; font-size: 14px; font-weight: 600; }
+  .bar { height: 6px; margin: 12px 0 22px; border-radius: 9px; background: #ffffff1a; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, #86efac, #fde047); transition: width .35s ease; }
+  h1 { margin: 0 0 18px; font-size: 23px; line-height: 1.3; }
+  .answers { display: grid; gap: 10px; }
+  .answers button { padding: 14px 16px; border: 1.5px solid #ffffff26; border-radius: 14px; background: #ffffff0d; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: transform .12s, background .15s, border-color .15s; }
+  .answers button:hover:not(:disabled) { background: #ffffff1a; transform: translateX(3px); }
+  .answers button.right { border-color: #4ade80; background: #16a34a40; }
+  .answers button.wrong { border-color: #f87171; background: #dc262640; }
+  .answers button:disabled { cursor: default; }
+  .explain { margin-top: 16px; padding: 14px 16px; border-radius: 14px; background: #ffffff12; color: #dcfce7; font-size: 15px; }
+  .next { margin-top: 18px; padding: 13px 22px; border: 0; border-radius: 13px; background: #fde047; color: #1a2e05; font: 700 16px system-ui; cursor: pointer; }
+  .result { text-align: center; }
+  .big { font-size: 64px; font-weight: 800; background: linear-gradient(90deg, #86efac, #fde047); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div id="quiz">
+    <div class="top"><span id="count"></span><span id="pts"></span></div>
+    <div class="bar"><i id="bar"></i></div>
+    <h1 id="q"></h1>
+    <div class="answers" id="answers"></div>
+    <div class="explain hidden" id="explain"></div>
+    <button class="next hidden" id="next">Weiter</button>
+  </div>
+  <div class="result hidden" id="result">
+    <div class="big" id="final"></div>
+    <p id="verdict"></p>
+    <button class="next" id="again">Nochmal versuchen</button>
+  </div>
+</div>
+<script>
+const Q = [
+  ['Wo findet die Photosynthese in der Pflanzenzelle statt?', ['Mitochondrien', 'Chloroplasten', 'Zellkern', 'Ribosomen'], 1, 'In den Chloroplasten – sie enthalten das grüne Pigment Chlorophyll.'],
+  ['Welche Ausgangsstoffe braucht die Photosynthese?', ['Sauerstoff und Glucose', 'Kohlenstoffdioxid und Wasser', 'Stickstoff und Wasser', 'Glucose und Wasser'], 1, '6 CO₂ + 6 H₂O → C₆H₁₂O₆ + 6 O₂ (mit Lichtenergie).'],
+  ['Welches Gas wird bei der Photosynthese freigesetzt?', ['Kohlenstoffdioxid', 'Stickstoff', 'Sauerstoff', 'Wasserstoff'], 2, 'Der Sauerstoff stammt aus der Spaltung von Wasser (Photolyse).'],
+  ['Welche Energieform wird in chemische Energie umgewandelt?', ['Wärmeenergie', 'Lichtenergie', 'Bewegungsenergie', 'Elektrische Energie'], 1, 'Chlorophyll absorbiert vor allem rotes und blaues Licht.'],
+  ['Wie heißt der lichtunabhängige Teil der Photosynthese?', ['Glykolyse', 'Calvin-Zyklus', 'Citratzyklus', 'Atmungskette'], 1, 'Im Calvin-Zyklus wird CO₂ mithilfe von ATP und NADPH zu Zucker aufgebaut.'],
+  ['Warum erscheinen Blätter grün?', ['Sie absorbieren grünes Licht', 'Sie reflektieren grünes Licht', 'Sie enthalten grünes Wasser', 'Wegen der Zellwand'], 1, 'Grünes Licht wird von Chlorophyll kaum absorbiert und daher reflektiert.'],
+  ['Welches Produkt dient der Pflanze als Energiespeicher?', ['Glucose', 'Sauerstoff', 'Wasser', 'Chlorophyll'], 0, 'Glucose wird oft zu Stärke umgebaut und gespeichert.'],
+  ['Durch welche Öffnungen gelangt CO₂ ins Blatt?', ['Wurzelhaare', 'Spaltöffnungen (Stomata)', 'Leitbündel', 'Kutikula'], 1, 'Die Stomata auf der Blattunterseite regeln den Gasaustausch.'],
+];
+let i = 0, score = 0;
+const $ = id => document.getElementById(id);
+function show() {
+  const [q, a] = Q[i];
+  $('count').textContent = `Frage ${i + 1} von ${Q.length}`; $('pts').textContent = `${score} Punkte`;
+  $('bar').style.width = `${i / Q.length * 100}%`; $('q').textContent = q;
+  $('answers').innerHTML = a.map((t, k) => `<button data-k="${k}">${t}</button>`).join('');
+  $('explain').classList.add('hidden'); $('next').classList.add('hidden');
+}
+$('answers').onclick = e => {
+  const k = e.target.dataset?.k; if (k === undefined) return;
+  const right = Q[i][2], buttons = [...$('answers').children];
+  buttons.forEach((b, n) => { b.disabled = true; if (n === right) b.classList.add('right'); });
+  if (+k === right) score++; else e.target.classList.add('wrong');
+  $('explain').textContent = (+k === right ? '✓ Richtig! ' : '✗ Leider falsch. ') + Q[i][3];
+  $('explain').classList.remove('hidden'); $('next').classList.remove('hidden'); $('pts').textContent = `${score} Punkte`;
+  $('next').textContent = i === Q.length - 1 ? 'Ergebnis anzeigen' : 'Weiter';
+};
+$('next').onclick = () => { i++; if (i < Q.length) show(); else finish(); };
+function finish() {
+  $('quiz').classList.add('hidden'); $('result').classList.remove('hidden');
+  $('final').textContent = `${score}/${Q.length}`;
+  $('verdict').textContent = score === Q.length ? 'Perfekt – du hast die Photosynthese voll verstanden! 🌱' : score >= 5 ? 'Gut gemacht! Schau dir die falschen Fragen noch einmal an.' : 'Noch ein Durchgang? Die Erklärungen helfen dir dabei.';
+}
+$('again').onclick = () => { i = 0; score = 0; $('result').classList.add('hidden'); $('quiz').classList.remove('hidden'); show(); };
+show();
+</script>
+</body>
+</html>

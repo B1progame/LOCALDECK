@@ -5,15 +5,28 @@ export type ItemFilters = { type?: ContentType; subject?: string; collectionId?:
 export type ItemSort = 'name' | 'imported' | 'opened' | 'size' | 'modified';
 const id = () => crypto.randomUUID();
 
+/** Resolves a manifest artwork path against the package; returns undefined when the file is not included. */
+export function resolveArtworkPath(preview: Pick<ImportPreview, 'files' | 'selectedEntry'>, ref?: string): string | undefined {
+  if (!ref || /^(?:[a-z]+:|\/\/)/i.test(ref)) return undefined;
+  const clean = ref.replace(/\\/g, '/').replace(/^\.\//, '').split(/[?#]/)[0] ?? '';
+  const entryDir = preview.selectedEntry.includes('/') ? preview.selectedEntry.slice(0, preview.selectedEntry.lastIndexOf('/') + 1) : '';
+  const resolve = (base: string) => { const parts: string[] = []; for (const part of (base + clean).split('/')) { if (part === '..') parts.pop(); else if (part && part !== '.') parts.push(part); } return parts.join('/'); };
+  const candidates = [resolve(''), resolve(entryDir)];
+  const paths = new Map(preview.files.map(file => [file.path.toLowerCase(), file.path]));
+  for (const candidate of candidates) { const hit = paths.get(candidate.toLowerCase()); if (hit) return hit; }
+  return undefined;
+}
+function artworkFor(preview: ImportPreview): LibraryItem['artworkReferences'] {
+  const cover = resolveArtworkPath(preview, preview.manifest?.cover), banner = resolveArtworkPath(preview, preview.manifest?.banner), icon = resolveArtworkPath(preview, preview.manifest?.icon);
+  return { ...(cover ? { cover } : {}), ...(banner ? { banner } : {}), ...(icon ? { icon } : {}) };
+}
+
 function createItemFromPreview(preview: ImportPreview, itemId = id()): LibraryItem {
   const now = Date.now();
   return {
     id: itemId, title: preview.title.trim() || 'Untitled project', type: preview.type, description: preview.description,
     subject: preview.subject, topic: preview.topic, genre: preview.manifest?.genre ?? '', tags: [...preview.tags], collectionIds: [],
-    favorite: false, artworkReferences: {
-      ...(preview.manifest?.cover ? { cover: preview.manifest.cover } : {}), ...(preview.manifest?.banner ? { banner: preview.manifest.banner } : {}),
-      ...(preview.manifest?.icon ? { icon: preview.manifest.icon } : {}),
-    },
+    favorite: false, artworkReferences: artworkFor(preview),
     entryFile: preview.selectedEntry, originalFilename: preview.sourceName, storageSize: preview.storageSize,
     manifestVersion: preview.manifest?.schemaVersion ?? 1, createdAt: now, updatedAt: now, importedAt: now,
     lastOpenedAt: null, openCount: 0, runtimeSettings: { preferredOrientation: preview.manifest?.preferredOrientation ?? 'any' },
@@ -63,12 +76,7 @@ export async function replaceItemFiles(itemId: string, preview: ImportPreview): 
     const current = await db.items.get(itemId);
     if (!current) throw new Error('This project is no longer in your library.');
     const manifest = preview.manifest;
-    const included = (path?: string) => Boolean(path && preview.files.some(file => file.path === path));
-    const artwork = manifest ? {
-      ...(included(manifest.cover) ? { cover: manifest.cover } : {}),
-      ...(included(manifest.banner) ? { banner: manifest.banner } : {}),
-      ...(included(manifest.icon) ? { icon: manifest.icon } : {}),
-    } : current.artworkReferences;
+    const artwork = manifest ? artworkFor(preview) : current.artworkReferences;
     updated = {
       ...current,
       ...(manifest ? { title: preview.title.trim() || current.title, type: preview.type, description: preview.description, subject: preview.subject, topic: preview.topic, genre: manifest.genre ?? '', tags: [...preview.tags], artworkReferences: artwork } : {}),
@@ -115,12 +123,12 @@ export async function updateHtmlAsset(itemId: string, path: string, source: stri
   });
 }
 
-export async function updateItem(itemId: string, changes: Partial<Omit<LibraryItem, 'id' | 'packageId' | 'createdAt' | 'importedAt'>>): Promise<LibraryItem> {
+export async function updateItem(itemId: string, changes: Partial<Omit<LibraryItem, 'id' | 'packageId' | 'createdAt' | 'importedAt'>>, options: { touch?: boolean } = {}): Promise<LibraryItem> {
   let updated: LibraryItem | undefined;
   await db.transaction('rw', db.items, async () => {
     const current = await db.items.get(itemId);
     if (!current) throw new Error('This project is no longer in your library.');
-    updated = { ...current, ...changes, id: current.id, packageId: current.packageId, createdAt: current.createdAt, importedAt: current.importedAt, updatedAt: Date.now() };
+    updated = { ...current, ...changes, id: current.id, packageId: current.packageId, createdAt: current.createdAt, importedAt: current.importedAt, updatedAt: options.touch === false ? current.updatedAt : Date.now() };
     await db.items.put(updated);
   });
   return updated!;
@@ -151,7 +159,7 @@ export async function duplicateItem(itemId: string): Promise<LibraryItem> {
 export async function toggleFavorite(itemId: string): Promise<LibraryItem> {
   const item = await db.items.get(itemId);
   if (!item) throw new Error('This project is no longer in your library.');
-  return updateItem(itemId, { favorite: !item.favorite });
+  return updateItem(itemId, { favorite: !item.favorite }, { touch: false });
 }
 
 export async function filterItems(filters: ItemFilters = {}, sort: ItemSort = 'imported'): Promise<LibraryItem[]> {
@@ -174,17 +182,17 @@ export async function searchItems(query: string): Promise<LibraryItem[]> { retur
 export async function sortItems(sort: ItemSort): Promise<LibraryItem[]> { return filterItems({}, sort); }
 
 export async function addToCollection(itemId: string, collectionId: string): Promise<void> {
-  const item = await db.items.get(itemId); if (!item) throw new Error('Project not found.');
-  const collection = await db.collections.get(collectionId); if (!collection) throw new Error('Collection not found.');
   await db.transaction('rw', db.items, db.collections, async () => {
+    const item = await db.items.get(itemId); if (!item) throw new Error('Project not found.');
+    const collection = await db.collections.get(collectionId); if (!collection) throw new Error('Collection not found.');
     await db.items.put({ ...item, collectionIds: [...new Set([...item.collectionIds, collectionId])], updatedAt: Date.now() });
     await db.collections.put({ ...collection, orderedItemIds: [...new Set([...collection.orderedItemIds, itemId])], updatedAt: Date.now() });
   });
 }
 
 export async function removeFromCollection(itemId: string, collectionId: string): Promise<void> {
-  const item = await db.items.get(itemId); const collection = await db.collections.get(collectionId);
   await db.transaction('rw', db.items, db.collections, async () => {
+    const item = await db.items.get(itemId); const collection = await db.collections.get(collectionId);
     if (item) await db.items.put({ ...item, collectionIds: item.collectionIds.filter(x => x !== collectionId), updatedAt: Date.now() });
     if (collection) await db.collections.put({ ...collection, orderedItemIds: collection.orderedItemIds.filter(x => x !== itemId), updatedAt: Date.now() });
   });
@@ -193,7 +201,7 @@ export async function removeFromCollection(itemId: string, collectionId: string)
 export async function createCollection(name: string, description = ''): Promise<Collection> {
   const normalized = name.trim(); if (!normalized) throw new Error('Enter a collection name.');
   if (await db.collections.where('name').equalsIgnoreCase(normalized).first()) throw new Error('A collection with that name already exists.');
-  const now = Date.now(); const value: Collection = { id: id(), name: normalized, description: description.trim(), accentColor: '#7561d6', orderedItemIds: [], createdAt: now, updatedAt: now };
+  const now = Date.now(); const value: Collection = { id: id(), name: normalized, description: description.trim(), accentColor: ['#A78BFA','#7AA2F7','#5CC8E0','#5DD5A2','#F6C76A','#F59E6B','#F08091','#E58AD6'][Math.floor(Math.random() * 8)]!, orderedItemIds: [], createdAt: now, updatedAt: now };
   await db.collections.add(value); return value;
 }
 
@@ -224,7 +232,7 @@ export async function recordOpenSession(itemId: string): Promise<UsageRecord> {
   const item = await db.items.get(itemId); if (!item) throw new Error('This project is no longer in your library.');
   const now = Date.now(), record: UsageRecord = { id: id(), itemId, openedAt: now };
   await db.transaction('rw', db.items, db.usage, async () => {
-    await db.items.put({ ...item, lastOpenedAt: now, openCount: item.openCount + 1, updatedAt: now });
+    await db.items.put({ ...item, lastOpenedAt: now, openCount: item.openCount + 1 });
     await db.usage.add(record);
   });
   return record;

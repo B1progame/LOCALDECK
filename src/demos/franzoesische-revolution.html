@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Die Französische Revolution</title>
+<script id="localdeck-manifest" type="application/json">{"schemaVersion":1,"title":"Die Französische Revolution","type":"presentation","subject":"Geschichte","topic":"Neuzeit","description":"Ursachen, Verlauf und Folgen der Französischen Revolution in acht Folien. Mit Pfeiltasten oder Wischen navigieren.","tags":["demo","geschichte","präsentation"],"language":"de","controls":["keyboard","touch"]}</script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #140d0b; color: #fdf6ec; font: 18px/1.55 Georgia, 'Times New Roman', serif; }
+  .deck { height: 100%; display: flex; transition: transform .6s cubic-bezier(.2, .8, .2, 1); }
+  section { flex: 0 0 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; padding: 6vh 9vw; position: relative; }
+  section::before { content: ''; position: absolute; inset: 0; z-index: -1; background: radial-gradient(circle at 85% 20%, #7f1d1d66, transparent 55%), radial-gradient(circle at 10% 90%, #1e3a8a55, transparent 50%); }
+  .kicker { font: 700 13px system-ui; letter-spacing: .18em; text-transform: uppercase; color: #fbbf24; }
+  h1 { margin: 12px 0; font-size: clamp(34px, 6vw, 72px); line-height: 1.05; font-weight: 700; }
+  h2 { margin: 10px 0 20px; font-size: clamp(28px, 4vw, 48px); line-height: 1.1; }
+  ul { margin: 0; padding-left: 1.1em; max-width: 60ch; } li { margin: 10px 0; }
+  .flag { display: flex; height: 10px; width: 180px; margin: 22px 0; border-radius: 4px; overflow: hidden; } .flag i { flex: 1; }
+  .timeline { display: grid; gap: 14px; border-left: 3px solid #fbbf24; padding-left: 22px; max-width: 70ch; }
+  .timeline b { color: #fbbf24; font-family: system-ui; }
+  blockquote { margin: 0; font-size: clamp(24px, 3vw, 38px); font-style: italic; max-width: 26ch; }
+  .nav { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 14px; padding: 14px 20px; font: 600 14px system-ui; color: #fde68a; }
+  .progress { flex: 1; height: 4px; border-radius: 4px; background: #ffffff1a; overflow: hidden; } .progress i { display: block; height: 100%; background: linear-gradient(90deg, #2563eb, #fff, #dc2626); transition: width .5s; }
+  .nav button { width: 40px; height: 40px; border: 1px solid #ffffff33; border-radius: 50%; background: #ffffff10; color: #fff; font-size: 18px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+  <section><span class="kicker">Geschichte · Neuzeit</span><h1>Die Französische Revolution</h1><div class="flag"><i style="background:#2563eb"></i><i style="background:#fff"></i><i style="background:#dc2626"></i></div><p>1789 – 1799: Wie ein Königreich zur Republik wurde.</p></section>
+  <section><span class="kicker">Ursachen</span><h2>Ein Land in der Krise</h2><ul><li>Ständegesellschaft: Klerus und Adel privilegiert, der Dritte Stand trägt die Steuern</li><li>Staatsverschuldung durch Kriege und Hofhaltung</li><li>Missernten und steigende Brotpreise</li><li>Ideen der Aufklärung: Rousseau, Montesquieu, Voltaire</li></ul></section>
+  <section><span class="kicker">1789</span><h2>Der Ausbruch</h2><div class="timeline"><div><b>5. Mai</b> – Generalstände treten zusammen</div><div><b>17. Juni</b> – Der Dritte Stand erklärt sich zur Nationalversammlung</div><div><b>14. Juli</b> – Sturm auf die Bastille</div><div><b>26. August</b> – Erklärung der Menschen- und Bürgerrechte</div></div></section>
+  <section><span class="kicker">Leitbild</span><blockquote>„Liberté, Égalité, Fraternité“</blockquote><p style="max-width:50ch;margin-top:20px">Freiheit, Gleichheit, Brüderlichkeit – das Motto wurde zum Symbol moderner Demokratien.</p></section>
+  <section><span class="kicker">1792 – 1794</span><h2>Republik und Terror</h2><ul><li>1792: Abschaffung der Monarchie, Ausrufung der Republik</li><li>1793: Hinrichtung Ludwigs XVI.</li><li>Schreckensherrschaft unter Robespierre und dem Wohlfahrtsausschuss</li><li>1794: Sturz Robespierres</li></ul></section>
+  <section><span class="kicker">1795 – 1799</span><h2>Direktorium und Napoleon</h2><ul><li>Instabile Regierung des Direktoriums</li><li>Militärische Erfolge machen Napoleon Bonaparte populär</li><li>1799: Staatsstreich – Ende der Revolution</li></ul></section>
+  <section><span class="kicker">Folgen</span><h2>Was bleibt?</h2><ul><li>Ende der Ständegesellschaft und des Absolutismus in Frankreich</li><li>Menschen- und Bürgerrechte als Grundlage moderner Verfassungen</li><li>Ausbreitung von Nationalismus und liberalen Ideen in Europa</li></ul></section>
+  <section><span class="kicker">Zum Merken</span><h1>1789 veränderte Europa.</h1><p>Wiederhole: Ursachen · Ereignisse 1789 · Phasen · Folgen</p></section>
+</div>
+<div class="nav"><button id="prev" aria-label="Vorherige Folie">‹</button><span id="num"></span><div class="progress"><i id="bar"></i></div><button id="next" aria-label="Nächste Folie">›</button></div>
+<script>
+const deck = document.getElementById('deck'), n = deck.children.length; let i = 0;
+function go(k) { i = Math.max(0, Math.min(n - 1, k)); deck.style.transform = `translateX(${-i * 100}%)`; document.getElementById('num').textContent = `${i + 1} / ${n}`; document.getElementById('bar').style.width = `${(i + 1) / n * 100}%`; }
+addEventListener('keydown', e => { if (['ArrowRight', 'PageDown', ' '].includes(e.key)) go(i + 1); if (['ArrowLeft', 'PageUp'].includes(e.key)) go(i - 1); if (e.key === 'Home') go(0); if (e.key === 'End') go(n - 1); });
+document.getElementById('next').onclick = () => go(i + 1); document.getElementById('prev').onclick = () => go(i - 1);
+let sx = null; addEventListener('pointerdown', e => sx = e.clientX); addEventListener('pointerup', e => { if (sx !== null && Math.abs(e.clientX - sx) > 40) go(i + (e.clientX < sx ? 1 : -1)); sx = null; });
+go(0);
+</script>
+</body>
+</html>

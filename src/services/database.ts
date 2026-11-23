@@ -53,6 +53,8 @@ async function readLegacyProjects(): Promise<LegacyProject[]> {
 
 export async function openLibrary(): Promise<void> {
   await db.open();
+  await db.items.filter(item => item.offlineCompatibility?.score === 'partial' && item.offlineCompatibility.findings.length === 1 && item.offlineCompatibility.findings[0]!.startsWith('No common remote-resource'))
+    .modify(item => { item.offlineCompatibility = { ...item.offlineCompatibility, score: 'likely' }; }).catch(() => undefined);
   const migrated = await db.settings.get('migration-v1-complete');
   if (migrated) return;
   const oldProjects = await readLegacyProjects();

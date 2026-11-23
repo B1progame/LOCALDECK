@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { analyzeFiles } from '../src/services/importer.ts';
+import { analyzeFiles, diagnoseCompatibility, isJunkPath } from '../src/services/importer.ts';
+import { createStoredZip } from '../src/services/zip.ts';
 
 test('imports standalone HTML metadata without executing project code', async () => {
   const html = new File(['<script>globalThis.shouldNotRun = true</script><h1>Notes</h1>'], 'notes.html', { type: 'text/html' });
@@ -43,5 +44,29 @@ test('analyzes a real multi-file runtime fixture while preserving relative asset
   const [preview] = await analyzeFiles([archive]);
   assert.equal(preview.selectedEntry, 'index.html');
   assert.deepEqual(preview.files.map(file => file.path).sort(), ['index.html', 'scripts/main.js', 'styles/main.css']);
-  assert.equal(preview.report.score, 'partial');
+  // The fixture only uses packaged files, so nothing should be flagged.
+  assert.equal(preview.report.score, 'likely');
+});
+
+
+test('flags remote resources and network calls as partial compatibility', () => {
+  assert.equal(diagnoseCompatibility('<script src="https://cdn.example.com/lib.js"></script>', ['index.html']).score, 'partial');
+  assert.equal(diagnoseCompatibility('<script>fetch("/api")</script>', ['index.html']).score, 'partial');
+  assert.equal(diagnoseCompatibility('<h1>Offline</h1>', ['index.html']).score, 'likely');
+});
+
+test('ignores macOS metadata and version-control folders in packages', async () => {
+  const enc = new TextEncoder();
+  const zip = createStoredZip([
+    { path: 'project/index.html', data: enc.encode('<h1>Hi</h1>') },
+    { path: 'project/localdeck.json', data: enc.encode(JSON.stringify({ schemaVersion: 1, title: 'From manifest', type: 'game' })) },
+    { path: '__MACOSX/project/._index.html', data: enc.encode('junk') },
+    { path: 'project/.DS_Store', data: enc.encode('junk') },
+  ]);
+  const [preview] = await analyzeFiles([new File([zip], 'mac.zip', { type: 'application/zip' })]);
+  assert.equal(preview.title, 'From manifest');
+  assert.equal(preview.type, 'game');
+  assert.deepEqual(preview.files.map(file => file.path).sort(), ['index.html', 'localdeck.json']);
+  assert.equal(isJunkPath('site/.git/config'), true);
+  assert.equal(isJunkPath('site/index.html'), false);
 });

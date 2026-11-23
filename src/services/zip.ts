@@ -63,7 +63,7 @@ async function inflate(method: number, data: Uint8Array, expected: number): Prom
 }
 
 export async function readZip(file: File | Blob, onProgress?: (progress: number) => void): Promise<ZipEntry[]> {
-  if (file.size > ZIP_LIMITS.maxArchiveBytes) throw new Error('ZIP files are limited to 80 MB for a safe browser import.');
+  if (file.size > ZIP_LIMITS.maxArchiveBytes) throw new Error('ZIP files are limited to 140 MB for a safe browser import.');
   const data = new Uint8Array(await file.arrayBuffer());
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const minEnd = Math.max(0, data.length - 22 - 0xffff);

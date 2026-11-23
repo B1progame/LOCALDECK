@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pomodoro Focus</title>
+<script id="localdeck-manifest" type="application/json">{"schemaVersion":1,"title":"Pomodoro Focus","type":"app","genre":"Productivity","description":"A calm focus timer with 25/5 minute cycles, a progress ring and a small task list.","tags":["demo","productivity","timer"],"controls":["mouse","touch","keyboard"]}</script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 30% 20%, #312e81, #0b0b1a 70%); color: #eef2ff; font: 16px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; transition: background .8s; }
+  body.break { background: radial-gradient(circle at 30% 20%, #065f46, #04130e 70%); }
+  .app { width: min(420px, 100%); text-align: center; }
+  .modes { display: inline-flex; gap: 4px; padding: 4px; border-radius: 99px; background: #ffffff14; }
+  .modes button { padding: 8px 16px; border: 0; border-radius: 99px; background: transparent; color: #c7d2fe; font: 600 14px system-ui; cursor: pointer; }
+  .modes button.on { background: #fff; color: #1e1b4b; }
+  .ring { position: relative; width: 280px; height: 280px; margin: 30px auto; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 12; }
+  .ring .track { stroke: #ffffff14; } .ring .prog { stroke: url(#g); stroke-linecap: round; transition: stroke-dashoffset .5s linear; }
+  .time { position: absolute; inset: 0; display: grid; place-content: center; }
+  .time b { font: 700 64px/1 ui-monospace, 'SF Mono', Consolas, monospace; letter-spacing: -.04em; }
+  .time small { margin-top: 8px; color: #a5b4fc; font-weight: 600; }
+  .actions { display: flex; gap: 10px; justify-content: center; }
+  .actions button { min-width: 120px; padding: 14px 20px; border: 0; border-radius: 16px; background: #fff; color: #1e1b4b; font: 700 16px system-ui; cursor: pointer; }
+  .actions button.ghost { min-width: 0; background: #ffffff1a; color: #fff; }
+  .tasks { margin-top: 32px; padding: 18px; border-radius: 20px; background: #ffffff0f; text-align: left; }
+  .tasks form { display: flex; gap: 8px; } .tasks input { flex: 1; padding: 10px 12px; border: 1px solid #ffffff26; border-radius: 12px; background: #0003; color: #fff; font: inherit; }
+  .tasks ul { list-style: none; margin: 12px 0 0; padding: 0; } .tasks li { display: flex; gap: 10px; align-items: center; padding: 8px 2px; border-bottom: 1px solid #ffffff10; }
+  .tasks li.done span { text-decoration: line-through; opacity: .5; } .tasks li button { margin-left: auto; border: 0; background: none; color: #a5b4fc; cursor: pointer; }
+  .count { margin-top: 12px; color: #a5b4fc; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="modes"><button data-m="25" class="on">Focus 25</button><button data-m="5">Break 5</button><button data-m="15">Long 15</button></div>
+  <div class="ring"><svg width="280" height="280"><defs><linearGradient id="g"><stop offset="0" stop-color="#a5b4fc"/><stop offset="1" stop-color="#f0abfc"/></linearGradient></defs><circle class="track" cx="140" cy="140" r="126"/><circle class="prog" id="prog" cx="140" cy="140" r="126"/></svg><div class="time"><b id="t">25:00</b><small id="label">Ready to focus</small></div></div>
+  <div class="actions"><button id="go">Start</button><button class="ghost" id="reset" aria-label="Reset">↺</button></div>
+  <div class="tasks"><form id="f"><input id="task" placeholder="What are you working on?" maxlength="80"><button class="ghost" style="padding:0 14px;border:0;border-radius:12px;background:#fff;color:#1e1b4b;font-weight:700">Add</button></form><ul id="list"></ul></div>
+  <div class="count" id="count">0 focus sessions today</div>
+</div>
+<script>
+const $ = id => document.getElementById(id), C = 2 * Math.PI * 126;
+$('prog').style.strokeDasharray = C;
+let total = 25 * 60, left = total, timer = null, sessions = 0, tasks = [];
+function draw() { const m = String(Math.floor(left / 60)).padStart(2, '0'), s = String(left % 60).padStart(2, '0'); $('t').textContent = `${m}:${s}`; $('prog').style.strokeDashoffset = C * (1 - left / total); document.title = `${m}:${s} · Pomodoro Focus`; }
+function setMode(min) { clearInterval(timer); timer = null; total = left = min * 60; $('go').textContent = 'Start'; document.body.classList.toggle('break', min !== 25); $('label').textContent = min === 25 ? 'Ready to focus' : 'Time for a break'; document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('on', +b.dataset.m === min)); draw(); }
+function beep() { try { const a = new AudioContext(), o = a.createOscillator(), g = a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value = 880; g.gain.setValueAtTime(.2, a.currentTime); g.gain.exponentialRampToValueAtTime(.001, a.currentTime + .8); o.start(); o.stop(a.currentTime + .8); } catch {} }
+$('go').onclick = () => {
+  if (timer) { clearInterval(timer); timer = null; $('go').textContent = 'Resume'; $('label').textContent = 'Paused'; return; }
+  $('go').textContent = 'Pause'; $('label').textContent = total === 25 * 60 ? 'Focusing…' : 'Relax…';
+  timer = setInterval(() => { left--; draw(); if (left <= 0) { clearInterval(timer); timer = null; beep(); if (total === 25 * 60) { sessions++; $('count').textContent = `${sessions} focus session${sessions === 1 ? '' : 's'} today`; setMode(5); } else setMode(25); } }, 1000);
+};
+$('reset').onclick = () => setMode(total / 60);
+document.querySelector('.modes').onclick = e => { const m = e.target.dataset?.m; if (m) setMode(+m); };
+function renderTasks() { $('list').innerHTML = tasks.map((t, i) => `<li class="${t.done ? 'done' : ''}"><input type="checkbox" data-i="${i}" ${t.done ? 'checked' : ''}><span></span><button data-del="${i}" aria-label="Remove">✕</button></li>`).join(''); [...$('list').querySelectorAll('span')].forEach((s, i) => s.textContent = tasks[i].text); }
+$('f').onsubmit = e => { e.preventDefault(); const v = $('task').value.trim(); if (v) { tasks.push({ text: v, done: false }); $('task').value = ''; renderTasks(); } };
+$('list').onclick = e => { if (e.target.dataset.i !== undefined) { tasks[e.target.dataset.i].done = e.target.checked; renderTasks(); } if (e.target.dataset.del !== undefined) { tasks.splice(e.target.dataset.del, 1); renderTasks(); } };
+addEventListener('keydown', e => { if (e.code === 'Space' && e.target.tagName !== 'INPUT') { e.preventDefault(); $('go').click(); } });
+draw();
+</script>
+</body>
+</html>

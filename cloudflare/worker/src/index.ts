@@ -193,6 +193,15 @@ async function cleanupExpired(env: Env): Promise<void> {
 
 const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
+    try {
+      return await worker.handle(request, env);
+    } catch (error) {
+      console.error('unhandled_request_error', error);
+      return json({ error: 'service_unavailable' }, 503, cors(request, env));
+    }
+  },
+
+  async handle(request: Request, env: Env): Promise<Response> {
     const headers = cors(request, env);
     const origin = request.headers.get('Origin');
     if (origin && !headers.has('access-control-allow-origin')) return json({ error: 'origin_not_allowed' }, 403, headers);

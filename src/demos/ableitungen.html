@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ableitungen verstehen</title>
+<script id="localdeck-manifest" type="application/json">{"schemaVersion":1,"title":"Ableitungen verstehen","type":"learning","subject":"Mathematik","topic":"Analysis","description":"Interaktiver Lernzettel zu den Ableitungsregeln – mit Tangenten-Explorer und Übungen zum Selbstkontrollieren.","tags":["demo","analysis","lernzettel"],"language":"de"}</script>
+<style>
+  :root { --ink: #1b1a2e; --muted: #5d6075; --accent: #6d4ce0; --soft: #efeafd; --ok: #1f9d68; --bad: #d23f57; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f6f5fb; color: var(--ink); font: 16px/1.6 system-ui, -apple-system, Segoe UI, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 40px 22px 80px; }
+  header p { color: var(--muted); }
+  h1 { margin: 0; font-size: clamp(30px, 5vw, 44px); letter-spacing: -.03em; }
+  h2 { margin: 42px 0 12px; font-size: 22px; }
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+  .rule { padding: 16px 18px; border-radius: 16px; background: white; box-shadow: 0 1px 2px #0001, 0 8px 24px #4b3aa016; }
+  .rule b { color: var(--accent); }
+  .rule code { display: block; margin-top: 6px; font: 600 17px ui-monospace, Consolas, monospace; }
+  .card { padding: 20px; border-radius: 20px; background: white; box-shadow: 0 1px 2px #0001, 0 10px 30px #4b3aa018; }
+  canvas { width: 100%; height: 300px; border-radius: 14px; background: #fbfaff; }
+  .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 14px; }
+  label { font-weight: 600; font-size: 14px; }
+  input[type=range] { accent-color: var(--accent); width: 180px; vertical-align: middle; }
+  .readout { margin-left: auto; padding: 8px 12px; border-radius: 10px; background: var(--soft); font: 600 14px ui-monospace, monospace; }
+  .task { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid #eceaf5; }
+  .task:last-child { border-bottom: 0; }
+  .task input { width: 150px; padding: 9px 11px; border: 1.5px solid #d9d6ea; border-radius: 10px; font: 15px ui-monospace, monospace; }
+  .task input.ok { border-color: var(--ok); background: #eafaf2; } .task input.bad { border-color: var(--bad); background: #fdeef1; }
+  button { padding: 9px 16px; border: 0; border-radius: 10px; background: var(--accent); color: white; font-weight: 700; cursor: pointer; }
+  .hint { color: var(--muted); font-size: 14px; }
+  .score { margin-top: 14px; font-weight: 700; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Ableitungen verstehen</h1><p>Die Ableitung f′(x) beschreibt die Steigung der Tangente an den Graphen von f an der Stelle x.</p></header>
+
+  <h2>Die wichtigsten Regeln</h2>
+  <div class="rules">
+    <div class="rule"><b>Potenzregel</b><code>(xⁿ)′ = n·xⁿ⁻¹</code></div>
+    <div class="rule"><b>Faktorregel</b><code>(c·f)′ = c·f′</code></div>
+    <div class="rule"><b>Summenregel</b><code>(f+g)′ = f′+g′</code></div>
+    <div class="rule"><b>Produktregel</b><code>(f·g)′ = f′g + fg′</code></div>
+    <div class="rule"><b>Kettenregel</b><code>f(g(x))′ = f′(g(x))·g′(x)</code></div>
+    <div class="rule"><b>Spezielle</b><code>(eˣ)′ = eˣ, (sin x)′ = cos x</code></div>
+  </div>
+
+  <h2>Tangenten-Explorer</h2>
+  <div class="card">
+    <canvas id="plot" width="1600" height="600"></canvas>
+    <div class="controls">
+      <label>Funktion <select id="fn"><option value="0">f(x) = x²</option><option value="1">f(x) = x³ − 3x</option><option value="2">f(x) = sin x</option><option value="3">f(x) = eˣ / 3</option></select></label>
+      <label>Stelle x₀ <input id="x0" type="range" min="-3" max="3" step="0.01" value="1"></label>
+      <span class="readout" id="out"></span>
+    </div>
+  </div>
+
+  <h2>Übungen</h2>
+  <div class="card" id="tasks"></div>
+  <p class="hint">Schreibe Potenzen als x^2. Beispiel: 6x^2 - 4</p>
+</main>
+<script>
+const fns = [
+  { f: x => x * x, d: x => 2 * x, name: 'x²' },
+  { f: x => x ** 3 - 3 * x, d: x => 3 * x * x - 3, name: 'x³ − 3x' },
+  { f: Math.sin, d: Math.cos, name: 'sin x' },
+  { f: x => Math.exp(x) / 3, d: x => Math.exp(x) / 3, name: 'eˣ / 3' },
+];
+const cv = document.getElementById('plot'), g = cv.getContext('2d'), fnSel = document.getElementById('fn'), x0In = document.getElementById('x0'), out = document.getElementById('out');
+function draw() {
+  const { f, d } = fns[+fnSel.value], x0 = +x0In.value, W = cv.width, H = cv.height, sx = W / 8, sy = H / 8;
+  const X = x => W / 2 + x * sx, Y = y => H / 2 - y * sy;
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = '#e6e3f3'; g.lineWidth = 2; for (let i = -4; i <= 4; i++) { g.beginPath(); g.moveTo(X(i), 0); g.lineTo(X(i), H); g.moveTo(0, Y(i)); g.lineTo(W, Y(i)); g.stroke(); }
+  g.strokeStyle = '#9a96b8'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, Y(0)); g.lineTo(W, Y(0)); g.moveTo(X(0), 0); g.lineTo(X(0), H); g.stroke();
+  g.strokeStyle = '#6d4ce0'; g.lineWidth = 6; g.beginPath(); for (let px = 0; px <= W; px += 4) { const x = (px - W / 2) / sx, y = f(x); px ? g.lineTo(px, Y(y)) : g.moveTo(px, Y(y)); } g.stroke();
+  const m = d(x0), y0 = f(x0);
+  g.strokeStyle = '#f59e0b'; g.lineWidth = 4; g.beginPath(); g.moveTo(X(-4), Y(y0 + m * (-4 - x0))); g.lineTo(X(4), Y(y0 + m * (4 - x0))); g.stroke();
+  g.fillStyle = '#f59e0b'; g.beginPath(); g.arc(X(x0), Y(y0), 12, 0, 7); g.fill();
+  out.textContent = `f(${x0.toFixed(2)}) = ${y0.toFixed(2)} · f′ = ${m.toFixed(2)}`;
+}
+fnSel.oninput = x0In.oninput = draw; draw();
+
+const tasks = [
+  ['f(x) = 3x^2', '6x'], ['f(x) = x^3 - 4x', '3x^2-4'], ['f(x) = 2x^3 + 5', '6x^2'], ['f(x) = 5x', '5'], ['f(x) = x^4 - x^2', '4x^3-2x'],
+];
+const norm = s => s.replace(/\s|\*/g, '').replace(/·/g, '').replace(/x\^1(?!\d)/g, 'x').toLowerCase();
+const box = document.getElementById('tasks');
+box.innerHTML = tasks.map(([q], i) => `<div class="task"><span>${q}</span><input id="t${i}" placeholder="f′(x) = …" aria-label="Ableitung von ${q}"><button data-i="${i}">Prüfen</button></div>`).join('') + '<div class="score" id="score"></div>';
+let solved = new Set();
+box.addEventListener('click', e => { const i = e.target.dataset?.i; if (i === undefined) return; const inp = document.getElementById('t' + i), ok = norm(inp.value) === norm(tasks[i][1]); inp.className = ok ? 'ok' : 'bad'; if (ok) solved.add(i); else solved.delete(i); document.getElementById('score').textContent = `${solved.size} von ${tasks.length} richtig${solved.size === tasks.length ? ' – stark! 🎉' : ''}`; });
+box.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id?.startsWith('t')) e.target.nextElementSibling.click(); });
+</script>
+</body>
+</html>

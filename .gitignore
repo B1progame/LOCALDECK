@@ -9,3 +9,6 @@ dist/
 !.env.example
 .dev.vars*
 .wrangler/
+.claude/
+.env.local
+.env.*.local

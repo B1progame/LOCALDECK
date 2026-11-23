@@ -12,9 +12,14 @@ function messageFor(code: string): string {
 }
 
 export async function firebaseAuthRequest(apiKey: string, operation: string, body: Record<string, string | boolean>): Promise<FirebaseAuthResponse> {
-  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:${operation}?key=${encodeURIComponent(apiKey)}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:${operation}?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error('Could not reach Firebase. Check your internet connection and try again.');
+  }
   const result = await response.json() as FirebaseAuthResponse;
   if (!response.ok) throw new Error(messageFor(result.error?.message ?? 'UNKNOWN'));
   return result;
