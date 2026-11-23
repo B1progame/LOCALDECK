@@ -52,6 +52,42 @@ export async function createItem(preview: ImportPreview): Promise<LibraryItem> {
   }
 }
 
+export async function replaceItemFiles(itemId: string, preview: ImportPreview): Promise<LibraryItem> {
+  if (!preview.files.length || !preview.files.some(file => file.path === preview.selectedEntry)) throw new Error('Choose a valid project package before updating this project.');
+  const prepared = preview.files.map((file, index) => ({
+    id: `${itemId}:${index}`, itemId, normalizedPath: file.path, mimeType: file.mimeType,
+    fileSize: file.size, contentHash: file.contentHash, blob: file.blob,
+  }));
+  let updated: LibraryItem | undefined;
+  await db.transaction('rw', db.items, db.assets, async () => {
+    const current = await db.items.get(itemId);
+    if (!current) throw new Error('This project is no longer in your library.');
+    const manifest = preview.manifest;
+    const included = (path?: string) => Boolean(path && preview.files.some(file => file.path === path));
+    const artwork = manifest ? {
+      ...(included(manifest.cover) ? { cover: manifest.cover } : {}),
+      ...(included(manifest.banner) ? { banner: manifest.banner } : {}),
+      ...(included(manifest.icon) ? { icon: manifest.icon } : {}),
+    } : current.artworkReferences;
+    updated = {
+      ...current,
+      ...(manifest ? { title: preview.title.trim() || current.title, type: preview.type, description: preview.description, subject: preview.subject, topic: preview.topic, genre: manifest.genre ?? '', tags: [...preview.tags], artworkReferences: artwork } : {}),
+      entryFile: preview.selectedEntry, originalFilename: preview.sourceName,
+      storageSize: preview.storageSize, fileCount: preview.files.length,
+      manifestVersion: manifest?.schemaVersion ?? current.manifestVersion,
+      offlineCompatibility: preview.report,
+      runtimeSettings: manifest?.preferredOrientation ? { ...current.runtimeSettings, preferredOrientation: manifest.preferredOrientation } : current.runtimeSettings,
+      updatedAt: Date.now(),
+    };
+    await db.assets.where('itemId').equals(itemId).delete();
+    await db.assets.bulkAdd(prepared);
+    await db.items.put(updated);
+    const stored = await db.assets.where('itemId').equals(itemId).count();
+    if (stored !== updated.fileCount || !await db.assets.where('[itemId+normalizedPath]').equals([itemId, updated.entryFile]).first()) throw new Error('The updated project did not pass its file integrity check.');
+  });
+  return updated!;
+}
+
 export async function createItems(previews: ImportPreview[]): Promise<LibraryItem[]> {
   const imported: LibraryItem[] = [];
   for (const preview of previews) imported.push(await createItem(preview));
