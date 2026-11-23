@@ -1,7 +1,7 @@
-const CACHE='localdeck-shell-v4';
+const CACHE='localdeck-shell-v5';
 const DB='localdeck-library-v1';
 const STORE='projects';
-const ASSETS=['./','./index.html','./styles.css','./polish.css','./app.js','./manifest.webmanifest','./icon.svg'];
+const ASSETS=['./','./index.html','./styles.css','./polish.css','./app.js','./manifest.webmanifest','./favicon-64.png','./apple-touch-icon.png','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('localdeck-shell-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 function getFile(id,path){return new Promise((resolve,reject)=>{const open=indexedDB.open(DB,1);open.onerror=()=>reject(open.error);open.onsuccess=()=>{const tx=open.result.transaction(STORE),req=tx.objectStore(STORE).get(id);req.onsuccess=()=>{const project=req.result;resolve(project?.files?.find(f=>f.path===path)?.blob||null);};req.onerror=()=>reject(req.error);};});}
