@@ -416,14 +416,24 @@ img { display: block; max-width: 100%; }
 .player-immersive .player-top,.player-immersive .player-footer { display:none; }
 .player-immersive .player-stage { padding:0; overscroll-behavior:none; }
 .player-immersive .player-stage iframe { border:0; border-radius:0; box-shadow:none; }
-.player-immersive-exit { position:absolute; z-index:2; top:calc(env(safe-area-inset-top,0px) + 12px); right:calc(env(safe-area-inset-right,0px) + 12px); display:flex; min-height:42px; align-items:center; gap:8px; padding:0 13px; border:1px solid rgba(255,255,255,.28); border-radius:22px; background:rgba(28,28,32,.58); color:#fff; font:inherit; font-size:12px; font-weight:600; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); }
 .player-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 58px; padding: 0 20px; border-bottom: 1px solid var(--line); background: #fff; }
 .player-name,.player-controls { display: flex; align-items: center; gap: 9px; }
 .player-name b { max-width: 38vw; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .player-name small { padding: 3px 6px; border-radius: 5px; background: #f1f0f6; color: #78717f; font-size: 8px; font-weight: 650; letter-spacing: .06em; }
 .player-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #60a47d; }
-.player-stage { display: grid; flex: 1; min-height: 0; place-items: center; padding: 18px; }
+.player-stage { position:relative; display: grid; flex: 1; min-height: 0; place-items: center; padding: 18px; }
 .player-stage iframe { width: 100%; height: 100%; border: 1px solid #dedee4; border-radius: 9px; background: #fff; box-shadow: 0 7px 24px rgba(26,25,35,.08); }
+.player-view-handle { position:absolute; z-index:3; top:10px; left:50%; display:grid; width:92px; height:38px; justify-items:center; gap:2px; transform:translateX(-50%); border:0; border-radius:18px; background:rgba(255,255,255,.86); color:#737580; box-shadow:0 2px 9px rgba(25,24,36,.13); touch-action:none; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
+.player-view-handle>span { width:44px; height:4px; margin-top:5px; border-radius:5px; background:#a7a8b0; }
+.player-view-handle small { font-size:8px; font-weight:650; line-height:1; }
+.player-view-prompt { position:absolute; z-index:5; top:57px; left:50%; width:min(340px,calc(100% - 24px)); padding:17px; transform:translateX(-50%); border:1px solid rgba(255,255,255,.84); border-radius:16px; background:rgba(255,255,255,.97); color:#363740; box-shadow:0 14px 44px rgba(24,23,38,.2); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
+.player-view-prompt>b { font-size:13px; font-weight:680; }
+.player-view-prompt>p { margin:5px 0 13px; color:#7c7e89; font-size:10px; line-height:1.5; }
+.player-view-prompt>div { display:flex; justify-content:flex-end; gap:7px; }
+.player-view-prompt .button { min-height:34px; font-size:10px; }
+.player-immersive .player-view-handle { top:calc(env(safe-area-inset-top,0px) + 5px); background:rgba(25,25,30,.58); color:#fff; }
+.player-immersive .player-view-handle>span { background:rgba(255,255,255,.72); }
+.player-immersive .player-view-prompt { top:calc(env(safe-area-inset-top,0px) + 54px); }
 .player-stage.document-stage iframe { width: min(100%,900px); }
 .player-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 37px; padding: 0 20px; border-top: 1px solid var(--line); background: #fff; color: #858791; font-size: 9px; }
 .player-footer span:first-child { display: inline-flex; align-items: center; gap: 5px; color: #58846a; }
