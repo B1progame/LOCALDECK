@@ -9,8 +9,8 @@ database_id = "820402d4-769e-47c0-ace4-4ce9a5f50e65"
 
 [[kv_namespaces]]
 binding = "SHARES_KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
-preview_id = "REPLACE_WITH_KV_PREVIEW_NAMESPACE_ID"
+id = "5a3acea628dd43fa956ead4900871c4b"
+preview_id = "cca8b6d1388c464da7f6b4cb64e96539"
 
 [triggers]
 crons = ["17 * * * *"]
