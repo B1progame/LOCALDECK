@@ -13,4 +13,5 @@
 Report a security issue privately to the repository owner rather than publishing a working exploit.
 
 - AI Studio's structural inspection always parses HTML locally without executing scripts. Its optional browser-native AI uses only a bounded summary with script/style/template/SVG and embedded browsing contexts removed; there is no cloud AI fallback or API key. Treat model output as advisory. The native model is created only after the user clicks the scan button and may download browser-managed model data to the device.
+- The PDF-to-project helper does not read or upload the selected PDF. It inserts only the filename into a prompt for the user to copy to an external AI chat. That AI provider receives the PDF only if the user attaches it there; provider availability, limits, and costs are outside LOCALDECK.
 - Firebase's Web API key is public project configuration and is used only for Firebase Authentication endpoints. It provides no Worker or Google Cloud privileges. Restrict it to Firebase-related APIs and never expose service-account credentials or unrelated private API keys.

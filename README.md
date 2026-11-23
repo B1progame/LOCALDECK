@@ -11,6 +11,7 @@ Your personal library for learning, games, tools, and all the little things you 
 - Search, favorite, rename, and remove projects; browse learning and games separately.
 - Export a portable ZIP backup and restore it later.
 - Inspect one HTML file in AI Studio and prepare a precise, single-file AI prompt.
+- Prepare a detailed PDF-to-project prompt for an external AI chat; attach the PDF there and ask it for a LOCALDECK-ready ZIP with generated or code-drawn artwork.
 - Share a project with an expiring, end-to-end encrypted link when the optional Cloudflare service is configured.
 - Cache the app shell for offline use after the first visit. Install it as an app from a compatible browser.
 - Adapt to phone and tablet screens and respect reduced-motion preferences.

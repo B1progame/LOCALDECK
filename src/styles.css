@@ -299,6 +299,25 @@ img { display: block; max-width: 100%; }
 .studio-handoff span { display:grid; gap:4px; }
 .studio-handoff b { color:#4d3a83; font-size:11px; }
 .studio-handoff small { color:#777284; font-size:10px; line-height:1.5; }
+.pdf-builder { margin:0 0 15px; padding:19px; border-color:#e8e4f2; background:linear-gradient(135deg,#fff 42%,#faf9ff); }
+.pdf-builder .panel-heading { margin-bottom:14px; }
+.pdf-builder-grid { display:grid; grid-template-columns:minmax(220px,.9fr) minmax(0,1.1fr); gap:13px; }
+.pdf-drop { position:relative; display:grid; justify-items:center; align-content:center; gap:8px; min-height:150px; padding:18px; overflow:hidden; border:1px dashed #c9c1e3; border-radius:12px; background:#fbfaff; color:#725cb5; text-align:center; cursor:pointer; transition:background .18s,border-color .18s,transform .18s; }
+.pdf-drop:hover { border-color:#9887ce; background:#f7f4ff; transform:translateY(-1px); }
+.pdf-drop b { max-width:100%; overflow:hidden; color:#494655; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.pdf-drop small { max-width:35ch; color:#858391; font-size:9px; line-height:1.5; }
+.pdf-drop input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+.pdf-builder-info { display:grid; align-content:center; gap:12px; }
+.pdf-builder-info>div { display:flex; align-items:flex-start; gap:9px; color:#7160a7; }
+.pdf-builder-info>div>span { display:grid; gap:3px; }
+.pdf-builder-info b { color:#484650; font-size:10px; }
+.pdf-builder-info small { color:#82818c; font-size:9px; line-height:1.5; }
+.pdf-prompt-head { display:flex; align-items:center; justify-content:space-between; margin:14px 0 6px; color:#55565f; font-size:10px; }
+.pdf-prompt { max-height:230px; overflow:auto; margin:0; padding:12px; border:1px solid #ebe9f1; border-radius:9px; background:#fff; color:#5c5b66; font:9px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
+.pdf-prompt.is-disabled { color:#8e8c98; }
+.pdf-prompt-note { display:flex; gap:8px; align-items:flex-start; margin-top:10px; color:#777584; font-size:9px; line-height:1.55; }
+.pdf-prompt-note svg { flex:none; margin-top:1px; color:#7966b5; }
+@media(max-width:620px) { .pdf-builder-grid { grid-template-columns:1fr; } .pdf-drop { min-height:125px; } .pdf-builder { padding:14px; } }
 .output-heading { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 6px; color: #55565f; font-size: 10px; }
 .prompt-output,.manifest-output { max-height: 300px; overflow: auto; margin: 0; padding: 12px; border: 1px solid #ebebef; border-radius: 9px; background: #fafafd; color: #565762; font: 10px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .manifest-output { max-height: 160px; }
