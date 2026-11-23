@@ -46,3 +46,10 @@ test('project prompt asks for offline files and the bundle format', () => {
   assert.match(prompt, /offline/i);
   assert.match(prompt, /Mathematik/);
 });
+
+import { missingRules, passwordProblem } from '../src/services/passwordPolicy.ts';
+test('password rules match the Firebase policy', () => {
+  assert.deepEqual(missingRules('short'), ['12+ characters', 'an uppercase letter', 'a symbol like ! ? # @']);
+  assert.equal(passwordProblem('Correct-Horse-Battery'), null);
+  assert.match(passwordProblem('alllowercaseletters'), /uppercase/);
+});

@@ -4,21 +4,12 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, Clock3, Eye, EyeOff, KeyRound, LoaderCircle, Mail, ShieldCheck, Sparkles, UserRound, WandSparkles } from 'lucide-react';
 import { firebaseAuthRequest } from './services/firebaseAuth';
 import { useProfile } from './profile';
+import { PASSWORD_RULES, passwordProblem } from './services/passwordPolicy';
 import { ShareArt } from './shareArt';
 
 export type AuthMode = 'signin' | 'signup';
 export const EMAIL_FOR_LINK_KEY = 'localdeck-email-for-signin';
 
-function strength(password: string): { score: number; label: string } {
-  let score = 0;
-  if (password.length >= 12) score++;
-  if (password.length >= 16) score++;
-  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
-  if (/\d/.test(password)) score++;
-  if (/[^A-Za-z0-9]/.test(password)) score++;
-  if (password.length < 12) score = Math.min(score, 1);
-  return { score, label: ['Too short', 'Weak', 'Okay', 'Good', 'Strong', 'Excellent'][score]! };
-}
 
 export function LoginExperience({ apiKey, social, onCredential, error, backHref }: {
   apiKey: string;
@@ -36,7 +27,7 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
   const [busy, setBusy] = useState<'' | 'submit' | 'link' | 'reset'>('');
   const [message, setMessage] = useState('');
   const [formError, setFormError] = useState('');
-  const pw = strength(password);
+  const rulesMet = PASSWORD_RULES.filter(rule => rule.test(password)).length;
   // Measure the active form so the card height glides instead of snapping when switching modes.
   const inner = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState<number | 'auto'>('auto');
@@ -55,7 +46,8 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
       if (mode === 'signup') {
         const name = username.trim();
         if (!/^[\p{L}\p{N} ._-]{2,30}$/u.test(name)) throw new Error('Choose a username with 2–30 letters, numbers, spaces, dots, dashes or underscores.');
-        if (password.length < 12) throw new Error('Choose a password with at least 12 characters.');
+        const problem = passwordProblem(password);
+        if (problem) throw new Error(problem);
         if (password !== confirm) throw new Error('The two passwords do not match.');
         const created = await firebaseAuthRequest(apiKey, 'signUp', { email: email.trim(), password, returnSecureToken: true });
         if (!created.idToken) throw new Error('Firebase did not return an account session.');
@@ -131,10 +123,12 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
             {signup && <label className="email-auth-field"><span>Username</span><span className="auth-input"><UserRound size={16}/><input value={username} onChange={e => setUsername(e.target.value)} autoComplete="nickname" placeholder="How LocalDeck greets you" required minLength={2} maxLength={30}/></span></label>}
             <label className="email-auth-field"><span>Email address</span><span className="auth-input"><Mail size={16}/><input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required maxLength={254}/></span></label>
             <label className="email-auth-field"><span className="auth-label-row">Password{!signup && <button type="button" className="text-button" disabled={Boolean(busy)} onClick={() => void reset()}>Forgot?</button>}</span>
-              <span className="auth-input"><KeyRound size={16}/><input type={show ? 'text' : 'password'} autoComplete={signup ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} required minLength={signup ? 12 : 1} maxLength={128} placeholder={signup ? 'At least 12 characters' : ''}/><button type="button" className="icon-button auth-eye" onClick={() => setShow(v => !v)} aria-label={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
+              <span className="auth-input"><KeyRound size={16}/><input type={show ? 'text' : 'password'} autoComplete={signup ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} required minLength={signup ? 12 : 1} maxLength={128} placeholder={signup ? '12+ characters, A–z and a symbol' : ''}/><button type="button" className="icon-button auth-eye" onClick={() => setShow(v => !v)} aria-label={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
             {signup && <>
-              <div className={`auth-meter s${pw.score}`} aria-live="polite"><span><i/><i/><i/><i/><i/></span><small>{password ? pw.label : 'Use 12+ characters with a mix of letters, numbers and symbols'}</small></div>
+              <div className={`auth-meter s${password ? Math.min(5, rulesMet + (rulesMet === PASSWORD_RULES.length && password.length >= 16 ? 1 : 0)) : 0}`} aria-hidden="true"><span><i/><i/><i/><i/><i/></span></div>
+              <ul className="pw-rules" aria-label="Password requirements">{PASSWORD_RULES.map(rule => { const ok = rule.test(password); return <li key={rule.id} className={ok ? 'ok' : ''}>{ok ? <Check size={13} aria-hidden="true"/> : <span className="pw-dot" aria-hidden="true"/>}{rule.label}<span className="visually-hidden">{ok ? ' (done)' : ' (missing)'}</span></li>; })}</ul>
               <label className="email-auth-field"><span>Repeat password</span><span className={`auth-input ${confirm && confirm !== password ? 'mismatch' : confirm ? 'match' : ''}`}><KeyRound size={16}/><input type={show ? 'text' : 'password'} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} required maxLength={128}/>{confirm && confirm === password && <Check size={16} className="auth-ok"/>}</span></label>
+              {confirm && confirm !== password && <p className="field-hint error" role="alert">The passwords don’t match yet.</p>}
             </>}
             <button className="button primary auth-submit" disabled={Boolean(busy)}>{busy === 'submit' ? <LoaderCircle size={16} className="spin"/> : signup ? <Sparkles size={16}/> : <ShieldCheck size={16}/>} {busy === 'submit' ? 'Please wait…' : signup ? 'Create free account' : 'Sign in'} {!busy && <ArrowRight size={16}/>}</button>
           </form>

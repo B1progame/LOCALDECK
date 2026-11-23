@@ -1401,3 +1401,22 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 .auth-stage { position: relative; overflow: hidden; margin: -6px; padding: 0; }
 .auth-stage-inner { position: relative; padding: 6px; }
 .auth-body { min-height: 0; width: 100%; }
+
+/* Password requirement checklist (mirrors the Firebase password policy) */
+.pw-rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin: -2px 0 12px; padding: 0; list-style: none; }
+.pw-rules li { display: flex; align-items: center; gap: 7px; color: var(--text-2); font-size: 12.5px; transition: color .2s ease; }
+.pw-rules li.ok { color: var(--success); }
+.pw-rules li svg { flex: none; animation: heart-pop .3s var(--ease); }
+.pw-dot { flex: none; width: 13px; height: 13px; border: 1.5px solid var(--line-strong); border-radius: 50%; }
+.field-hint { margin: -6px 0 10px; font-size: 12.5px; }
+.field-hint.error { color: var(--error); }
+@media (max-width: 480px) { .pw-rules { grid-template-columns: 1fr; } }
+/* Password checklist polish */
+.auth-meter { margin: -2px 0 8px; }
+.auth-meter > span { flex: 1; grid-template-columns: repeat(5, 1fr); }
+.auth-meter i { height: 4px; }
+.pw-rules { gap: 4px; margin: 0 0 14px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.pw-rules li { gap: 8px; padding: 6px 8px; border-radius: 8px; transition: color .2s ease, background-color .2s ease; }
+.pw-rules li.ok { background: rgb(16 185 129 / .1); color: var(--text); }
+.pw-rules li.ok svg { color: #10b981; }
+.pw-rules li .pw-dot { width: 13px; height: 13px; }

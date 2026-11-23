@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowRight, Check, KeyRound, LoaderCircle, MailCheck, ShieldAlert } from 'lucide-react';
 import { firebaseAuthRequest } from './services/firebaseAuth';
 import { base } from './shared';
+import { PASSWORD_RULES, passwordProblem } from './services/passwordPolicy';
 
 export type AuthAction = { mode: 'verifyEmail' | 'resetPassword' | 'recoverEmail' | 'signIn'; oobCode: string; apiKey: string };
 
@@ -67,7 +68,8 @@ export function AuthActionPage({ action }: { action: AuthAction }) {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setError('');
     if (action.mode === 'signIn') { setBusy(true); try { await finishLink(email.trim()); } catch { setError('That email does not match this sign-in link, or the link expired.'); } finally { setBusy(false); } return; }
-    if (password.length < 12) { setError('Choose a password with at least 12 characters.'); return; }
+    const problem = passwordProblem(password);
+    if (problem) { setError(problem); return; }
     if (password !== confirm) { setError('The two passwords do not match.'); return; }
     setBusy(true);
     try { await firebaseAuthRequest(action.apiKey, 'resetPassword', { oobCode: action.oobCode, newPassword: password }); setState('done'); }
@@ -99,7 +101,7 @@ export function AuthActionPage({ action }: { action: AuthAction }) {
         <p>Resetting the password for <b>{email}</b>.</p>
         <label className="email-auth-field"><span>New password</span><input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} minLength={12} maxLength={128} required/></label>
         <label className="email-auth-field"><span>Repeat new password</span><input type="password" autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} minLength={12} maxLength={128} required/></label>
-        <div className="password-meter" aria-hidden="true"><i style={{ width: `${Math.min(100, password.length / 16 * 100)}%` }} className={password.length >= 12 ? 'ok' : ''}/></div>
+        <ul className="pw-rules" aria-label="Password requirements">{PASSWORD_RULES.map(rule => { const ok = rule.test(password); return <li key={rule.id} className={ok ? 'ok' : ''}>{ok ? <Check size={13} aria-hidden="true"/> : <span className="pw-dot" aria-hidden="true"/>}{rule.label}<span className="visually-hidden">{ok ? ' (done)' : ' (missing)'}</span></li>; })}</ul>
         {error && <p className="dialog-error" role="alert">{error}</p>}
         <button className="button primary email-auth-submit" disabled={busy}>{busy ? <LoaderCircle size={15} className="spin"/> : <KeyRound size={15}/>} Save new password</button>
       </form>}

@@ -1,9 +1,15 @@
 type FirebaseAuthResponse = { idToken?: string; email?: string; displayName?: string; users?: Array<{ email?: string; emailVerified?: boolean; displayName?: string }>; error?: { message?: string } };
 
-function messageFor(code: string): string {
+function messageFor(raw: string): string {
+  // Firebase sends either a bare code or "CODE : details"; compare the code, keep the details for policy errors.
+  const code = raw.split(' : ')[0]!.trim();
   if (code === 'EMAIL_EXISTS') return 'Could not create the account. If you already registered this address, try signing in or resetting your password.';
   if (code === 'INVALID_LOGIN_CREDENTIALS' || code === 'EMAIL_NOT_FOUND' || code === 'INVALID_PASSWORD') return 'The email or password is incorrect.';
-  if (code === 'WEAK_PASSWORD') return 'Choose a stronger password with at least 12 characters.';
+  if (code === 'WEAK_PASSWORD') return 'Choose a stronger password: 12+ characters with an uppercase letter, a lowercase letter and a symbol.';
+  if (code === 'PASSWORD_DOES_NOT_MEET_REQUIREMENTS') {
+    const details = raw.match(/\[(.*)\]/)?.[1];
+    return `That password doesn’t meet the account rules${details ? `: ${details.replace(/Password must contain /gi, '').replace(/,\s*/g, ', ')}` : ''}. Use 12+ characters with an uppercase letter, a lowercase letter and a symbol.`;
+  }
   if (code === 'TOO_MANY_ATTEMPTS_TRY_LATER') return 'Too many attempts. Wait a little, then try again.';
   if (code === 'USER_DISABLED') return 'This account is disabled.';
   if (code === 'INVALID_EMAIL') return 'Enter a valid email address.';
