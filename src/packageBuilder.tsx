@@ -287,7 +287,7 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
       </div>
 
       <aside className="pb-preview">
-        <div className="pb-card">
+        <div className="pb-card beam">
           <div className="pb-card-cover" style={{ backgroundImage: cover ? `url("${cover.url}")` : generatedCoverImage({ title: meta.title || 'Untitled project', type: meta.type, subject: meta.subject || meta.genre } as LibraryItem) }}>
             <span className="cover-type"><TypeIcon size={17}/></span>
             {!cover && <span className="pb-card-title">{meta.title || 'Untitled project'}</span>}

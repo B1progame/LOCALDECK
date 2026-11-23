@@ -1,6 +1,21 @@
 /* Shared building blocks used across LocalDeck screens. */
 import React, { createContext, useContext, useRef, useState } from 'react';
-import { motion, useMotionTemplate, useMotionValue, useSpring, useTransform } from 'motion/react';
+import { animate, motion, useInView, useMotionTemplate, useMotionValue, useSpring, useTransform } from 'motion/react';
+
+/** Counts up to a number when it scrolls into view (Magic UI style number ticker). */
+export function CountUp({ value, format = (n: number) => Math.round(n).toLocaleString() }: { value: number; format?: (n: number) => string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const inView = useInView(ref, { once: true });
+  const from = useRef(0);
+  React.useEffect(() => {
+    const el = ref.current; if (!el || !inView) return;
+    if (prefersLessMotion()) { el.textContent = format(value); from.current = value; return; }
+    const controls = animate(from.current, value, { duration: .9, ease: [.2, .8, .2, 1], onUpdate: v => { el.textContent = format(v); } });
+    from.current = value;
+    return () => controls.stop();
+  }, [value, inView]);
+  return <span ref={ref} className="count-up">{format(0)}</span>;
+}
 
 /** True when the user or OS asked for less motion. */
 export const prefersLessMotion = () => document.documentElement.classList.contains('reduce-motion') || matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -53,7 +68,7 @@ export function formatRoutePath(id: string, path: string): string {
 }
 
 export function PageHeading({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description?: string; action?: React.ReactNode }) {
-  return <div className="page-heading"><div>{eyebrow && <div className="eyebrow">{eyebrow}</div>}<h1>{title}</h1>{description && <p>{description}</p>}</div>{action && <div className="heading-action">{action}</div>}</div>;
+  return <div className="page-heading"><div>{eyebrow && <div className="eyebrow">{eyebrow}</div>}<h1 aria-label={title}>{title.split(' ').map((word, i) => <span key={`${word}-${i}`} className="blur-word" style={{ '--i': i } as React.CSSProperties} aria-hidden="true">{word}{' '}</span>)}</h1>{description && <p>{description}</p>}</div>{action && <div className="heading-action">{action}</div>}</div>;
 }
 
 export const OPEN_VERB: Record<ContentType, string> = { game: 'Play', learning: 'Read', app: 'Open', tool: 'Open', simulation: 'Run simulation', presentation: 'Present', document: 'Read', quiz: 'Start quiz', other: 'Open' };

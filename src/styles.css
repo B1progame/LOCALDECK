@@ -1231,3 +1231,70 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 .pb-prompt { max-height: 260px; }
 .pb-notes { margin: -6px 0 18px; padding: 12px 16px; border: 1px solid rgb(246 199 106 / .35); border-radius: 14px; background: rgb(246 199 106 / .08); }
 @media (max-width: 860px) { .pb-start { grid-template-columns: 1fr; } }
+
+/* ---------- Effects inspired by Magic UI / Aceternity (implemented in plain CSS) ---------- */
+/* Border beam: a light that travels around the edge */
+@property --beam { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+.beam { position: relative; }
+.beam::after, .beam-tabs button.active::after {
+  content: ""; position: absolute; inset: 0; z-index: 3; padding: 1.5px; border-radius: inherit; pointer-events: none;
+  background: conic-gradient(from var(--beam), transparent 0 72%, rgb(var(--accent-rgb) / .9) 84%, var(--accent-2) 89%, transparent 94%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: beam 6s linear infinite;
+}
+.beam-tabs button.active { position: relative; }
+.beam-tabs button.active::after { animation-duration: 4s; }
+@keyframes beam { to { --beam: 360deg; } }
+
+/* Spotlight: a soft glow that follows the cursor (position set by one listener in App) */
+.panel, .start-item, .explore-tile, .collection-tile, .subject-tile, .theme-card, .pb-start-card { position: relative; isolation: isolate; }
+.panel::before, .start-item::before, .explore-tile::before, .collection-tile::before, .subject-tile::before, .theme-card::before, .pb-start-card::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .3s ease;
+  background: radial-gradient(340px circle at var(--sx, 50%) var(--sy, 50%), rgb(var(--accent-rgb) / .13), transparent 62%);
+}
+.panel:hover::before, .start-item:hover::before, .explore-tile:hover::before, .collection-tile:hover::before, .subject-tile:hover::before, .theme-card:hover::before, .pb-start-card:hover::before { opacity: 1; }
+
+/* Page titles blur in word by word */
+.page-heading h1 .blur-word { display: inline-block; margin-right: .24em; animation: blur-in .75s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i) * 70ms); }
+.page-heading h1 .blur-word:last-child { margin-right: 0; }
+@keyframes blur-in { from { opacity: 0; filter: blur(10px); transform: translateY(10px); } }
+
+/* Aurora behind the empty hero */
+.aurora { position: absolute; inset: 0; z-index: -1; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.aurora i { position: absolute; width: 55%; height: 80%; border-radius: 50%; filter: blur(70px); opacity: .5; animation: aurora 20s ease-in-out infinite alternate; }
+.aurora i:nth-child(1) { top: -30%; left: -10%; background: rgb(var(--accent-rgb) / .7); }
+.aurora i:nth-child(2) { right: -15%; bottom: -40%; background: rgb(92 120 255 / .55); animation-duration: 26s; }
+.aurora i:nth-child(3) { top: 10%; left: 35%; width: 35%; background: rgb(240 143 180 / .4); animation-duration: 32s; }
+[data-theme='pearl'] .aurora i { opacity: .28; }
+@keyframes aurora { 50% { transform: translate(12%, 8%) scale(1.15); } 100% { transform: translate(-8%, -6%) scale(.95); } }
+
+/* Dot pattern fading out from the centre */
+.dot-pattern { position: relative; isolation: isolate; }
+.dot-pattern::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; background-image: radial-gradient(rgb(var(--accent-rgb) / .35) 1px, transparent 1.2px); background-size: 22px 22px; -webkit-mask-image: radial-gradient(ellipse at center, #000 10%, transparent 70%); mask-image: radial-gradient(ellipse at center, #000 10%, transparent 70%); animation: dots-drift 30s linear infinite; }
+@keyframes dots-drift { to { background-position: 22px 44px; } }
+
+.count-up { font-variant-numeric: tabular-nums; }
+
+/* Login page aurora */
+.auth-shell::after { content: ""; position: fixed; inset: -20%; z-index: -1; pointer-events: none; background: radial-gradient(40% 35% at 20% 25%, rgb(var(--accent-rgb) / .22), transparent 70%), radial-gradient(35% 30% at 80% 75%, rgb(92 120 255 / .16), transparent 70%); animation: aurora 24s ease-in-out infinite alternate; }
+
+@media (prefers-reduced-motion: reduce) { .beam::after, .beam-tabs button.active::after, .aurora i, .dot-pattern::before, .auth-shell::after { animation: none; } .page-heading h1 .blur-word { animation: none; } }
+.reduce-motion .beam::after, .reduce-motion .page-heading h1 .blur-word { animation: none; }
+
+/* ---------- Profile ---------- */
+.avatar { display: inline-grid; flex: none; place-items: center; overflow: hidden; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; line-height: 1; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-small { padding: 0; overflow: hidden; }
+a.profile-row { border-radius: 12px; transition: background-color .15s ease; }
+a.profile-row:hover { background: var(--accent-softer); color: var(--text-2); }
+a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
+.profile-editor { display: flex; align-items: center; gap: 22px; padding: 20px; }
+.profile-photo { position: relative; padding: 0; border: 0; border-radius: 50%; background: none; transition: transform .2s var(--ease); }
+.profile-photo:hover { transform: scale(1.04); }
+.profile-photo .avatar { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--accent-line); }
+.profile-photo-edit { position: absolute; right: -2px; bottom: -2px; display: grid; place-items: center; width: 28px; height: 28px; border: 3px solid var(--surface); border-radius: 50%; background: var(--accent); color: var(--on-accent); }
+.profile-fields { flex: 1; min-width: 0; }
+.profile-fields .form-field { max-width: 360px; margin-bottom: 10px; }
+.profile-fields .row-actions { margin: 0 0 8px; }
+@media (max-width: 640px) { .profile-editor { flex-direction: column; align-items: flex-start; } }

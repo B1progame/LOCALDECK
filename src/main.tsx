@@ -25,11 +25,12 @@ import {
   updateCollection, updateItem, type ItemSort,
 } from './services/library';
 import type { Collection, ContentType, ImportPreview, LibraryAsset, LibraryItem } from './types';
-import { cacheCover, hasCachedCover, EmptyState, ItemActionsContext, PageHeading, PreviewIcon, TYPE_LABEL, base, bytes, coverBackground, formatRoutePath, friendlyDate, go, type ItemActions, type Page } from './shared';
+import { cacheCover, hasCachedCover, CountUp, EmptyState, ItemActionsContext, PageHeading, PreviewIcon, TYPE_LABEL, base, bytes, coverBackground, formatRoutePath, friendlyDate, go, type ItemActions, type Page } from './shared';
 import { CollectionsPage, HomePage, ItemDetailsPage, LibraryView } from './views';
 import { AuthActionPage, readAuthAction } from './authAction';
 import { demosEnabled, installDemos, removeDemos, syncDemos } from './demos';
 import { PackageBuilder } from './packageBuilder';
+import { Avatar, ProfileSettings, useProfile } from './profile';
 import { BUNDLE_FORMAT } from './services/aiBundle';
 import './styles.css';
 
@@ -124,7 +125,7 @@ function App() {
       const estimate = await navigator.storage?.estimate?.();
       const persisted = await navigator.storage?.persisted?.();
       if (active) setStorage({ usage: estimate?.usage, quota: estimate?.quota, persisted });
-      if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      if (!import.meta.env.DEV && 'serviceWorker' in navigator && location.protocol !== 'file:') {
         navigator.serviceWorker.register(`${base}sw.js`, { scope: base }).then(() => {
           if (active) navigator.serviceWorker.ready.then(() => { if (active && !navigator.serviceWorker.controller) location.reload(); });
         }).catch(() => { if (active) notify('Offline caching could not start. Your library still works in this browser.', true); });
@@ -148,6 +149,16 @@ function App() {
   useEffect(() => { if (!toast) return; const id = window.setTimeout(() => setToast(null), 3600); return () => window.clearTimeout(id); }, [toast]);
 
   useEffect(() => { document.documentElement.classList.toggle('reduce-motion', reducedMotion); }, [reducedMotion]);
+  useEffect(() => {
+    const onMove = (event: PointerEvent) => {
+      const el = (event.target as Element | null)?.closest?.('.spotlight, .panel, .start-item, .collection-tile, .subject-tile, .theme-card, .pb-start-card') as HTMLElement | null;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      el.style.setProperty('--sx', `${event.clientX - r.left}px`); el.style.setProperty('--sy', `${event.clientY - r.top}px`);
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    return () => window.removeEventListener('pointermove', onMove);
+  }, []);
   const currentPage = route.page === 'shared' ? 'shared' : route.page;
   const pageItems = useMemo(() => {
     let result = [...items];
@@ -338,14 +349,14 @@ function App() {
       <div className="sidebar-spacer" />
       <StorageMini storage={storage} items={items} />
       <NavItem page="settings" active={currentPage === 'settings'} label="Settings" icon={Settings} onNavigate={() => setMobileNav(false)} />
-      <div className="profile-row"><span className="profile-avatar">Y</span><span><b>Your space</b><small>Saved on this device</small></span><ShieldCheck size={16} /></div>
+      <ProfileRow onNavigate={() => setMobileNav(false)} />
     </aside>}
     {!isLoginPage && mobileNav && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
     <main className={`main-area ${isLoginPage ? 'auth-main' : ''}`}>
       {!isLoginPage && <header className="topbar">
         <button className="mobile-menu icon-button" aria-label="Open menu" onClick={() => setMobileNav(true)}><Menu size={19} /></button>
         <div className="breadcrumbs"><span>My library</span><span className="crumb-separator">/</span><b>{pageTitle}</b></div>
-        <div className="top-actions"><span className={`offline-pill ${navigator.onLine ? '' : 'offline'}`}><i />{navigator.onLine ? 'Offline-ready' : 'Offline mode'}</span><button className="search-trigger" onClick={() => setSearchOpen(true)}><Search size={16} /><span>Search anything</span><kbd>{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'}</kbd></button><button className="icon-button theme-toggle" onClick={toggleLight} aria-label="Switch between light and dark appearance" title="Light / dark"><Sun size={18} className="icon-sun"/><Moon size={18} className="icon-moon"/></button><button className="avatar-small" aria-label="Settings" onClick={() => go('settings')}>Y</button></div>
+        <div className="top-actions"><span className={`offline-pill ${navigator.onLine ? '' : 'offline'}`}><i />{navigator.onLine ? 'Offline-ready' : 'Offline mode'}</span><button className="search-trigger" onClick={() => setSearchOpen(true)}><Search size={16} /><span>Search anything</span><kbd>{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'}</kbd></button><button className="icon-button theme-toggle" onClick={toggleLight} aria-label="Switch between light and dark appearance" title="Light / dark"><Sun size={18} className="icon-sun"/><Moon size={18} className="icon-moon"/></button><button className="avatar-small" aria-label="Your profile and settings" onClick={() => go('settings')}><Avatar size={32}/></button></div>
       </header>}
       <ItemActionsContext.Provider value={itemActions}><AnimatePresence initial={false}>
         <motion.div key={`${currentPage}-${route.shareId ?? ''}`} className="page-content" {...routeMotion}>
@@ -359,7 +370,7 @@ function App() {
           {currentPage === 'storage' && <StoragePage items={items} storage={storage} integrity={integrity} busy={busy} backup={performBackup} restore={() => restoreInput.current?.click()} requestPersistent={requestPersistentStorage} checkIntegrity={checkIntegrity} repair={runRepair} />}
           {currentPage === 'sharing' && <SharingPage notify={notify} />}
           {currentPage === 'login' && <SharingPage notify={notify} loginOnly />}
-          {currentPage === 'settings' && <SettingsPage appearance={appearance} setAppearance={setAppearance} demosOn={demosOn} busy={busy} onDemos={value => void toggleDemos(value)} reducedMotion={reducedMotion} onMotion={async value => { setReducedMotion(value); await db.settings.put({ id:'reduced-motion', value, updatedAt:Date.now() }); }} />}
+          {currentPage === 'settings' && <SettingsPage notify={notify} appearance={appearance} setAppearance={setAppearance} demosOn={demosOn} busy={busy} onDemos={value => void toggleDemos(value)} reducedMotion={reducedMotion} onMotion={async value => { setReducedMotion(value); await db.settings.put({ id:'reduced-motion', value, updatedAt:Date.now() }); }} />}
           </>}
           {currentPage === 'shared' && <SharedPage shareId={route.shareId ?? ''} shareQuery={route.shareQuery ?? ''} notify={notify} />}
         </motion.div>
@@ -376,6 +387,11 @@ function App() {
 
 function NavItem({ page, active, label, icon: Icon, count, onNavigate }: { page: Page; active: boolean; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number }>; count?: number; onNavigate?: () => void }) {
   return <a href={`#/${page}`} onClick={onNavigate} className={`nav-link ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}>{active && <motion.span layoutId="nav-pill" className="nav-pill" transition={{ type: 'spring', bounce: .22, visualDuration: .4 }}/>}<Icon size={17} strokeWidth={active ? 2.15 : 1.8} /><span>{label}</span>{count !== undefined && <small>{count}</small>}</a>;
+}
+
+function ProfileRow({ onNavigate }: { onNavigate: () => void }) {
+  const { name } = useProfile();
+  return <a className="profile-row" href="#/settings" onClick={onNavigate} title="Edit your name and picture"><Avatar size={32}/><span><b>{name || 'Your space'}</b><small>Saved on this device</small></span><ShieldCheck size={16} /></a>;
 }
 
 function StorageMini({ storage, items }: { storage: { usage?: number; quota?: number; persisted?: boolean }; items: LibraryItem[] }) {
@@ -402,7 +418,7 @@ function CollectionDetail({collection,items,onBack,open,favorite,onChange,onRemo
 
 function ImportPage({previews,busy,addFiles,addFolder,save,discard,editPreview,onDrop}:{previews:ImportPreview[];busy:boolean;addFiles:()=>void;addFolder:()=>void;save:(preview:ImportPreview)=>void;discard:(preview:ImportPreview)=>void;editPreview:(preview:ImportPreview)=>void;onDrop:(files:File[])=>void}) {
   return <><PageHeading eyebrow="Bring your projects with you" title="Import center" description="Choose files or a folder. They are inspected locally, and nothing is saved until you confirm." />
-    <div className="import-drop" onDragOver={event=>{event.preventDefault();event.currentTarget.classList.add('drag-over');}} onDragLeave={event=>event.currentTarget.classList.remove('drag-over')} onDrop={event=>{event.preventDefault();event.currentTarget.classList.remove('drag-over');const files=[...event.dataTransfer.files];if(files.length)onDrop(files);}}>
+    <div className="import-drop dot-pattern" onDragOver={event=>{event.preventDefault();event.currentTarget.classList.add('drag-over');}} onDragLeave={event=>event.currentTarget.classList.remove('drag-over')} onDrop={event=>{event.preventDefault();event.currentTarget.classList.remove('drag-over');const files=[...event.dataTransfer.files];if(files.length)onDrop(files);}}>
       <span className="drop-icon">{busy?<LoaderCircle size={24} className="spin"/>:<Upload size={23}/>}</span><h2>{busy?'Inspecting your files…':'Bring in something you made'}</h2><p>HTML pages, complete ZIP projects, PDFs, or a whole folder. Files stay in this browser.</p><div className="drop-actions"><button className="button primary" onClick={addFiles}><Upload size={16}/> Choose files</button><button className="button" onClick={addFolder}>Choose a folder</button></div>{busy?<div className="progress-bar indeterminate" role="progressbar" aria-label="Inspecting files"><i/></div>:<small>80 MB ZIP · 120 MB expanded project · 50 MB per file</small>}
     </div>
     <div className="privacy-note"><ShieldCheck size={17}/><span><b>Private by default</b><small>Importing never sends your projects to a server. You choose explicitly if you ever share one.</small></span></div>
@@ -430,7 +446,7 @@ function StudioPage({items,notify,onAdded}:{items:LibraryItem[];notify:(message:
   const downloadSource=()=>{if(upload)downloadBlob(upload,upload.name);else if(source)downloadBlob(new Blob([source.text],{type:'text/html;charset=utf-8'}),source.name.split('/').pop()||'index.html');};
   const downloadImage=()=>{const image=imageAssets.find(asset=>asset.normalizedPath===imagePath);if(image)downloadBlob(image.blob,image.normalizedPath.split('/').pop()||'image');};
   return <><PageHeading title="AI studio" description="Turn what your AI made into a finished LocalDeck project — or prepare the prompt that makes it." />
-    <div className="studio-tabs" role="tablist" aria-label="AI studio tools"><button role="tab" aria-selected={tab==='package'} className={tab==='package'?'active':''} onClick={()=>setTab('package')}><PackageOpen size={16}/> Package builder<small>HTML + images → ZIP</small></button><button role="tab" aria-selected={tab==='pdf'} className={tab==='pdf'?'active':''} onClick={()=>setTab('pdf')}><FileText size={16}/> PDF to project<small>Prompt for your AI</small></button><button role="tab" aria-selected={tab==='inspect'} className={tab==='inspect'?'active':''} onClick={()=>setTab('inspect')}><Code2 size={16}/> Improve HTML<small>Better page + cover + ZIP</small></button></div>
+    <div className="studio-tabs beam-tabs" role="tablist" aria-label="AI studio tools"><button role="tab" aria-selected={tab==='package'} className={tab==='package'?'active':''} onClick={()=>setTab('package')}><PackageOpen size={16}/> Package builder<small>HTML + images → ZIP</small></button><button role="tab" aria-selected={tab==='pdf'} className={tab==='pdf'?'active':''} onClick={()=>setTab('pdf')}><FileText size={16}/> PDF to project<small>Prompt for your AI</small></button><button role="tab" aria-selected={tab==='inspect'} className={tab==='inspect'?'active':''} onClick={()=>setTab('inspect')}><Code2 size={16}/> Improve HTML<small>Better page + cover + ZIP</small></button></div>
     {tab==='package'&&<PackageBuilder notify={notify} onAdded={onAdded}/>}
     {tab==='pdf'&&<PdfProjectBuilder notify={notify}/>}
     {tab==='inspect'&&<>
@@ -470,16 +486,17 @@ function StoragePage({items,storage,integrity,busy,backup,restore,requestPersist
   const byType=Object.entries(items.reduce<Record<string,number>>((total,item)=>{total[item.type]=(total[item.type]??0)+item.storageSize;return total;},{})).sort((a,b)=>b[1]-a[1]);
   const projectBytes=items.reduce((sum,item)=>sum+item.storageSize,0);
   return <><PageHeading eyebrow="Your device" title="Storage & backups" description="Keep track of local space and export a copy before moving browsers or devices." action={<button className="button primary" disabled={busy||!items.length} onClick={backup}><Archive size={16}/> Export library</button>} />
-    <div className="storage-overview"><div className="storage-total"><small>Project files</small><strong>{bytes(projectBytes)}</strong><span>{items.length} saved item{items.length===1?'':'s'}</span></div><div className="storage-quota"><div className="quota-top"><span>Browser storage estimate</span><b>{storage.usage!==undefined?bytes(storage.usage):'Not available'}{storage.quota?` of ${bytes(storage.quota)}`:''}</b></div><div className="quota-track"><i style={{width:`${storage.quota?Math.min(100,(storage.usage??0)/storage.quota*100):0}%`}}/></div><p>{storage.persisted?'The browser has marked this site’s data as persistent.':'Browser data can be cleared or evicted. A backup is the only portable copy.'}</p><button className="text-button" onClick={requestPersistent}>{storage.persisted?'Storage persistence requested':'Request persistent storage'}</button></div></div>
+    <div className="storage-overview"><div className="storage-total"><small>Project files</small><strong><CountUp value={projectBytes} format={bytes}/></strong><span><CountUp value={items.length}/> saved item{items.length===1?'':'s'}</span></div><div className="storage-quota"><div className="quota-top"><span>Browser storage estimate</span><b>{storage.usage!==undefined?bytes(storage.usage):'Not available'}{storage.quota?` of ${bytes(storage.quota)}`:''}</b></div><div className="quota-track"><i style={{width:`${storage.quota?Math.min(100,(storage.usage??0)/storage.quota*100):0}%`}}/></div><p>{storage.persisted?'The browser has marked this site’s data as persistent.':'Browser data can be cleared or evicted. A backup is the only portable copy.'}</p><button className="text-button" onClick={requestPersistent}>{storage.persisted?'Storage persistence requested':'Request persistent storage'}</button></div></div>
     <div className="storage-actions"><div className="panel"><span className="panel-icon violet"><ArrowDownToLine size={18}/></span><h2>Restore a backup</h2><p>Merge projects from a LocalDeck backup. Matching project IDs are kept as separate copies.</p><button className="button" disabled={busy} onClick={restore}>Choose a backup ZIP</button></div><div className="panel"><span className="panel-icon mint"><ShieldCheck size={18}/></span><h2>Check library integrity</h2><p>Find project records with missing files and assets left behind by interrupted operations.</p><div className="row-actions"><button className="button" onClick={checkIntegrity}>Run check</button>{integrity&&(integrity.orphanAssetCount||integrity.incompleteItemIds.length)?<button className="button danger-button" onClick={repair}>Repair storage</button>:null}</div>{integrity&&<small className={integrity.orphanAssetCount||integrity.incompleteItemIds.length?'warning-text':'success-text'}>{integrity.orphanAssetCount} orphaned files · {integrity.incompleteItemIds.length} incomplete projects</small>}</div></div>
     {byType.length>0&&<section className="section-block"><div className="section-title-row"><div><h2>Space by project type</h2><p>Calculated from files stored in your library</p></div></div><div className="usage-list">{byType.map(([type,size])=><div className="usage-row" key={type}><span>{TYPE_LABEL[type as ContentType]??type}</span><div><i style={{width:`${Math.max(1,Math.round(size/Math.max(projectBytes,1)*100))}%`}}/></div><b>{bytes(size)}</b></div>)}</div></section>}
     {items.length>0&&<section className="section-block"><div className="section-title-row"><div><h2>Largest projects</h2><p>Useful when your browser storage is getting full</p></div></div><div className="largest-list">{[...items].sort((a,b)=>b.storageSize-a.storageSize).slice(0,5).map(item=><div key={item.id}><span><b>{item.title}</b><small>{item.fileCount} file{item.fileCount===1?'':'s'} · {TYPE_LABEL[item.type]}</small></span><strong>{bytes(item.storageSize)}</strong></div>)}</div></section>}
   </>;
 }
 
-function SettingsPage({appearance,setAppearance,demosOn,busy,onDemos,reducedMotion,onMotion}:{appearance:Appearance;setAppearance:(next:Partial<Appearance>)=>void;demosOn:boolean;busy:boolean;onDemos:(value:boolean)=>void;reducedMotion:boolean;onMotion:(value:boolean)=>void}) {
+function SettingsPage({notify,appearance,setAppearance,demosOn,busy,onDemos,reducedMotion,onMotion}:{notify:(message:string,error?:boolean)=>void;appearance:Appearance;setAppearance:(next:Partial<Appearance>)=>void;demosOn:boolean;busy:boolean;onDemos:(value:boolean)=>void;reducedMotion:boolean;onMotion:(value:boolean)=>void}) {
   const customAccent = appearance.accent && !ACCENTS.includes(appearance.accent) ? appearance.accent : null;
   return <><PageHeading title="Settings" description="Tune how LocalDeck looks and behaves in this browser."/>
+    <section className="settings-section" id="profile"><h2>Profile</h2><div className="settings-list"><ProfileSettings notify={notify}/></div></section>
     <section className="settings-section"><h2>Appearance</h2><div className="settings-list">
       <div className="theme-grid" role="group" aria-label="Theme">{THEMES.map(theme=><button key={theme.id} type="button" className="theme-card" aria-pressed={appearance.theme===theme.id} onClick={()=>setAppearance({theme:theme.id})}>
         <span className={`theme-preview ${theme.id==='system'?'split':''}`} style={{background:theme.swatch[0]}}><i style={{background:theme.swatch[2]}}/><i style={{background:theme.swatch[1]===theme.swatch[0]?'#888':theme.id==='pearl'?'#16151D':'#fff'}}/><i style={{background:theme.id==='pearl'||theme.id==='system'?'#c9c7d6':theme.swatch[1]}}/></span>
@@ -590,7 +607,7 @@ function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boo
     catch(err){setError(safeError(err));}
   };
   const signOut=()=>{sessionStorage.removeItem(SHARE_SESSION_KEY);setSession(null);setShares([]);setLoaded(false);setError('');notify('Signed out of sharing.');};
-  const loginCard=<section className={`share-login-card ${loginOnly?'share-login-card-full':''}`}>
+  const loginCard=<section className={`share-login-card beam ${loginOnly?'share-login-card-full':''}`}>
     <div className="share-login-art" aria-hidden="true"><span className="art-glow"/><span className="pulse-ring"/><span className="pulse-ring delay-1"/><span className="pulse-ring delay-2"/><div className="share-orbit orbit-one"><i/></div><div className="share-orbit orbit-two"><i/><i/></div><div className="chip-orbit"><span className="orbit-chip chip-a"><Gamepad2 size={15}/></span><span className="orbit-chip chip-b"><FileText size={15}/></span><span className="orbit-chip chip-c"><Image size={15}/></span></div><div className="share-lock"><span className="lock-shine"/><Cloud size={30}/><span className="lock-badge"><Check size={15}/></span></div><span className="share-sparkle s1">✦</span><span className="share-sparkle s2">✦</span><span className="share-sparkle s3">✦</span></div>
     <div className="share-login-content">
       {loginOnly&&<a className="login-back-link" href="#/sharing"><ArrowLeft size={15}/> Back to shared links</a>}

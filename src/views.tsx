@@ -7,10 +7,11 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { db } from './services/database';
+import { useProfile } from './profile';
 import { getAssets, type ItemSort } from './services/library';
 import type { Collection, ContentType, LibraryAsset, LibraryItem } from './types';
 import {
-  Chips, EmptyState, ItemCard, ItemMenu, ItemRow, LEARNING_TYPES, OPEN_VERB, PLAY_TYPES, PageHeading, Shelf, TYPE_ICON, TYPE_LABEL,
+  Chips, CountUp, EmptyState, ItemCard, ItemMenu, ItemRow, LEARNING_TYPES, OPEN_VERB, PLAY_TYPES, PageHeading, Shelf, TYPE_ICON, TYPE_LABEL,
   base, bytes, colorFor, coverBackground, friendlyDate, go, isHtmlItem, itemSubtitle, useItemActions, type Page,
 } from './shared';
 
@@ -45,7 +46,8 @@ export function HomePage({ items, collections, add, tryDemos }: { items: Library
   const recent = useMemo(() => items.filter(item => item.lastOpenedAt).sort(byOpened), [items]);
   const featured = recent[0] ?? items.find(item => item.favorite) ?? [...items].sort(byImported)[0];
   const hour = new Date().getHours();
-  const greeting = hour < 5 ? 'Good night.' : hour < 12 ? 'Good morning.' : hour < 18 ? 'Good afternoon.' : 'Good evening.';
+  const { name } = useProfile();
+  const greeting = `${hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}${name ? `, ${name}` : ''}.`;
   const art = featured ? coverBackground(featured) : '';
   const FeaturedIcon = featured ? TYPE_ICON[featured.type] : Sparkles;
   const { scrollY } = useScroll();
@@ -59,7 +61,8 @@ export function HomePage({ items, collections, add, tryDemos }: { items: Library
   return <>
     <PageHeading title={greeting} description={items.length ? `${items.length} project${items.length === 1 ? '' : 's'} in your library, saved on this device.` : 'Everything you learn, make and love, saved on this device.'}
       action={<><button className="button" onClick={() => go('studio')}><Sparkles size={16}/> AI studio</button><button className="button primary" onClick={add}><Plus size={17}/> Import</button></>} />
-    <section className={`hero-banner ${featured ? 'has-art' : ''}`}>
+    <section className={`hero-banner beam spotlight ${featured ? 'has-art' : ''}`}>
+      {!featured && <span className="aurora" aria-hidden="true"><i/><i/><i/></span>}
       {featured && <span className="hero-backdrop" style={{ backgroundImage: art }} aria-hidden="true" />}
       <motion.div className="hero-copy" style={{ y: heroCopyY, opacity: heroCopyFade }}>
         <div className="hero-kicker"><i /> {featured ? (featured.lastOpenedAt ? 'Continue where you left off' : featured.favorite ? 'One of your favorites' : 'Recently added') : 'Private by design'}</div>
@@ -95,17 +98,17 @@ export function HomePage({ items, collections, add, tryDemos }: { items: Library
     <Shelf title="Games & apps" items={play} limit={4} seeAll={{ label: 'Open Games & apps', onClick: () => go('games') }} />
 
     <section className="section-block"><div className="section-title-row"><div><h2>Quick access</h2></div></div><div className="explore-row">
-      <ExploreTile icon={Library} title="Everything" detail={`${items.length} item${items.length === 1 ? '' : 's'}`} color="violet" page="library" />
-      <ExploreTile icon={BookOpen} title="Learning hub" detail={`${learning.length} material${learning.length === 1 ? '' : 's'}`} color="mint" page="learning" />
-      <ExploreTile icon={Gamepad2} title="Games & apps" detail={`${play.length} to play and use`} color="peach" page="games" />
-      <ExploreTile icon={Archive} title="Collections" detail={`${collections.length} organized`} color="blue" page="collections" />
+      <ExploreTile icon={Library} title="Everything" detail={<><CountUp value={items.length}/> item{items.length === 1 ? '' : 's'}</>} color="violet" page="library" />
+      <ExploreTile icon={BookOpen} title="Learning hub" detail={<><CountUp value={learning.length}/> material{learning.length === 1 ? '' : 's'}</>} color="mint" page="learning" />
+      <ExploreTile icon={Gamepad2} title="Games & apps" detail={<><CountUp value={play.length}/> to play and use</>} color="peach" page="games" />
+      <ExploreTile icon={Archive} title="Collections" detail={<><CountUp value={collections.length}/> organized</>} color="blue" page="collections" />
     </div></section>
     <footer className="page-footer">Saved on this device <span>·</span> Works offline <span>·</span> Yours to keep</footer>
   </>;
 }
 
-function ExploreTile({ icon: Icon, title, detail, color, page }: { icon: LucideIcon; title: string; detail: string; color: string; page: Page }) {
-  return <button className="explore-tile" onClick={() => go(page)}><span className={`start-icon ${color}`}><Icon size={17}/></span><span><b>{title}</b><small>{detail}</small></span></button>;
+function ExploreTile({ icon: Icon, title, detail, color, page }: { icon: LucideIcon; title: string; detail: React.ReactNode; color: string; page: Page }) {
+  return <button className="explore-tile spotlight" onClick={() => go(page)}><span className={`start-icon ${color}`}><Icon size={17}/></span><span><b>{title}</b><small>{detail}</small></span></button>;
 }
 
 /* ---------- Library views ---------- */
