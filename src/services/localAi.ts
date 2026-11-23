@@ -18,6 +18,9 @@ export function buildLocalScanContext(source: string, inspection: HtmlInspection
     links: inspection.links.slice(0, 40),
     buttons: inspection.buttons.slice(0, 40),
     forms: inspection.forms.slice(0, 20),
+    externalScriptReferences: inspection.scripts.slice(0, 30),
+    stylesheetReferences: inspection.stylesheets.slice(0, 30),
+    mediaReferences: inspection.images.slice(0, 30),
     visibleText: text,
   });
 }
