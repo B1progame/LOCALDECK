@@ -1,55 +1,92 @@
 # Optional encrypted sharing
 
-LOCALDECK works without a network service. This Worker is only used when you choose **Create encrypted link** on a project. The browser exports that project to ZIP, encrypts the bytes with AES-GCM, and uploads only the ciphertext. The 256-bit decryption key is carried after `#` in the generated URL; browsers do not send URL fragments to the Worker. Anyone who gets the complete link can open the project until expiry or revocation.
+Sharing is optional and stays off until you configure the app and Worker. Creating and managing links requires Google sign-in. The recipient does not need to log in: possession of the complete share link grants access until its three-day expiry or until the owner deletes it.
 
-The Worker stores encrypted blobs in R2 and minimal metadata in D1. It accepts 1 hour, 1 day, 7 day, or 30 day expirations, caps encrypted blobs at 50 MiB, allows at most 10 owner uploads per IP per hour, caps active storage at 200 links / 512 MiB, limits owner listing to the most recent 100 links, and removes expired objects on its scheduled cleanup. Set a strong random `OWNER_TOKEN` with Wrangler secrets; never put it in GitHub variables or a committed `.env` file. Owner tokens are sent only over HTTPS and are held in page memory while the dialog is open.
+## Limits and privacy
 
-## Create the Cloudflare resources
+- Maximum 24 MiB per encrypted upload.
+- Maximum 48 MiB of active shares per Google account and 512 MiB across the whole service.
+- Maximum 3 uploads in progress globally and 3 per account.
+- Maximum 5 upload attempts per account per hour, 15 per account per UTC day, and 100 upload attempts globally per UTC day.
+- Maximum 50 active links shown per account. Links expire after 3 days and owners can delete them sooner.
+- A client IP is limited to 40 authentication attempts and 120 share reads per hour. IP addresses are hashed before rate-limit records are stored.
 
-Install the Cloudflare Wrangler CLI, log in to the account that should own the storage, then from `cloudflare/` run:
+The browser encrypts each ZIP with AES-GCM before upload. Cloudflare stores ciphertext, an opaque random ID, owner ID, byte count, and timestamps; it never receives project names, plaintext project files, or the decryption key. The key stays after `#` in the link. Deleting a share immediately removes its D1 record and requests deletion of its KV object, so future downloads stop; recipients may keep a copy they downloaded earlier.
 
-```powershell
-wrangler login
-wrangler d1 create localdeck-shares
-wrangler r2 bucket create localdeck-shares
-```
+Google sign-in uses only the standard identity scopes (email, profile, openid). The Google web client ID is public configuration and is embedded in the app build by design. There is no Google API key or OAuth client secret in the app. The Worker independently verifies the ID token signature, issuer, audience, expiry, and verified email against Google's rotating public keys before every owner action. The token is held in this tab's session storage and expires with Google's one-hour credential. No owner password or shared bearer token is stored in the repository.
 
-Copy the D1 `database_id` returned by Wrangler into `wrangler.toml`. Apply the schema:
+The Worker is designed for Cloudflare's free plan: 512 MiB active storage is below the included 1 GB KV storage limit, and the 24 MiB object maximum is below KV's 25 MiB value limit. KV includes 1,000 writes and 1,000 deletes per day, and Workers Free includes 100,000 requests per day; Cloudflare documents that free-plan KV operations fail after a quota is reached and the Workers request limit rejects additional requests. Service limits are a backstop, not a billing setting. Keep the account on Workers Free and do not enable R2, Workers Paid, or other paid storage. The account owner should also review their Cloudflare plan and billing settings directly.
 
-```powershell
-wrangler d1 execute localdeck-shares --file schema.sql
-```
+## Set up Google sign-in (free)
 
-Generate a random token locally and set it as a Worker secret. Keep the value in your password manager; LOCALDECK never stores it:
+1. Open [Google Auth Platform](https://console.cloud.google.com/auth/clients) and choose or create a project.
+2. Configure the app branding and support email. For audience, choose **External** if people outside your organization should sign in. A project left in testing mode only allows the test users you list.
+3. Create an OAuth client with application type **Web application**.
+4. Add this exact deployed origin under **Authorized JavaScript origins**: `https://b1progame.github.io`. Do not add a redirect URI; this integration uses the Google Identity Services popup callback.
+5. Copy the OAuth **Client ID** ending in `.apps.googleusercontent.com`. Do not create an API key or client secret for this feature. Sign-in uses Google's public identity script and default identity scopes; the project does not need an enabled Google data API.
 
-```powershell
-node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
-wrangler secret put OWNER_TOKEN
-```
+Google's [client ID setup guide](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid) covers the current console fields. Google's [server verification guide](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token) explains why the Worker validates the signature and audience rather than trusting profile data sent by the browser.
 
-Set `ALLOWED_ORIGIN` in `wrangler.toml` to the origin of your deployed Pages site (for example `https://b1progame.github.io`) and deploy:
+## Set up Cloudflare (Workers Free)
 
-```powershell
-wrangler deploy
-```
+Run Wrangler commands from `cloudflare/`. Sign in with `npx wrangler login` if requested. Keep the account on **Workers Free**.
 
-The deployment URL is shown by Wrangler. Try a local request with the Worker dev server before using a real project:
+If the KV namespaces do not already exist, create a production and preview namespace:
 
 ```powershell
-wrangler dev
+npx wrangler kv namespace create SHARES_KV
+npx wrangler kv namespace create SHARES_KV --preview
 ```
 
-## Connect GitHub Pages
+Copy the returned namespace IDs into `wrangler.toml` as `id` and `preview_id`. The D1 database configured in `wrangler.toml` is `localdeck-shares`; create it only if it does not already exist:
 
-In the `B1progame/LOCALDECK` repository, add the Actions variable `VITE_SHARE_API_BASE` with the full Worker origin, such as `https://localdeck-share.<your-subdomain>.workers.dev`. The Pages workflow embeds this public API origin at build time. It does not contain the owner token. Push a commit or run **Build and deploy LOCALDECK** from the Actions tab.
+```powershell
+npx wrangler d1 create localdeck-shares
+```
 
-In LOCALDECK, open a project's menu and choose **Create encrypted link**. Enter the Worker URL and owner token, choose an expiration, and copy the link. To review or revoke links, open **Shared links**, enter the same values, and load the list. Revocation deletes the R2 object and marks its database row revoked. Expired rows are removed by the scheduled Worker task.
+Update `database_id` with the returned ID. For a **new empty database**, initialize it with the current schema:
 
-## Data and operational notes
+```powershell
+npx wrangler d1 execute localdeck-shares --remote --file schema.sql
+```
 
-- Share contents are end-to-end encrypted by the browser. Cloudflare sees ciphertext, object size, creation time, and expiration time; project titles and decryption keys are not stored in D1.
-- A link is a bearer credential. Anyone with the full URL, including the fragment key, can import the project.
-- Revocation blocks future loads but cannot erase a copy someone already imported.
-- Share links are not included in local library backups; projects remain on each device.
-- Keep D1 and R2 in the same Cloudflare account. The share payload limit is 50 MiB; the library's local backup limit remains independent.
-- Public reads are bounded by expiry and object size. The upload limiter hashes addresses before storing them; old windows are pruned by the scheduled cleanup.
+For a database that already has the original token-based R2 schema, first inspect old rows and remove their objects from the old R2 bucket while its binding still exists. Get the keys with:
+
+```powershell
+npx wrangler d1 execute localdeck-shares --remote --command "SELECT id, object_key, size_bytes, expires_at FROM shares;"
+```
+
+Delete each listed object individually with `npx wrangler r2 object delete localdeck-shares/<object_key>`. Do not delete the entire bucket if it contains anything else. This old R2 storage may be billable, so check the Cloudflare dashboard and remove legacy objects before relying on the free KV setup. Then apply the one-time database upgrade:
+
+```powershell
+npx wrangler d1 execute localdeck-shares --remote --file migrations/0002_google_owner_auth.sql
+```
+
+The upgrade moves old metadata into a `legacy_shares` table and creates the new Google-owned tables. Old links cannot be assigned safely to Google accounts and stop working with the new Worker. The migration keeps the object keys until you confirm the old R2 objects are deleted; then remove those metadata rows with `npx wrangler d1 execute localdeck-shares --remote --command "DROP TABLE legacy_shares;"`. Do not run the upgrade against a new database initialized with `schema.sql`.
+
+Set the Google client ID as a Worker secret (this keeps server configuration out of source control; it is still a public identifier, not a private OAuth secret):
+
+```powershell
+npx wrangler secret put GOOGLE_CLIENT_ID
+```
+
+Paste the `.apps.googleusercontent.com` client ID at Wrangler's prompt. Keep `ALLOWED_ORIGIN` in `wrangler.toml` set to the exact deployed website origin. Then deploy:
+
+```powershell
+npx wrangler deploy
+```
+
+## Configure GitHub Pages
+
+In the `B1progame/LOCALDECK` repository, open **Settings → Secrets and variables → Actions → Variables** and add:
+
+- `VITE_SHARE_API_BASE`: the Worker origin printed by Wrangler, for example `https://localdeck-share.<your-account>.workers.dev`.
+- `VITE_GOOGLE_CLIENT_ID`: the same public Google web client ID you set on the Worker.
+
+Run the Pages workflow after saving the variables. `VITE_GOOGLE_CLIENT_ID` will be visible in the built JavaScript because OAuth web client IDs are public by design. Never put a Google client secret, Cloudflare API token, or unrelated API key in a `VITE_` variable. None is needed for this feature.
+
+## Operational notes
+
+- Cloudflare Free quotas are shared with other Workers/KV use on the account. When platform free limits are reached, sharing can temporarily stop working until the quota resets; this app does not enable paid services.
+- Google sign-in requires the app to be hosted on HTTPS, except localhost during development.
+- If you later change storage providers or raise any caps, re-check the free plan's current limits and deploy new server-side enforcement before changing the UI limits.

@@ -57,7 +57,11 @@ async function projectAsset(requestUrl) {
     'Cache-Control': 'no-store',
   });
   if (/\.html?$/i.test(path)) {
-    headers.set('Content-Security-Policy', "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' blob:; object-src 'none'; frame-src 'self' blob:; form-action 'none'; base-uri 'self'");
+    // The iframe needs a same-origin request so Safari can route it through
+    // this service worker. This response policy makes its document opaque
+    // again before any project script runs, keeping it isolated from LOCALDECK.
+    const origin = requestUrl.origin;
+    headers.set('Content-Security-Policy', `sandbox allow-scripts allow-forms allow-pointer-lock allow-presentation allow-downloads; default-src ${origin} data: blob:; script-src ${origin} 'unsafe-inline' blob:; style-src ${origin} 'unsafe-inline' blob:; img-src ${origin} data: blob:; font-src ${origin} data: blob:; media-src ${origin} data: blob:; connect-src ${origin} blob:; object-src 'none'; frame-src ${origin} blob:; form-action 'none'; base-uri ${origin}`);
     headers.set('Referrer-Policy', 'no-referrer');
   }
   if (requestUrl.searchParams.has('download')) headers.set('Content-Disposition', 'attachment');

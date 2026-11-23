@@ -29,6 +29,7 @@ jobs:
       - run: npm run build
         env:
           VITE_SHARE_API_BASE: ${{ vars.VITE_SHARE_API_BASE }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

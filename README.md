@@ -9,7 +9,7 @@ Your personal library for learning, games, tools, and all the little things you 
 - Run local projects in a sandboxed player, including files such as images, CSS, and scripts inside ZIP packages.
 - Search, favorite, rename, and remove projects; browse learning and games separately.
 - Export a portable ZIP backup and restore it later.
-- Generate an AI-ready project brief in AI Studio.
+- Inspect one HTML file in AI Studio and prepare a precise, single-file AI prompt.
 - Share a project with an expiring, end-to-end encrypted link when the optional Cloudflare service is configured.
 - Cache the app shell for offline use after the first visit. Install it as an app from a compatible browser.
 - Adapt to phone and tablet screens and respect reduced-motion preferences.
@@ -91,7 +91,7 @@ GitHub Actions builds the app and deploys `dist/` to GitHub Pages after pushes t
 
 ## Optional encrypted sharing
 
-The app works without Cloudflare. To enable expiring share links, deploy the Worker and bind its D1 and R2 resources as described in [`docs/SHARING.md`](docs/SHARING.md). Add `VITE_SHARE_API_BASE=https://your-worker.workers.dev` to the GitHub Actions variable `VITE_SHARE_API_BASE` (or a local `.env.local`) and rebuild. Set the owner token in the Worker with `wrangler secret put OWNER_TOKEN`; it is only requested for sharing or managing links and is never saved by the app. Shared ZIPs are encrypted in the browser with AES-GCM before upload; the decryption key stays in the URL fragment query and is never sent to the Worker.
+The app works without Cloudflare. Optional sharing requires Google sign-in to create and manage links; recipients do not need an account. Follow [`docs/SHARING.md`](docs/SHARING.md) to configure the free Cloudflare Worker, KV, D1, and a Google OAuth web client ID. Each link expires in 3 days; uploads are limited to 24 MiB per link, 48 MiB active per account, 5 per hour and 15 per day per account, and 100 per day globally. Active storage is capped at 512 MiB and uploads at 3 concurrently. The Worker verifies Google's signed ID token; no Google API key or OAuth client secret is used. The web client ID is public configuration, not a secret. Keep it in the Pages Actions variable `VITE_GOOGLE_CLIENT_ID` and set the same ID as Worker secret `GOOGLE_CLIENT_ID`. Shared ZIPs are encrypted in the browser with AES-GCM before upload; the decryption key stays in the URL fragment and is never sent to the Worker. Link owners can permanently delete shares from Shared links.
 
 ## Icon prompt
 

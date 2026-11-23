@@ -13,7 +13,7 @@ LOCALDECK is a static React and TypeScript app with two independent parts: the o
 
 ## Optional sharing
 
-When the user explicitly chooses Create encrypted link, the browser exports one item to ZIP, encrypts it with a fresh AES-GCM key, and uploads ciphertext to the Worker. D1 stores only an opaque identifier, object key, status, timestamps, and size. The decryption key stays after the `#` in the application URL. Recipients decrypt and validate the project locally before they choose to import it.
+When a signed-in user chooses **Create encrypted link**, the browser exports one item to ZIP, encrypts the bytes with a fresh AES-GCM key, and uploads ciphertext with the Google ID token. The Worker verifies the signature and claims before every owner action, then scopes list/delete and quotas to Google's stable subject ID. D1 stores an opaque identifier, owner ID, timestamps, and size; Workers KV stores the encrypted payload for at most 3 days. The decryption key stays after `#` in the application URL. Recipients decrypt and validate the project locally before they choose to import it; they do not need accounts. Per-account storage is capped at 48 MiB, each upload at 24 MiB, uploads at 5/hour and 15/day per account plus 100/day globally, service storage at 512 MiB, and concurrent uploads at 3.
 
 ## Tradeoffs
 

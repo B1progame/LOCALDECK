@@ -1,19 +1,32 @@
 interface Env {
+  SHARES_KV: KVNamespace;
   SHARES_DB: D1Database;
-  SHARES_BUCKET: R2Bucket;
-  OWNER_TOKEN: string;
+  GOOGLE_CLIENT_ID: string;
   ALLOWED_ORIGIN: string;
-  MAX_SHARE_BYTES?: string;
 }
 
+type GoogleClaims = { sub: string; aud: string | string[]; azp?: string; iss: string; exp: number; iat: number; nbf?: number; email: string; email_verified: boolean; name?: string; picture?: string };
+type GoogleJwk = JsonWebKey & { kid: string };
+type Owner = { id: string; email: string; name: string; picture: string };
 const jsonHeaders = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' };
 const idPattern = /^[a-f0-9-]{36}$/i;
 const encoder = new TextEncoder();
+const MAX_SHARE_BYTES = 24 * 1024 * 1024;
+const MAX_ACTIVE_BYTES = 512 * 1024 * 1024;
+const MAX_USER_BYTES = 48 * 1024 * 1024;
+const MAX_CONCURRENT_UPLOADS = 3;
+const MAX_USER_UPLOADS_PER_HOUR = 5;
+const MAX_USER_UPLOADS_PER_DAY = 15;
+const MAX_GLOBAL_UPLOADS_PER_DAY = 100;
+const MAX_IP_READS_PER_HOUR = 120;
+const MAX_IP_AUTH_PER_HOUR = 40;
+const SHARE_TTL_SECONDS = 3 * 24 * 60 * 60;
+let googleKeys: { keys: GoogleJwk[]; expiresAt: number } | null = null;
 
 function cors(request: Request, env: Env): Headers {
   const origin = request.headers.get('Origin');
-  const headers = new Headers({ 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'access-control-allow-headers': 'authorization, content-type, x-share-expires-in', 'access-control-max-age': '86400', vary: 'Origin' });
-  if (origin && (origin === env.ALLOWED_ORIGIN || origin === 'http://localhost:5468' || origin === 'http://127.0.0.1:5468')) headers.set('access-control-allow-origin', origin);
+  const headers = new Headers({ 'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS', 'access-control-allow-headers': 'authorization, content-type', 'access-control-max-age': '86400', vary: 'Origin' });
+  if (origin && origin === env.ALLOWED_ORIGIN) headers.set('access-control-allow-origin', origin);
   return headers;
 }
 
@@ -23,29 +36,118 @@ function response(body: BodyInit | null, status: number, corsHeaders: Headers, e
   return new Response(body, { status, headers });
 }
 
-function json(data: unknown, status: number, headers: Headers): Response {
-  return response(JSON.stringify(data), status, headers, jsonHeaders);
+function json(data: unknown, status: number, headers: Headers): Response { return response(JSON.stringify(data), status, headers, jsonHeaders); }
+
+function b64url(value: string): Uint8Array {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4);
+  return Uint8Array.from(atob(padded), char => char.charCodeAt(0));
 }
 
-async function isAuthorized(request: Request, env: Env): Promise<boolean> {
+function decodeJson<T>(segment: string): T { return JSON.parse(new TextDecoder().decode(b64url(segment))) as T; }
+
+async function readBounded(request: Request, maxBytes: number): Promise<ArrayBuffer> {
+  if (!request.body) throw new Error('empty_body');
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) { await reader.cancel(); throw new Error('body_too_large'); }
+      chunks.push(value);
+    }
+  } finally { reader.releaseLock(); }
+  const output = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { output.set(chunk, offset); offset += chunk.byteLength; }
+  return output.buffer;
+}
+
+async function clientHash(request: Request): Promise<string> {
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(ip)))).map(value => value.toString(16).padStart(2, '0')).join('');
+}
+
+async function rateLimitIp(env: Env, request: Request, table: 'auth_windows' | 'read_windows', limit: number): Promise<boolean> {
+  const hash = await clientHash(request);
+  const windowStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
+  const column = table === 'auth_windows' ? 'attempts' : 'reads';
+  await env.SHARES_DB.prepare(`INSERT INTO ${table} (client_hash, window_start, ${column}) VALUES (?, ?, 1) ON CONFLICT(client_hash, window_start) DO UPDATE SET ${column} = ${column} + 1`).bind(hash, windowStart).run();
+  const row = await env.SHARES_DB.prepare(`SELECT ${column} as count FROM ${table} WHERE client_hash = ? AND window_start = ?`).bind(hash, windowStart).first<{ count: number }>();
+  return (row?.count ?? 0) <= limit;
+}
+
+async function getGoogleKeys(): Promise<GoogleJwk[]> {
+  if (googleKeys && googleKeys.expiresAt > Date.now()) return googleKeys.keys;
+  const result = await fetch('https://www.googleapis.com/oauth2/v3/certs', { cf: { cacheTtl: 3600, cacheEverything: true } });
+  if (!result.ok) throw new Error('Google signing keys are temporarily unavailable.');
+  const data = await result.json() as { keys: GoogleJwk[] };
+  if (!Array.isArray(data.keys)) throw new Error('Google signing keys are invalid.');
+  const cacheControl = result.headers.get('cache-control') ?? '';
+  const maxAge = Number(cacheControl.match(/max-age=(\d+)/i)?.[1] ?? 3600);
+  googleKeys = { keys: data.keys, expiresAt: Date.now() + Math.min(maxAge, 3600) * 1000 };
+  return data.keys;
+}
+
+async function verifyGoogleCredential(token: string, env: Env): Promise<Owner | null> {
+  if (!env.GOOGLE_CLIENT_ID || token.length > 8192) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const header = decodeJson<{ alg?: string; kid?: string }>(parts[0]);
+    const claims = decodeJson<GoogleClaims>(parts[1]);
+    if (header.alg !== 'RS256' || !header.kid || !claims.sub || !claims.email || claims.email_verified !== true) return null;
+    if (claims.iss !== 'https://accounts.google.com' && claims.iss !== 'accounts.google.com') return null;
+    if (claims.aud !== env.GOOGLE_CLIENT_ID && !(Array.isArray(claims.aud) && claims.aud.includes(env.GOOGLE_CLIENT_ID) && claims.azp === env.GOOGLE_CLIENT_ID)) return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (!Number.isFinite(claims.exp) || claims.exp <= now || !Number.isFinite(claims.iat) || claims.iat > now + 300 || claims.iat < now - 7200 || (claims.nbf !== undefined && claims.nbf > now + 300)) return null;
+    const jwk = (await getGoogleKeys()).find(key => key.kid === header.kid);
+    if (!jwk) { googleKeys = null; return null; }
+    const publicKey = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+    const rawSignature = b64url(parts[2]);
+    const signature = new Uint8Array(rawSignature.byteLength);
+    signature.set(rawSignature);
+    const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', publicKey, signature, encoder.encode(`${parts[0]}.${parts[1]}`));
+    if (!valid) return null;
+    return { id: claims.sub, email: claims.email.slice(0, 320), name: (claims.name || claims.email).slice(0, 120), picture: (claims.picture || '').slice(0, 1000) };
+  } catch { return null; }
+}
+
+async function isAuthorized(request: Request, env: Env): Promise<Owner | null> {
   const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-  if (!token || !env.OWNER_TOKEN || token.length > 512) return false;
-  const [given, expected] = await Promise.all([
-    crypto.subtle.digest('SHA-256', encoder.encode(token)),
-    crypto.subtle.digest('SHA-256', encoder.encode(env.OWNER_TOKEN)),
-  ]);
-  const a = new Uint8Array(given), b = new Uint8Array(expected);
-  let difference = 0;
-  for (let index = 0; index < a.length; index++) difference |= a[index] ^ b[index];
-  return difference === 0;
+  if (!token || token.length > 8192 || !await rateLimitIp(env, request, 'auth_windows', MAX_IP_AUTH_PER_HOUR)) return null;
+  return verifyGoogleCredential(token, env);
+}
+
+async function releaseQuota(env: Env, ownerId: string, size: number, releaseSlot = false): Promise<void> {
+  if (size > 0) {
+    await env.SHARES_DB.prepare('UPDATE storage_state SET reserved_bytes = MAX(0, reserved_bytes - ?) WHERE id = 1').bind(size).run();
+    await env.SHARES_DB.prepare('UPDATE user_storage SET active_bytes = MAX(0, active_bytes - ?) WHERE owner_id = ?').bind(size, ownerId).run();
+  }
+  if (releaseSlot) {
+    await env.SHARES_DB.prepare('UPDATE storage_state SET active_uploads = MAX(0, active_uploads - 1) WHERE id = 1').run();
+    await env.SHARES_DB.prepare('UPDATE user_storage SET active_uploads = MAX(0, active_uploads - 1) WHERE owner_id = ?').bind(ownerId).run();
+  }
 }
 
 async function cleanupExpired(env: Env): Promise<void> {
   const now = new Date().toISOString();
-  const rows = await env.SHARES_DB.prepare('SELECT id, object_key FROM shares WHERE expires_at <= ?').bind(now).all<{ id: string; object_key: string }>();
-  for (const row of rows.results) await env.SHARES_BUCKET.delete(row.object_key);
-  await env.SHARES_DB.prepare('DELETE FROM shares WHERE expires_at <= ?').bind(now).run();
-  await env.SHARES_DB.prepare('DELETE FROM upload_windows WHERE window_start < ?').bind(Date.now() - 48 * 3_600_000).run();
+  const rows = await env.SHARES_DB.prepare('SELECT id, owner_id, size_bytes FROM shares WHERE expires_at <= ? LIMIT 100').bind(now).all<{ id: string; owner_id: string; size_bytes: number }>();
+  for (const row of rows.results) {
+    const removed = await env.SHARES_DB.prepare('DELETE FROM shares WHERE id = ? AND expires_at <= ? RETURNING owner_id, size_bytes').bind(row.id, now).first<{ owner_id: string; size_bytes: number }>();
+    if (!removed) continue;
+    await env.SHARES_KV.delete(row.id).catch(() => undefined);
+    await releaseQuota(env, removed.owner_id, removed.size_bytes);
+  }
+  const old = Date.now() - 48 * 3_600_000;
+  await env.SHARES_DB.prepare('DELETE FROM upload_windows WHERE window_start < ?').bind(old).run();
+  await env.SHARES_DB.prepare('DELETE FROM auth_windows WHERE window_start < ?').bind(old).run();
+  await env.SHARES_DB.prepare('DELETE FROM read_windows WHERE window_start < ?').bind(old).run();
+  await env.SHARES_DB.prepare('DELETE FROM daily_upload_windows WHERE window_start < ?').bind(Date.now() - 8 * 86_400_000).run();
+  await env.SHARES_DB.prepare('DELETE FROM global_upload_windows WHERE window_start < ?').bind(Date.now() - 8 * 86_400_000).run();
+  await env.SHARES_DB.prepare('DELETE FROM user_storage WHERE active_bytes = 0 AND active_uploads = 0 AND NOT EXISTS (SELECT 1 FROM shares WHERE shares.owner_id = user_storage.owner_id)').run();
 }
 
 const worker = {
@@ -54,82 +156,112 @@ const worker = {
     const origin = request.headers.get('Origin');
     if (origin && !headers.has('access-control-allow-origin')) return json({ error: 'origin_not_allowed' }, 403, headers);
     if (request.method === 'OPTIONS') return response(null, 204, headers);
-
     const url = new URL(request.url);
     const parts = url.pathname.replace(/^\/+|\/+$/g, '').split('/');
     if (parts[0] !== 'api' || parts[1] !== 'v1' || parts[2] !== 'shares') return json({ error: 'not_found' }, 404, headers);
 
-    if (parts[3] === 'owner' && parts.length === 5 && parts[4] === 'shares' && request.method === 'GET') {
-      if (!await isAuthorized(request, env)) return json({ error: 'unauthorized' }, 401, headers);
-      const result = await env.SHARES_DB.prepare('SELECT id, status, created_at as createdAt, expires_at as expiresAt, size_bytes as sizeBytes FROM shares ORDER BY created_at DESC LIMIT 100').all<{ id:string; status:string; createdAt:string; expiresAt:string; sizeBytes:number }>();
+    if (parts[3] === 'auth' && parts[4] === 'google' && parts.length === 5 && request.method === 'POST') {
+      if (!await rateLimitIp(env, request, 'auth_windows', MAX_IP_AUTH_PER_HOUR)) return json({ error: 'rate_limited' }, 429, headers);
+      let credential = '';
+      try { const text = new TextDecoder().decode(await readBounded(request, 12 * 1024)); const body = JSON.parse(text) as { credential?: unknown }; credential = typeof body.credential === 'string' ? body.credential : ''; }
+      catch { return json({ error: 'invalid_request' }, 400, headers); }
+      const owner = await verifyGoogleCredential(credential, env);
+      if (!owner) return json({ error: 'unauthorized' }, 401, headers);
+      return json({ id: owner.id, email: owner.email, name: owner.name, picture: owner.picture }, 200, headers);
+    }
+
+    if (parts[3] === 'owner' && parts[4] === 'shares' && parts.length === 5 && request.method === 'GET') {
+      const owner = await isAuthorized(request, env);
+      if (!owner) return json({ error: 'unauthorized' }, 401, headers);
+      const result = await env.SHARES_DB.prepare("SELECT id, status, created_at as createdAt, expires_at as expiresAt, size_bytes as sizeBytes FROM shares WHERE owner_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 50").bind(owner.id).all<{ id: string; status: string; createdAt: string; expiresAt: string; sizeBytes: number }>();
       return json(result.results.map(row => ({ ...row, label: 'Encrypted project' })), 200, headers);
+    }
+
+    if (parts.length === 3 && request.method === 'POST') {
+      const owner = await isAuthorized(request, env);
+      if (!owner) return json({ error: 'unauthorized' }, 401, headers);
+      const declared = Number(request.headers.get('content-length') ?? 0);
+      if (!Number.isSafeInteger(declared) || declared < 29 || declared > MAX_SHARE_BYTES) return json({ error: 'invalid_size' }, 413, headers);
+      const windowStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
+      await env.SHARES_DB.prepare('INSERT INTO upload_windows (owner_id, window_start, uploads) VALUES (?, ?, 1) ON CONFLICT(owner_id, window_start) DO UPDATE SET uploads = uploads + 1').bind(owner.id, windowStart).run();
+      const rate = await env.SHARES_DB.prepare('SELECT uploads FROM upload_windows WHERE owner_id = ? AND window_start = ?').bind(owner.id, windowStart).first<{ uploads: number }>();
+      if ((rate?.uploads ?? 0) > MAX_USER_UPLOADS_PER_HOUR) return json({ error: 'rate_limited' }, 429, headers);
+      const dayStart = Math.floor(Date.now() / 86_400_000) * 86_400_000;
+      await env.SHARES_DB.prepare('INSERT INTO daily_upload_windows (owner_id, window_start, uploads) VALUES (?, ?, 1) ON CONFLICT(owner_id, window_start) DO UPDATE SET uploads = uploads + 1').bind(owner.id, dayStart).run();
+      const daily = await env.SHARES_DB.prepare('SELECT uploads FROM daily_upload_windows WHERE owner_id = ? AND window_start = ?').bind(owner.id, dayStart).first<{ uploads: number }>();
+      if ((daily?.uploads ?? 0) > MAX_USER_UPLOADS_PER_DAY) return json({ error: 'daily_rate_limited' }, 429, headers);
+      await env.SHARES_DB.prepare('INSERT INTO global_upload_windows (window_start, uploads) VALUES (?, 1) ON CONFLICT(window_start) DO UPDATE SET uploads = uploads + 1').bind(dayStart).run();
+      const globalDaily = await env.SHARES_DB.prepare('SELECT uploads FROM global_upload_windows WHERE window_start = ?').bind(dayStart).first<{ uploads: number }>();
+      if ((globalDaily?.uploads ?? 0) > MAX_GLOBAL_UPLOADS_PER_DAY) return json({ error: 'daily_rate_limited' }, 429, headers);
+      const slot = await env.SHARES_DB.prepare('UPDATE storage_state SET reserved_bytes = reserved_bytes + ?, active_uploads = active_uploads + 1 WHERE id = 1 AND reserved_bytes + ? <= ? AND active_uploads < ? RETURNING id').bind(declared, declared, MAX_ACTIVE_BYTES, MAX_CONCURRENT_UPLOADS).first<{ id: number }>();
+      if (!slot) return json({ error: 'storage_or_upload_limit' }, 429, headers);
+      const userSlot = await env.SHARES_DB.prepare('INSERT INTO user_storage (owner_id, active_bytes, active_uploads) VALUES (?, ?, 1) ON CONFLICT(owner_id) DO UPDATE SET active_bytes = active_bytes + excluded.active_bytes, active_uploads = active_uploads + 1 WHERE user_storage.active_bytes + excluded.active_bytes <= ? AND user_storage.active_uploads < ? RETURNING owner_id').bind(owner.id, declared, MAX_USER_BYTES, MAX_CONCURRENT_UPLOADS).first<{ owner_id: string }>();
+      if (!userSlot) {
+        await env.SHARES_DB.prepare('UPDATE storage_state SET reserved_bytes = MAX(0, reserved_bytes - ?), active_uploads = MAX(0, active_uploads - 1) WHERE id = 1').bind(declared).run();
+        return json({ error: 'user_storage_limit' }, 429, headers);
+      }
+      const shareId = crypto.randomUUID();
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + SHARE_TTL_SECONDS * 1000).toISOString();
+      let committed = false;
+      let metadataCreated = false;
+      let metadataRemoved = false;
+      try {
+        const encrypted = await readBounded(request, MAX_SHARE_BYTES);
+        if (!encrypted.byteLength || encrypted.byteLength !== declared || encrypted.byteLength > MAX_SHARE_BYTES) return json({ error: 'invalid_size' }, 413, headers);
+        await env.SHARES_DB.prepare('INSERT INTO shares (id, owner_id, status, created_at, expires_at, size_bytes) VALUES (?, ?, ?, ?, ?, ?)').bind(shareId, owner.id, 'revoked', now.toISOString(), expiresAt, encrypted.byteLength).run();
+        metadataCreated = true;
+        await env.SHARES_KV.put(shareId, encrypted, { expirationTtl: SHARE_TTL_SECONDS });
+        const activated = await env.SHARES_DB.prepare("UPDATE shares SET status = 'active' WHERE id = ? AND owner_id = ? AND status = 'revoked' RETURNING id").bind(shareId, owner.id).first<{ id: string }>();
+        if (!activated) throw new Error('share_activation_failed');
+        committed = true;
+        return json({ id: shareId, expiresAt }, 201, headers);
+      } catch (error) {
+        if (metadataCreated) {
+          try {
+            await env.SHARES_KV.delete(shareId);
+            const removed = await env.SHARES_DB.prepare("DELETE FROM shares WHERE id = ? AND owner_id = ? AND status = 'revoked' RETURNING id").bind(shareId, owner.id).first<{ id: string }>();
+            metadataRemoved = Boolean(removed);
+          } catch { /* The revoked row keeps quota reserved until expiry cleanup. */ }
+        }
+        console.error('share_write_failed', error);
+        return json({ error: 'share_write_failed' }, 500, headers);
+      } finally {
+        await releaseQuota(env, owner.id, committed || (metadataCreated && !metadataRemoved) ? 0 : declared, true);
+      }
     }
 
     const id = parts[3];
     const blobRoute = parts.length === 5 && parts[4] === 'blob';
-
-    if (request.method === 'POST' && parts.length === 3) {
-      if (!await isAuthorized(request, env)) return json({ error: 'unauthorized' }, 401, headers);
-      const clientIp = request.headers.get('CF-Connecting-IP') ?? 'unknown';
-      const clientHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(clientIp)))).map(value => value.toString(16).padStart(2, '0')).join('');
-      const windowStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
-      await env.SHARES_DB.prepare('INSERT INTO upload_windows (client_hash, window_start, uploads) VALUES (?, ?, 1) ON CONFLICT(client_hash, window_start) DO UPDATE SET uploads = uploads + 1').bind(clientHash, windowStart).run();
-      const rate = await env.SHARES_DB.prepare('SELECT uploads FROM upload_windows WHERE client_hash = ? AND window_start = ?').bind(clientHash, windowStart).first<{ uploads: number }>();
-      if ((rate?.uploads ?? 0) > 10) return json({ error: 'rate_limited' }, 429, headers);
-      const declared = Number(request.headers.get('content-length') ?? 0);
-      const limit = Math.min(50 * 1024 * 1024, Math.max(1024, Number(env.MAX_SHARE_BYTES) || 50 * 1024 * 1024));
-      if (declared > limit) return json({ error: 'invalid_size' }, 413, headers);
-      const days = Number(request.headers.get('x-share-expires-in') ?? 7);
-      if (![1 / 24, 1, 7, 30].includes(days)) return json({ error: 'invalid_expiration' }, 400, headers);
-      const capacity = await env.SHARES_DB.prepare('SELECT COUNT(*) as count, COALESCE(SUM(size_bytes), 0) as bytes FROM shares WHERE status = \'active\' AND expires_at > ?').bind(new Date().toISOString()).first<{ count: number; bytes: number }>();
-      if ((capacity?.count ?? 0) >= 200 || (capacity?.bytes ?? 0) >= 512 * 1024 * 1024) return json({ error: 'storage_quota' }, 429, headers);
-      const shareId = crypto.randomUUID();
-      const now = new Date(), expiresAt = new Date(now.getTime() + days * 86400_000).toISOString(), objectKey = `${shareId}.bin`;
-      try {
-        const encrypted = await request.arrayBuffer();
-        if (!encrypted.byteLength || encrypted.byteLength > limit) return json({ error: 'invalid_size' }, 413, headers);
-        if ((capacity?.bytes ?? 0) + encrypted.byteLength > 512 * 1024 * 1024) return json({ error: 'storage_quota' }, 429, headers);
-        await env.SHARES_BUCKET.put(objectKey, encrypted, { httpMetadata: { contentType: 'application/octet-stream', cacheControl: 'no-store' } });
-        const stored = await env.SHARES_BUCKET.head(objectKey);
-        if (!stored || stored.size !== encrypted.byteLength) throw new Error('Stored object verification failed.');
-        await env.SHARES_DB.prepare('INSERT INTO shares (id, object_key, status, created_at, expires_at, size_bytes) VALUES (?, ?, ?, ?, ?, ?)').bind(shareId, objectKey, 'active', now.toISOString(), expiresAt, encrypted.byteLength).run();
-        return json({ id: shareId, expiresAt }, 201, headers);
-      } catch (error) {
-        await env.SHARES_BUCKET.delete(objectKey);
-        console.error('share_write_failed', error);
-        return json({ error: 'share_write_failed' }, 500, headers);
-      }
-    }
-
     if (!idPattern.test(id ?? '')) return json({ error: 'not_found' }, 404, headers);
-    const row = await env.SHARES_DB.prepare('SELECT id, object_key, status, created_at, expires_at, size_bytes FROM shares WHERE id = ?').bind(id).first<{ id: string; object_key: string; status: string; created_at: string; expires_at: string; size_bytes: number }>();
-    if (!row || row.status !== 'active' || Date.parse(row.expires_at) <= Date.now()) return json({ error: 'share_unavailable' }, 410, headers);
-    if (blobRoute && request.method === 'GET') {
-      const object = await env.SHARES_BUCKET.get(row.object_key);
-      if (!object) return json({ error: 'share_blob_missing' }, 404, headers);
-      const responseHeaders = new Headers(headers);
-      object.writeHttpMetadata(responseHeaders);
-      responseHeaders.set('content-type', 'application/octet-stream');
-      responseHeaders.set('content-length', String(object.size));
-      responseHeaders.set('cache-control', 'no-store');
-      responseHeaders.set('x-content-type-options', 'nosniff');
-      return new Response(object.body, { headers: responseHeaders });
-    }
-    if (!blobRoute && request.method === 'GET' && parts.length === 4) {
-      return json({ id: row.id, status: row.status, expiresAt: row.expires_at, sizeBytes: row.size_bytes }, 200, headers);
-    }
+    if (!await rateLimitIp(env, request, 'read_windows', MAX_IP_READS_PER_HOUR)) return json({ error: 'rate_limited' }, 429, headers);
     if (!blobRoute && request.method === 'DELETE' && parts.length === 4) {
-      if (!await isAuthorized(request, env)) return json({ error: 'unauthorized' }, 401, headers);
-      await env.SHARES_BUCKET.delete(row.object_key);
-      await env.SHARES_DB.prepare("UPDATE shares SET status = 'revoked' WHERE id = ?").bind(id).run();
-      return json({ id, status: 'revoked' }, 200, headers);
+      const owner = await isAuthorized(request, env);
+      if (!owner) return json({ error: 'unauthorized' }, 401, headers);
+      const revoked = await env.SHARES_DB.prepare("UPDATE shares SET status = 'revoked' WHERE id = ? AND owner_id = ? AND status = 'active' RETURNING owner_id, size_bytes").bind(id, owner.id).first<{ owner_id: string; size_bytes: number }>();
+      if (revoked) {
+        let blobDeleted = false;
+        try { await env.SHARES_KV.delete(id); blobDeleted = true; } catch { /* The revoked D1 row blocks downloads until expiry cleanup. */ }
+        if (blobDeleted) {
+          const removed = await env.SHARES_DB.prepare("DELETE FROM shares WHERE id = ? AND owner_id = ? AND status = 'revoked' RETURNING owner_id, size_bytes").bind(id, owner.id).first<{ owner_id: string; size_bytes: number }>();
+          if (removed) await releaseQuota(env, removed.owner_id, removed.size_bytes);
+        }
+      }
+      return revoked ? json({ id, status: 'deleted' }, 200, headers) : json({ error: 'share_unavailable' }, 404, headers);
     }
+    if (request.method !== 'GET') return json({ error: 'not_found' }, 404, headers);
+    const row = await env.SHARES_DB.prepare('SELECT id, status, created_at, expires_at, size_bytes FROM shares WHERE id = ?').bind(id).first<{ id: string; status: string; created_at: string; expires_at: string; size_bytes: number }>();
+    if (!row || row.status !== 'active' || Date.parse(row.expires_at) <= Date.now()) return json({ error: 'share_unavailable' }, 410, headers);
+    if (blobRoute) {
+      const blob = await env.SHARES_KV.get(id, 'arrayBuffer');
+      if (!blob) return json({ error: 'share_blob_missing' }, 404, headers);
+      return response(blob, 200, headers, { 'content-type': 'application/octet-stream', 'content-length': String(blob.byteLength), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+    }
+    if (parts.length === 4) return json({ id: row.id, status: row.status, expiresAt: row.expires_at, sizeBytes: row.size_bytes }, 200, headers);
     return json({ error: 'not_found' }, 404, headers);
   },
 
-  async scheduled(_controller: ScheduledController, env: Env, context: ExecutionContext): Promise<void> {
-    context.waitUntil(cleanupExpired(env));
-  },
+  async scheduled(_controller: ScheduledController, env: Env, context: ExecutionContext): Promise<void> { context.waitUntil(cleanupExpired(env)); },
 };
 
 export default worker;
