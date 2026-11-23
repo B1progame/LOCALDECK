@@ -1,6 +1,26 @@
 /* Shared building blocks used across LocalDeck screens. */
 import React, { createContext, useContext, useRef, useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, useMotionTemplate, useMotionValue, useSpring, useTransform } from 'motion/react';
+
+/** True when the user or OS asked for less motion. */
+export const prefersLessMotion = () => document.documentElement.classList.contains('reduce-motion') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Cursor-follow 3D tilt with a soft glare (pointer devices only). */
+export function useTilt(max = 7) {
+  const px = useMotionValue(.5), py = useMotionValue(.5);
+  const spring = { stiffness: 260, damping: 24, mass: .6 };
+  const rotateY = useSpring(useTransform(px, [0, 1], [-max, max]), spring);
+  const rotateX = useSpring(useTransform(py, [0, 1], [max * .8, -max * .8]), spring);
+  const gx = useTransform(px, v => `${v * 100}%`), gy = useTransform(py, v => `${v * 100}%`);
+  const glare = useMotionTemplate`radial-gradient(circle at ${gx} ${gy}, rgb(255 255 255 / .22), transparent 55%)`;
+  const onPointerMove = (event: React.PointerEvent<HTMLElement>) => {
+    if (event.pointerType !== 'mouse' || prefersLessMotion()) return;
+    const r = event.currentTarget.getBoundingClientRect();
+    px.set((event.clientX - r.left) / r.width); py.set((event.clientY - r.top) / r.height);
+  };
+  const onPointerLeave = () => { px.set(.5); py.set(.5); };
+  return { style: { rotateX, rotateY, transformPerspective: 900 }, glare, handlers: { onPointerMove, onPointerLeave } };
+}
 import {
   Activity, ArrowDownToLine, BookOpen, Check, ChevronRight, Code2, Copy, FileText, FolderPlus, Gamepad2, Heart, Image, Info, Library,
   MoreHorizontal, PackageOpen, Pencil, Play, RefreshCw, Share2, Trash2, type LucideIcon,
@@ -137,14 +157,18 @@ export function ItemCard({ item, index = 0, compact = false }: { item: LibraryIt
   const [updating, setUpdating] = useState(false);
   const updateInput = useRef<HTMLInputElement>(null);
   const Icon = TYPE_ICON[item.type];
+  const tilt = useTilt();
   const handleUpdate = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; event.target.value = '';
     if (!file) return;
     setUpdating(true);
     try { await a.update(item, file); } finally { setUpdating(false); }
   };
-  return <motion.article className={`item-card ${compact ? 'item-card-compact' : ''}`} initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .2, delay: Math.min(index * .025, .18) }}
+  return <motion.article className={`item-card ${compact ? 'item-card-compact' : ''}`} layout="position" initial={{ opacity: 0, y: 14, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+    transition={{ type: 'spring', bounce: .18, visualDuration: .45, delay: Math.min(index * .035, .28) }}
+    whileHover={{ y: -5 }} whileTap={{ scale: .985 }} style={tilt.style} {...tilt.handlers}
     onContextMenu={event => { event.preventDefault(); setMenu(true); }}>
+    <motion.span className="card-glare" style={{ backgroundImage: tilt.glare }} aria-hidden="true" />
     <button className={`item-cover cover-${item.type}`} onClick={() => a.open(item)} aria-label={`${OPEN_VERB[item.type]} ${item.title}`}>
       <span className="cover-type"><Icon size={17}/></span>
       <span className="cover-title">{item.title}</span>
@@ -184,10 +208,10 @@ export function ItemRow({ item, meta }: { item: LibraryItem; meta?: React.ReactN
 /** A titled section with a limited grid of cards and an optional "See all" link. */
 export function Shelf({ title, detail, items, limit = 8, seeAll }: { title: string; detail?: string; items: LibraryItem[]; limit?: number; seeAll?: { label?: string; onClick: () => void } }) {
   if (!items.length) return null;
-  return <section className="section-block shelf">
+  return <motion.section className="section-block shelf" initial={{ opacity: 0, y: 26 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ type: 'spring', bounce: .15, visualDuration: .55 }}>
     <div className="section-title-row"><div><h2>{title}</h2>{detail && <p>{detail}</p>}</div>{seeAll && items.length > limit && <button className="text-button" onClick={seeAll.onClick}>{seeAll.label ?? 'See all'} <ChevronRight size={15}/></button>}</div>
     <div className="item-grid">{items.slice(0, limit).map((item, index) => <ItemCard key={item.id} item={item} index={index} compact />)}</div>
-  </section>;
+  </motion.section>;
 }
 
 /** Single-choice filter chips with optional counts. */

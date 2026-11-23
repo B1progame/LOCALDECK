@@ -1,5 +1,6 @@
 /* LocalDeck browsing screens: home, library views, collections and project details. */
 import React, { useEffect, useMemo, useState } from 'react';
+import { motion, useScroll, useTransform } from 'motion/react';
 import {
   Archive, ArrowLeft, ArrowRight, BookOpen, Clock3, Code2, FileText, FolderPlus, Gamepad2, Heart, LayoutGrid,
   Library, List, ListFilter, MoreHorizontal, Pencil, Play, Plus, Search, Share2, ShieldCheck, Sparkles, Upload, X,
@@ -47,6 +48,10 @@ export function HomePage({ items, collections, add, tryDemos }: { items: Library
   const greeting = hour < 5 ? 'Good night.' : hour < 12 ? 'Good morning.' : hour < 18 ? 'Good afternoon.' : 'Good evening.';
   const art = featured ? coverBackground(featured) : '';
   const FeaturedIcon = featured ? TYPE_ICON[featured.type] : Sparkles;
+  const { scrollY } = useScroll();
+  const heroCopyY = useTransform(scrollY, [0, 420], [0, -36]);
+  const heroCopyFade = useTransform(scrollY, [0, 380], [1, .35]);
+  const heroCardY = useTransform(scrollY, [0, 420], [0, 46]);
   const favorites = items.filter(item => item.favorite);
   const added = [...items].sort(byImported);
   const learning = items.filter(item => LEARNING_TYPES.includes(item.type)).sort(byImported);
@@ -56,7 +61,7 @@ export function HomePage({ items, collections, add, tryDemos }: { items: Library
       action={<><button className="button" onClick={() => go('studio')}><Sparkles size={16}/> AI studio</button><button className="button primary" onClick={add}><Plus size={17}/> Import</button></>} />
     <section className={`hero-banner ${featured ? 'has-art' : ''}`}>
       {featured && <span className="hero-backdrop" style={{ backgroundImage: art }} aria-hidden="true" />}
-      <div className="hero-copy">
+      <motion.div className="hero-copy" style={{ y: heroCopyY, opacity: heroCopyFade }}>
         <div className="hero-kicker"><i /> {featured ? (featured.lastOpenedAt ? 'Continue where you left off' : featured.favorite ? 'One of your favorites' : 'Recently added') : 'Private by design'}</div>
         <h2>{featured ? featured.title : 'Your world, all in one place.'}</h2>
         <p>{featured ? (featured.description || `${TYPE_LABEL[featured.type]}${featured.subject ? ` for ${featured.subject}` : ''}, ready to open offline.`) : 'Bring together learning sheets, games, tools and ideas. Nothing is uploaded — your library lives in this browser.'}</p>
@@ -68,9 +73,9 @@ export function HomePage({ items, collections, add, tryDemos }: { items: Library
             <button className="button hero-ghost" onClick={() => a.details(featured)}>Details</button>
           </> : <button className="button hero-ghost" onClick={() => go('import')}>See what you can import</button>}
         </div>
-      </div>
+      </motion.div>
       {featured
-        ? <div className="hero-art" aria-hidden="true"><div className="hero-cover-card" style={{ backgroundImage: art }} /></div>
+        ? <div className="hero-art" aria-hidden="true"><motion.div className="hero-cover-card" style={{ backgroundImage: art, y: heroCardY, rotate: -3 }} whileHover={{ rotate: -1, scale: 1.04 }} transition={{ type: 'spring', bounce: .3 }} /></div>
         : <div className="hero-art" aria-hidden="true"><div className="hero-orbit orbit-one"/><div className="hero-orbit orbit-two"/><div className="hero-core"><img src={`${base}icon-512.png`} alt="" /></div><span className="hero-spark">✦</span></div>}
     </section>
 

@@ -357,7 +357,7 @@ function App() {
         </motion.div>
       </AnimatePresence></ItemActionsContext.Provider>
     </main>
-    {!isLoginPage && <nav className="tabbar" aria-label="Quick navigation">{([['home','Home',Home],['library','Library',Library],['learning','Learn',BookOpen],['import','Import',Upload]] as const).map(([page,label,Icon]) => <a key={page} href={`#/${page}`} className={currentPage === page ? 'active' : ''} aria-current={currentPage === page ? 'page' : undefined}><Icon size={21} strokeWidth={currentPage === page ? 2.2 : 1.8}/>{label}</a>)}<button type="button" onClick={() => setMobileNav(true)} aria-label="More destinations"><Menu size={21} strokeWidth={1.8}/>More</button></nav>}
+    {!isLoginPage && <nav className="tabbar" aria-label="Quick navigation">{([['home','Home',Home],['library','Library',Library],['learning','Learn',BookOpen],['import','Import',Upload]] as const).map(([page,label,Icon]) => <a key={page} href={`#/${page}`} className={currentPage === page ? 'active' : ''} aria-current={currentPage === page ? 'page' : undefined}>{currentPage === page && <motion.span layoutId="tab-pill" className="tab-pill" transition={{ type: 'spring', bounce: .25, visualDuration: .4 }}/>}<Icon size={21} strokeWidth={currentPage === page ? 2.2 : 1.8}/>{label}</a>)}<button type="button" onClick={() => setMobileNav(true)} aria-label="More destinations"><Menu size={21} strokeWidth={1.8}/>More</button></nav>}
     <AnimatePresence>{toast && <motion.div className={`toast ${toast.error ? 'toast-error' : ''}`} role={toast.error ? 'alert' : 'status'} initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:6 }}><span className="toast-icon">{toast.error ? '!' : '✓'}</span>{toast.message}</motion.div>}</AnimatePresence>
     <SearchOverlay open={searchOpen} onClose={() => { setSearchOpen(false); setGlobalQuery(''); }} value={globalQuery} onChange={setGlobalQuery} items={items} onOpen={item => { setSearchOpen(false); setGlobalQuery(''); go('item', `/${encodeURIComponent(item.id)}`); }} />
     <AnimatePresence>{modal && <Modal modal={modal} collections={collections} busy={busy} onClose={() => { setModal(null); setDialogError(''); }} onEditCode={item=>setCodeEditorItem(item)} onSubmit={saveModal} error={dialogError} onPreviewChange={(update) => setModal(current => current?.preview ? { ...current, preview: { ...current.preview, ...update } } : current)} />}</AnimatePresence>
@@ -367,7 +367,7 @@ function App() {
 }
 
 function NavItem({ page, active, label, icon: Icon, count, onNavigate }: { page: Page; active: boolean; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number }>; count?: number; onNavigate?: () => void }) {
-  return <a href={`#/${page}`} onClick={onNavigate} className={`nav-link ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}><Icon size={17} strokeWidth={active ? 2.15 : 1.8} /><span>{label}</span>{count !== undefined && <small>{count}</small>}</a>;
+  return <a href={`#/${page}`} onClick={onNavigate} className={`nav-link ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}>{active && <motion.span layoutId="nav-pill" className="nav-pill" transition={{ type: 'spring', bounce: .22, visualDuration: .4 }}/>}<Icon size={17} strokeWidth={active ? 2.15 : 1.8} /><span>{label}</span>{count !== undefined && <small>{count}</small>}</a>;
 }
 
 function StorageMini({ storage, items }: { storage: { usage?: number; quota?: number; persisted?: boolean }; items: LibraryItem[] }) {
