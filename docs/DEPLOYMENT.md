@@ -6,7 +6,7 @@ The included Actions workflow runs tests, TypeScript checks, and a production Vi
 
 ## Cloudflare sharing service
 
-Cloudflare is optional. Follow [`SHARING.md`](SHARING.md) to create a private R2 bucket, a D1 database, set the server-side `OWNER_TOKEN`, and deploy the Worker. Configure the Pages Actions variable `VITE_SHARE_API_BASE` with the Worker origin if recipients should be able to open share links on the deployed site. Do not put the owner token in a Pages variable, repository file, or frontend build.
+Cloudflare sharing is optional. Follow [`SHARING.md`](SHARING.md) to create Workers KV namespaces and a D1 database on the Workers Free plan, set the server-side `OWNER_TOKEN`, and deploy the Worker. Configure the Pages Actions variable `VITE_SHARE_API_BASE` with the Worker origin if recipients should be able to open share links on the deployed site. Do not put the owner token in a Pages variable, repository file, or frontend build.
 
 ## Local verification
 
@@ -19,3 +19,4 @@ npm run dev -- --host 127.0.0.1 --port 5468
 ```
 
 For service-worker and multi-file player checks, use the production build on an HTTPS or localhost origin. Keep development and production Worker secrets separate.
+

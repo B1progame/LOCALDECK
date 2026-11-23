@@ -13,8 +13,9 @@ LOCALDECK is a static React and TypeScript app with two independent parts: the o
 
 ## Optional sharing
 
-When the user explicitly chooses Create encrypted link, the browser exports one item to ZIP, encrypts it with a fresh AES-GCM key, and uploads ciphertext to the Worker. D1 stores only an opaque identifier, object key, status, timestamps, and size. The decryption key stays after the `#` in the application URL. Recipients decrypt and validate the project locally before they choose to import it.
+When the user explicitly chooses **Create encrypted link**, the browser exports one item to ZIP, encrypts the bytes with a fresh AES-GCM key, and uploads ciphertext to the Worker. D1 stores an opaque identifier, status, timestamps, and size; Workers KV stores the encrypted payload for at most 3 days. The decryption key stays after `#` in the application URL. Recipients decrypt and validate the project locally before they choose to import it. The free configuration caps each payload at 24 MiB, total active payloads at 512 MiB, and concurrent uploads at 3.
 
 ## Tradeoffs
 
 The service worker is needed for local multi-file URLs while the iframe has an opaque origin. It is served from the Pages app origin but only returns blobs for a validated item ID and normalized path. Some projects still need a server, cross-origin features, or browser capabilities that this static runtime cannot provide; compatibility reports are estimates, not guarantees.
+

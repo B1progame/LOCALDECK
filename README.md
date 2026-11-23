@@ -91,10 +91,11 @@ GitHub Actions builds the app and deploys `dist/` to GitHub Pages after pushes t
 
 ## Optional encrypted sharing
 
-The app works without Cloudflare. To enable expiring share links, deploy the Worker and bind its D1 and R2 resources as described in [`docs/SHARING.md`](docs/SHARING.md). Add `VITE_SHARE_API_BASE=https://your-worker.workers.dev` to the GitHub Actions variable `VITE_SHARE_API_BASE` (or a local `.env.local`) and rebuild. Set the owner token in the Worker with `wrangler secret put OWNER_TOKEN`; it is only requested for sharing or managing links and is never saved by the app. Shared ZIPs are encrypted in the browser with AES-GCM before upload; the decryption key stays in the URL fragment query and is never sent to the Worker.
+The app works without Cloudflare. To enable expiring share links on the Workers Free plan, deploy the Worker with KV and D1 as described in [`docs/SHARING.md`](docs/SHARING.md). Free links expire in 3 days, allow up to 3 uploads at once, cap each encrypted share at 24 MiB, and cap all active shares at 512 MiB. Add `VITE_SHARE_API_BASE=https://your-worker.workers.dev` to the GitHub Actions variable `VITE_SHARE_API_BASE` (or a local `.env.local`) and rebuild. Set the owner token in the Worker with `wrangler secret put OWNER_TOKEN`; it is only requested for sharing or managing links and is never saved by the app. Shared ZIPs are encrypted in the browser with AES-GCM before upload; the decryption key stays in the URL fragment and is never sent to the Worker.
 
 ## Icon prompt
 
 Use this prompt if you want to regenerate the supplied icon in an image model:
 
 > Create a premium app icon for LOCALDECK, a private offline library for HTML projects. Square 1:1 canvas, no text or letters. A small stack of three softly folded rounded sheets, the front sheet warm ivory with a subtle pink-to-cream sheen, two lavender and vivid violet sheets behind it, one tiny four-point cream sparkle at the upper right. Centered, sculpted paper with smooth beveled edges, delicate realistic soft shadows, gentle luminous violet gradient background. Clean Apple-quality icon craft, tactile, elegant, instantly recognizable at small sizes, refined 3D illustration, no border, no watermark.
+

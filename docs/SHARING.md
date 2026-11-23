@@ -1,55 +1,54 @@
 # Optional encrypted sharing
 
-LOCALDECK works without a network service. This Worker is only used when you choose **Create encrypted link** on a project. The browser exports that project to ZIP, encrypts the bytes with AES-GCM, and uploads only the ciphertext. The 256-bit decryption key is carried after `#` in the generated URL; browsers do not send URL fragments to the Worker. Anyone who gets the complete link can open the project until expiry or revocation.
+LOCALDECK works without a network service. If you choose **Create encrypted link**, the browser exports one project to ZIP and encrypts it with AES-GCM before sending it. Cloudflare receives ciphertext only. The decryption key stays in the URL fragment (`#`), which browsers do not send to the Worker. Anyone with the complete link can import the project until it expires or is revoked.
 
-The Worker stores encrypted blobs in R2 and minimal metadata in D1. It accepts 1 hour, 1 day, 7 day, or 30 day expirations, caps encrypted blobs at 50 MiB, allows at most 10 owner uploads per IP per hour, caps active storage at 200 links / 512 MiB, limits owner listing to the most recent 100 links, and removes expired objects on its scheduled cleanup. Set a strong random `OWNER_TOKEN` with Wrangler secrets; never put it in GitHub variables or a committed `.env` file. Owner tokens are sent only over HTTPS and are held in page memory while the dialog is open.
+## Free plan safeguards
+
+The free Worker stores ciphertext in Workers KV and share metadata in D1. The Worker enforces a 24 MiB maximum per encrypted share, a 512 MiB combined active storage cap, no more than 3 uploads in progress, and a fixed 3-day expiry. KV entries also receive a 3-day TTL. Cleanup removes expired metadata and releases reserved capacity. Each owner IP is limited to 10 upload attempts per hour and 60 management attempts per hour; only the 100 most recent links appear in the management list.
+
+Cloudflare's free KV allowance is 1 GB per account and a 25 MiB maximum value. The app's 512 MiB cap leaves room below that account limit, and the 24 MiB per-share cap fits within KV's item limit. Cloudflare says free-plan operation limits fail closed when exceeded instead of billing for overages. Other services already using the account's KV allowance also count against its shared 1 GB. Free KV is eventually consistent, so a new share may take a short time to appear in another region.
+
+Owner management is protected by a random `OWNER_TOKEN` stored as a Worker secret. Recipients do not need an account; the full link is their access credential. Never put the owner token in GitHub variables, app code, or a committed `.env` file. The app holds it only in the page's memory while the dialog is open.
 
 ## Create the Cloudflare resources
 
-Install the Cloudflare Wrangler CLI, log in to the account that should own the storage, then from `cloudflare/` run:
+Use the Cloudflare **Workers Free** plan only. In `cloudflare/`, create a KV namespace and copy the returned ID into `wrangler.toml` under `[[kv_namespaces]]` as `id`. Create a separate preview namespace and put its ID in `preview_id`:
 
 ```powershell
-wrangler login
-wrangler d1 create localdeck-shares
-wrangler r2 bucket create localdeck-shares
+npx wrangler kv namespace create SHARES_KV
+npx wrangler kv namespace create SHARES_KV --preview
 ```
 
-Copy the D1 `database_id` returned by Wrangler into `wrangler.toml`. Apply the schema:
+Create a D1 database if the configured one is not present, update its ID in `wrangler.toml`, and apply the schema:
 
 ```powershell
-wrangler d1 execute localdeck-shares --file schema.sql
+npx wrangler d1 create localdeck-shares
+npx wrangler d1 execute localdeck-shares --remote --file schema.sql
 ```
 
-Generate a random token locally and set it as a Worker secret. Keep the value in your password manager; LOCALDECK never stores it:
+Create a random owner token locally and keep it in a password manager. Then set it as a Worker secret; the prompt does not echo the secret:
 
 ```powershell
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
-wrangler secret put OWNER_TOKEN
+npx wrangler secret put OWNER_TOKEN
 ```
 
-Set `ALLOWED_ORIGIN` in `wrangler.toml` to the origin of your deployed Pages site (for example `https://b1progame.github.io`) and deploy:
+Set `ALLOWED_ORIGIN` in `wrangler.toml` to the exact origin of the deployed Pages site, then deploy the Worker:
 
 ```powershell
-wrangler deploy
+npx wrangler deploy
 ```
 
-The deployment URL is shown by Wrangler. Try a local request with the Worker dev server before using a real project:
+The Worker URL is shown by Wrangler. Add that URL as the GitHub Actions variable `VITE_SHARE_API_BASE` in the `B1progame/LOCALDECK` repository, then run the Pages workflow. This variable is public and contains only the API URL, never the owner token.
 
-```powershell
-wrangler dev
-```
+## Future storage changes
 
-## Connect GitHub Pages
-
-In the `B1progame/LOCALDECK` repository, add the Actions variable `VITE_SHARE_API_BASE` with the full Worker origin, such as `https://localdeck-share.<your-subdomain>.workers.dev`. The Pages workflow embeds this public API origin at build time. It does not contain the owner token. Push a commit or run **Build and deploy LOCALDECK** from the Actions tab.
-
-In LOCALDECK, open a project's menu and choose **Create encrypted link**. Enter the Worker URL and owner token, choose an expiration, and copy the link. To review or revoke links, open **Shared links**, enter the same values, and load the list. Revocation deletes the R2 object and marks its database row revoked. Expired rows are removed by the scheduled Worker task.
+The free KV setup intentionally stays below 1 GB. A 4 GB allowance requires moving the payloads to R2. R2 currently requires enabling its subscription in Cloudflare, even though it includes 10 GB-month of storage and free operation allowances. Do not enable it unless you accept the billing setup and have configured account spending alerts/limits. The Worker must be reviewed and redeployed with a hard R2 quota before any migration.
 
 ## Data and operational notes
 
-- Share contents are end-to-end encrypted by the browser. Cloudflare sees ciphertext, object size, creation time, and expiration time; project titles and decryption keys are not stored in D1.
-- A link is a bearer credential. Anyone with the full URL, including the fragment key, can import the project.
-- Revocation blocks future loads but cannot erase a copy someone already imported.
+- Cloudflare sees ciphertext, opaque IDs, sizes, and timestamps, but not project titles or decryption keys.
+- Anyone who receives the full link can open it while it is active. Revocation blocks future access but cannot erase a copy already imported.
 - Share links are not included in local library backups; projects remain on each device.
-- Keep D1 and R2 in the same Cloudflare account. The share payload limit is 50 MiB; the library's local backup limit remains independent.
-- Public reads are bounded by expiry and object size. The upload limiter hashes addresses before storing them; old windows are pruned by the scheduled cleanup.
+- Free-plan quota exhaustion can temporarily make sharing unavailable. The Worker cannot upgrade the account or enable paid services.
+
