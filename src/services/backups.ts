@@ -9,7 +9,7 @@ export type RestoreConflictMode = 'keep-both' | 'skip' | 'replace';
 const textEncoder = new TextEncoder();
 
 function parseBackup(value: unknown): BackupManifest {
-  if (!value || typeof value !== 'object') throw new Error('This file is not a LOCALDECK backup.');
+  if (!value || typeof value !== 'object') throw new Error('This file is not a LocalDeck backup.');
   const data = value as Partial<BackupManifest>;
   if (data.format !== 'LOCALDECK_BACKUP' || data.version !== 1 || !Array.isArray(data.items) || !Array.isArray(data.collections) || !Array.isArray(data.subjects) || !Array.isArray(data.settings)) {
     throw new Error('This backup uses an unsupported format or version.');
@@ -70,7 +70,7 @@ export async function restoreLibrary(file: File, conflictMode: RestoreConflictMo
   if (file.size > ZIP_LIMITS.maxArchiveBytes) throw new Error('Backups are limited to 140 MB for safe browser restoration.');
   const entries = await readZip(file);
   const manifestFile = entries.find(x => x.path === 'localdeck-backup.json');
-  if (!manifestFile) throw new Error('This ZIP does not contain a LOCALDECK backup manifest.');
+  if (!manifestFile) throw new Error('This ZIP does not contain a LocalDeck backup manifest.');
   const manifest = parseBackup(JSON.parse(await manifestFile.blob.text()));
   const entryMap = new Map(entries.map(x => [x.path, x.blob]));
   const total = entries.reduce((sum, x) => sum + x.blob.size, 0);

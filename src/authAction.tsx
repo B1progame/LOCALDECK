@@ -1,4 +1,4 @@
-/* Handles Firebase email action links (verify email, reset password) inside LOCALDECK,
+/* Handles Firebase email action links (verify email, reset password) inside LocalDeck,
    so the link in the email opens a branded page instead of the default Firebase screen. */
 import React, { useEffect, useState } from 'react';
 import { ArrowRight, Check, KeyRound, LoaderCircle, MailCheck, ShieldAlert } from 'lucide-react';
@@ -63,7 +63,7 @@ export function AuthActionPage({ action }: { action: AuthAction }) {
     : action.mode === 'recoverEmail' ? 'Your email address is restored.' : state === 'done' ? 'Your email is verified.' : 'Verifying your email…';
 
   return <div className="login-page-wrap">
-    <a className="login-brand" href={`${base}#/home`}><img src={`${base}icon-192.png`} alt=""/> localdeck</a>
+    <a className="login-brand" href={`${base}#/home`}><img src={`${base}icon-192.png`} alt=""/> LocalDeck</a>
     <section className="auth-action-card">
       <span className={`auth-action-icon ${state}`}>
         {state === 'working' ? <LoaderCircle size={26} className="spin"/> : state === 'error' ? <ShieldAlert size={26}/> : state === 'form' ? <KeyRound size={26}/> : action.mode === 'verifyEmail' ? <MailCheck size={26}/> : <Check size={26}/>}

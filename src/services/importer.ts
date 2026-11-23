@@ -71,7 +71,7 @@ export function diagnoseCompatibility(entryHtml: string, packagePaths: string[] 
   if (/\bfetch\s*\(|XMLHttpRequest|WebSocket\s*\(/i.test(entryHtml)) { concerns++; findings.push('The page appears to use network requests. The isolated player restricts requests to local project files and offline cache.'); }
   if (/serviceWorker|navigator\.serviceWorker/i.test(entryHtml)) { concerns++; findings.push('The project references its own service worker; embedded projects cannot register one from the isolated player.'); }
   if (/\btype\s*=\s*["']module["']/i.test(entryHtml)) findings.push('The entry page uses JavaScript modules. Modules with multi-file local imports need to pass the compatibility check in the player.');
-  if (/\b(?:indexedDB|localStorage|sessionStorage)\b/.test(entryHtml)) findings.push('The isolated player does not share LOCALDECK storage. Project-owned storage may be unavailable in the opaque sandbox.');
+  if (/\b(?:indexedDB|localStorage|sessionStorage)\b/.test(entryHtml)) findings.push('The isolated player does not share LocalDeck storage. Project-owned storage may be unavailable in the opaque sandbox.');
   if (!findings.length) findings.push('No common remote-resource, missing-file, or server dependency was found in the entry page. Runtime compatibility still depends on the project code and browser.');
   return { score: concerns ? 'partial' : 'likely', findings, checkedAt: Date.now() };
 }
@@ -194,7 +194,7 @@ async function packagePreview(name: string, original: ZipEntry[], initialWarning
   if (!original.length) throw new Error('This package is empty.');
   const entries = chooseEntries(original);
   const totalSize = entries.reduce((sum, x) => sum + x.blob.size, 0);
-  if (totalSize > MAX_IMPORT_BYTES) throw new Error('This project is larger than LOCALDECK’s 120 MB browser import limit.');
+  if (totalSize > MAX_IMPORT_BYTES) throw new Error('This project is larger than LocalDeck’s 120 MB browser import limit.');
   const { manifest, warnings } = await manifestFor(entries);
   return attachFileData(buildPreview(name, entries, manifest, [...initialWarnings, ...warnings]), entries);
 }

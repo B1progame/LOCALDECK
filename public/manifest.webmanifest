@@ -1,6 +1,6 @@
 {
-  "name": "LOCALDECK — Your personal library",
-  "short_name": "LOCALDECK",
+  "name": "LocalDeck — Your personal library",
+  "short_name": "LocalDeck",
   "description": "A private offline library for learning, games, tools, and HTML projects.",
   "start_url": "./",
   "scope": "./",

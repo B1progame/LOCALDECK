@@ -1,4 +1,4 @@
-# LOCALDECK design system
+# LocalDeck design system
 
 All styling lives in `src/styles.css`. Theme logic lives in `src/theme.ts`, and a matching inline script in `index.html` applies the saved theme before first paint.
 

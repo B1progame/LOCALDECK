@@ -1,5 +1,5 @@
 /* AI studio → Package builder.
-   Turns the HTML an AI produced (plus images and other files) into a finished LOCALDECK ZIP:
+   Turns the HTML an AI produced (plus images and other files) into a finished LocalDeck ZIP:
    index.html + localdeck.json + cover image + assets, checked for missing references. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -16,7 +16,7 @@ type Notify = (message: string, error?: boolean) => void;
 
 const slug = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
 
-/** Renders LOCALDECK's generated artwork plus the title into a 1200×750 PNG. */
+/** Renders LocalDeck's generated artwork plus the title into a 1200×750 PNG. */
 async function renderCover(title: string, type: ContentType, subject: string): Promise<Blob> {
   const css = generatedCoverImage({ title, type, subject } as LibraryItem);
   const src = decodeURIComponent(css.slice(css.indexOf('data:image/svg+xml,') + 19, css.lastIndexOf('")')));
@@ -161,7 +161,7 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
   const step = (n: number, done: boolean) => <span className={`step-dot ${done ? 'done' : ''}`}>{done ? <Check size={13}/> : n}</span>;
 
   return <section className="panel package-builder" aria-labelledby="pb-title">
-    <div className="panel-heading"><span className="panel-icon violet"><PackageCheck size={18}/></span><div><h2 id="pb-title">Package builder</h2><p>Bring the HTML your AI made, add images and files, and get a finished LOCALDECK ZIP with cover, manifest and every asset.</p></div></div>
+    <div className="panel-heading"><span className="panel-icon violet"><PackageCheck size={18}/></span><div><h2 id="pb-title">Package builder</h2><p>Bring the HTML your AI made, add images and files, and get a finished LocalDeck ZIP with cover, manifest and every asset.</p></div></div>
     <div className="pb-grid">
       <div className="pb-steps">
         <div className="pb-step">

@@ -42,7 +42,7 @@ async function finishSignIn(result: UserCredential): Promise<{ token?: string; p
   const user = result.user;
   await reload(user);
   if (!user.email) {
-    throw new Error('The provider did not share an email address. Add an email to that account and allow LOCALDECK to use it.');
+    throw new Error('The provider did not share an email address. Add an email to that account and allow LocalDeck to use it.');
   }
   if (!user.emailVerified) {
     await sendEmailVerification(user, { url: `${window.location.origin}${import.meta.env.BASE_URL}#/sharing` });

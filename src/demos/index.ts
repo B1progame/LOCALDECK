@@ -1,4 +1,4 @@
-/* Built-in demo projects. Each is a self-contained offline HTML file with an embedded LOCALDECK manifest.
+/* Built-in demo projects. Each is a self-contained offline HTML file with an embedded LocalDeck manifest.
    They are only added to the library when the user turns demos on, and removed again when turned off. */
 import neonDrift from './neon-drift.html?raw';
 import ableitungen from './ableitungen.html?raw';

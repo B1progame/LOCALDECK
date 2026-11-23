@@ -1,4 +1,4 @@
-/* Shared building blocks used across LOCALDECK screens. */
+/* Shared building blocks used across LocalDeck screens. */
 import React, { createContext, useContext, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import {

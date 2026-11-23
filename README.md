@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="LOCALDECK — your HTML projects, beautifully offline" width="100%">
+  <img src="docs/assets/banner.svg" alt="LocalDeck — your HTML projects, beautifully offline" width="100%">
 </p>
 
 <p align="center">
-  <a href="https://b1progame.github.io/LOCALDECK/"><img alt="Open the app" src="https://img.shields.io/badge/Open%20LOCALDECK-A78BFA?style=for-the-badge&logo=googlechrome&logoColor=white"></a>
+  <a href="https://b1progame.github.io/LOCALDECK/"><img alt="Open the app" src="https://img.shields.io/badge/Open%20LocalDeck-A78BFA?style=for-the-badge&logo=googlechrome&logoColor=white"></a>
   <img alt="Works offline" src="https://img.shields.io/badge/works-offline-5DD5A2?style=for-the-badge">
   <img alt="No account needed" src="https://img.shields.io/badge/no%20account-needed-22232F?style=for-the-badge">
 </p>
@@ -18,7 +18,7 @@
 
 ---
 
-**LOCALDECK** is a personal library for everything you build or learn with HTML: games, interactive *Lernzettel*, quizzes, simulations, presentations, tools and PDFs. Drop in a file, ZIP or folder. LOCALDECK gives it artwork, sorts it by subject, and runs it in an isolated player, even with no internet connection.
+**LocalDeck** is a personal library for everything you build or learn with HTML: games, interactive *Lernzettel*, quizzes, simulations, presentations, tools and PDFs. Drop in a file, ZIP or folder. LocalDeck gives it artwork, sorts it by subject, and runs it in an isolated player, even with no internet connection.
 
 Your library lives **in your browser**. Nothing is uploaded unless you create an encrypted share link yourself.
 
@@ -31,7 +31,7 @@ Your library lives **in your browser**. Nothing is uploaded unless you create an
 | 🖼️ **Generated cover art** | Projects without a cover get unique artwork based on their type and title: pixel grids for games, ruled sheets for notes, orbits for simulations. |
 | 📚 **Learning hub** | Subject tiles (Mathematik, Biologie, …), shelves for Lernzettel, quizzes, PDFs and presentations. |
 | 🔒 **Sandboxed player** | Imported code runs in an opaque, isolated frame. It can't read your library. Fullscreen and immersive modes included. |
-| ✦ **AI studio** | Turn what your AI made (HTML, images, extra files) into a finished LOCALDECK ZIP, with manifest, cover and a package check. |
+| ✦ **AI studio** | Turn what your AI made (HTML, images, extra files) into a finished LocalDeck ZIP, with manifest, cover and a package check. |
 | 🔗 **Encrypted sharing** | Optional. Projects are encrypted in your browser, and the key never leaves the link. Links expire after 3 days. |
 | 💾 **Backups** | Export the whole library as one ZIP and restore it on any device. |
 | 📱 **Everywhere** | Desktop sidebar, iPad layout, phone tab bar. Installable as an app. |

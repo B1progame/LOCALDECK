@@ -71,7 +71,7 @@ export async function openLibrary(): Promise<void> {
         originalFilename: old.title || 'Imported project', storageSize: validFiles.reduce((sum, file) => sum + file.blob.size, 0),
         manifestVersion: 1, createdAt: old.created || now, updatedAt: now, importedAt: old.created || now,
         lastOpenedAt: old.lastPlayed || null, openCount: 0, runtimeSettings: {},
-        offlineCompatibility: { score: 'unknown', findings: ['Migrated from an earlier LOCALDECK version; compatibility has not been re-scanned.'], checkedAt: now },
+        offlineCompatibility: { score: 'unknown', findings: ['Migrated from an earlier LocalDeck version; compatibility has not been re-scanned.'], checkedAt: now },
         packageId: old.id, fileCount: validFiles.length,
       };
       await db.items.add(item);

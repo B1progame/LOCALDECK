@@ -1,4 +1,4 @@
-/* LOCALDECK browsing screens: home, library views, collections and project details. */
+/* LocalDeck browsing screens: home, library views, collections and project details. */
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Archive, ArrowLeft, ArrowRight, BookOpen, Clock3, Code2, FileText, FolderPlus, Gamepad2, Heart, LayoutGrid,
