@@ -462,6 +462,21 @@ img { display: block; max-width: 100%; }
 .share-login-content>p { max-width:42ch; margin:0 0 20px; color:#747580; font-size:11px; line-height:1.65; }
 .google-button-slot { min-height:42px; }
 .google-button-slot iframe { max-width:100%; }
+.email-auth-panel { margin-top:17px; }
+.auth-divider { display:flex; align-items:center; gap:10px; margin:8px 0 12px; color:#9393a0; font-size:10px; }
+.auth-divider::before,.auth-divider::after { content:""; height:1px; flex:1; background:#ecebf0; }
+.email-auth-switch { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; border-radius:10px; background:#f3f2f6; }
+.email-auth-switch button { min-height:33px; border:0; border-radius:7px; background:transparent; color:#777985; font:inherit; font-size:10px; cursor:pointer; }
+.email-auth-switch button.active { background:#fff; color:#45464f; box-shadow:0 1px 4px #29254a12; }
+.email-auth-panel form { margin-top:12px; }
+.email-auth-field { display:grid; gap:5px; margin:9px 0; color:#595a63; font-size:10px; font-weight:590; }
+.email-auth-field input { width:100%; min-height:38px; padding:9px 11px; border:1px solid #e2e2e7; border-radius:8px; outline:0; background:#fff; color:#3e3f47; font:inherit; font-size:11px; font-weight:450; }
+.email-auth-field input:focus { border-color:#b6a9df; box-shadow:0 0 0 3px rgba(112,87,202,.08); }
+.email-auth-submit { width:100%; justify-content:center; margin-top:4px; }
+.email-reset { display:flex; margin:9px auto 0; }
+.email-auth-message { margin:10px 0 0; padding:10px; border-radius:9px; background:#eff7f0; color:#4e755c; font-size:10px; line-height:1.55; }
+.email-auth-help { margin:11px 0 0; color:#888995; font-size:9px; line-height:1.55; }
+.email-auth-config { margin-top:13px; }
 .share-login-foot { display:flex; flex-wrap:wrap; gap:14px; margin-top:23px; padding-top:15px; border-top:1px solid #eae8f0; color:#7a7b87; font-size:9px; }
 .share-login-foot span { display:flex; align-items:center; gap:5px; }
 .share-config-note { display:flex; gap:10px; padding:12px; border:1px solid #ede9f7; border-radius:11px; background:#faf8ff; color:#735eaf; }

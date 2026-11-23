@@ -2,11 +2,13 @@ interface Env {
   SHARES_KV: KVNamespace;
   SHARES_DB: D1Database;
   GOOGLE_CLIENT_ID: string;
+  FIREBASE_PROJECT_ID?: string;
   ALLOWED_ORIGIN: string;
 }
 
 type GoogleClaims = { sub: string; aud: string | string[]; azp?: string; iss: string; exp: number; iat: number; nbf?: number; email: string; email_verified: boolean; name?: string; picture?: string };
 type GoogleJwk = JsonWebKey & { kid: string };
+type FirebaseClaims = { sub: string; aud: string; iss: string; exp: number; iat: number; auth_time?: number; email?: string; email_verified?: boolean; name?: string; picture?: string };
 type Owner = { id: string; email: string; name: string; picture: string };
 const jsonHeaders = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' };
 const idPattern = /^[a-f0-9-]{36}$/i;
@@ -22,6 +24,7 @@ const MAX_IP_READS_PER_HOUR = 120;
 const MAX_IP_AUTH_PER_HOUR = 40;
 const SHARE_TTL_SECONDS = 3 * 24 * 60 * 60;
 let googleKeys: { keys: GoogleJwk[]; expiresAt: number } | null = null;
+let firebaseKeys: { keys: GoogleJwk[]; expiresAt: number } | null = null;
 
 function cors(request: Request, env: Env): Headers {
   const origin = request.headers.get('Origin');
@@ -115,10 +118,48 @@ async function verifyGoogleCredential(token: string, env: Env): Promise<Owner | 
   } catch { return null; }
 }
 
+async function getFirebaseKeys(): Promise<GoogleJwk[]> {
+  if (firebaseKeys && firebaseKeys.expiresAt > Date.now()) return firebaseKeys.keys;
+  const result = await fetch('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com', { cf: { cacheTtl: 3600, cacheEverything: true } });
+  if (!result.ok) throw new Error('Firebase signing keys are temporarily unavailable.');
+  const data = await result.json() as { keys: GoogleJwk[] };
+  if (!Array.isArray(data.keys)) throw new Error('Firebase signing keys are invalid.');
+  const cacheControl = result.headers.get('cache-control') ?? '';
+  const maxAge = Number(cacheControl.match(/max-age=(\d+)/i)?.[1] ?? 3600);
+  firebaseKeys = { keys: data.keys, expiresAt: Date.now() + Math.min(maxAge, 3600) * 1000 };
+  return data.keys;
+}
+
+async function verifyFirebaseCredential(token: string, env: Env): Promise<Owner | null> {
+  const projectId = env.FIREBASE_PROJECT_ID;
+  if (!projectId || token.length > 8192) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const header = decodeJson<{ alg?: string; kid?: string }>(parts[0]);
+    const claims = decodeJson<FirebaseClaims>(parts[1]);
+    if (header.alg !== 'RS256' || !header.kid || !claims.sub || claims.sub.length > 128 || !claims.email || claims.email_verified !== true) return null;
+    if (claims.iss !== `https://securetoken.google.com/${projectId}` || claims.aud !== projectId) return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (!Number.isFinite(claims.exp) || claims.exp <= now || !Number.isFinite(claims.iat) || claims.iat > now + 300 || claims.iat < now - 3600 || (claims.auth_time !== undefined && (!Number.isFinite(claims.auth_time) || claims.auth_time > now + 300))) return null;
+    const jwk = (await getFirebaseKeys()).find(key => key.kid === header.kid);
+    if (!jwk) { firebaseKeys = null; return null; }
+    const publicKey = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+    const rawSignature = b64url(parts[2]);
+    const signature = new Uint8Array(rawSignature.byteLength); signature.set(rawSignature);
+    const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', publicKey, signature, encoder.encode(`${parts[0]}.${parts[1]}`));
+    if (!valid) return null;
+    return { id: `firebase:${claims.sub}`, email: claims.email.slice(0, 320), name: (claims.name || claims.email).slice(0, 120), picture: (claims.picture || '').slice(0, 1000) };
+  } catch { return null; }
+}
+
 async function isAuthorized(request: Request, env: Env): Promise<Owner | null> {
   const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') ?? '';
   if (!token || token.length > 8192 || !await rateLimitIp(env, request, 'auth_windows', MAX_IP_AUTH_PER_HOUR)) return null;
-  return verifyGoogleCredential(token, env);
+  try {
+    const claims = decodeJson<{ iss?: string }>(token.split('.')[1] ?? '');
+    return claims.iss === `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}` ? verifyFirebaseCredential(token, env) : verifyGoogleCredential(token, env);
+  } catch { return null; }
 }
 
 async function releaseQuota(env: Env, ownerId: string, size: number, releaseSlot = false): Promise<void> {
@@ -166,6 +207,16 @@ const worker = {
       try { const text = new TextDecoder().decode(await readBounded(request, 12 * 1024)); const body = JSON.parse(text) as { credential?: unknown }; credential = typeof body.credential === 'string' ? body.credential : ''; }
       catch { return json({ error: 'invalid_request' }, 400, headers); }
       const owner = await verifyGoogleCredential(credential, env);
+      if (!owner) return json({ error: 'unauthorized' }, 401, headers);
+      return json({ id: owner.id, email: owner.email, name: owner.name, picture: owner.picture }, 200, headers);
+    }
+
+    if (parts[3] === 'auth' && parts[4] === 'firebase' && parts.length === 5 && request.method === 'POST') {
+      if (!await rateLimitIp(env, request, 'auth_windows', MAX_IP_AUTH_PER_HOUR)) return json({ error: 'rate_limited' }, 429, headers);
+      let credential = '';
+      try { const text = new TextDecoder().decode(await readBounded(request, 12 * 1024)); const body = JSON.parse(text) as { credential?: unknown }; credential = typeof body.credential === 'string' ? body.credential : ''; }
+      catch { return json({ error: 'invalid_request' }, 400, headers); }
+      const owner = await verifyFirebaseCredential(credential, env);
       if (!owner) return json({ error: 'unauthorized' }, 401, headers);
       return json({ id: owner.id, email: owner.email, name: owner.name, picture: owner.picture }, 200, headers);
     }

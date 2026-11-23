@@ -6,7 +6,7 @@ The included Actions workflow runs tests, TypeScript checks, and a production Vi
 
 ## Cloudflare sharing service
 
-Cloudflare sharing is optional. Follow [`SHARING.md`](SHARING.md) to create Workers KV namespaces and a D1 database on the Workers Free plan, configure Google Sign-In, run the correct D1 schema or upgrade, set the server-side `GOOGLE_CLIENT_ID`, and deploy the Worker. Set the Pages Actions variables `VITE_SHARE_API_BASE` and `VITE_GOOGLE_CLIENT_ID` so users can sign in and recipients can open share links. The Google client ID is public; never place API secrets or Cloudflare tokens in any `VITE_` variable.
+Cloudflare sharing is optional. Follow [`SHARING.md`](SHARING.md) to create Workers KV namespaces and a D1 database on the Workers Free plan, configure Google Sign-In and optionally Firebase email sign-in, run the correct D1 schema or upgrade, configure the provider IDs on the Worker, and deploy it. Set the Pages Actions variables `VITE_SHARE_API_BASE` and `VITE_GOOGLE_CLIENT_ID`; add `VITE_FIREBASE_API_KEY` only if email signup is enabled. Provider client IDs and Firebase Web API keys are public configuration, not secrets. Never place service-account credentials, private OAuth secrets, or Cloudflare tokens in any `VITE_` variable.
 
 ## Local verification
 

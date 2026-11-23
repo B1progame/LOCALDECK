@@ -30,6 +30,7 @@ jobs:
         env:
           VITE_SHARE_API_BASE: ${{ vars.VITE_SHARE_API_BASE }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
