@@ -478,6 +478,16 @@ img { display: block; max-width: 100%; }
 .share-login-content>p { max-width:42ch; margin:0 0 20px; color:#747580; font-size:11px; line-height:1.65; }
 .google-button-slot { min-height:42px; }
 .google-button-slot iframe { max-width:100%; }
+.social-auth-panel { margin-top:8px; }
+.social-auth-buttons { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.social-auth-button { display:flex; min-width:0; min-height:40px; align-items:center; justify-content:center; gap:7px; padding:0 9px; border:1px solid #e2e1e8; border-radius:9px; background:#fff; color:#454650; font:inherit; font-size:10px; font-weight:600; white-space:nowrap; cursor:pointer; transition:background .18s ease,border-color .18s ease,transform .18s ease; }
+.social-auth-button:hover:not(:disabled) { transform:translateY(-1px); border-color:#cfc7e4; background:#fbfaff; }
+.social-auth-button:focus-visible { outline:3px solid rgba(112,87,202,.25); outline-offset:2px; }
+.social-auth-button:disabled { cursor:wait; opacity:.65; }
+.social-provider-mark { display:grid; width:17px; height:17px; flex:0 0 auto; place-items:center; border-radius:50%; font-size:7px; font-weight:800; }
+.github-mark { background:#292a31; color:#fff; }
+.facebook-mark { background:#eaf0ff; color:#2866d4; font-family:Arial,sans-serif; font-size:15px; }
+.social-auth-help { margin:8px 0 0; color:#8a8b95; font-size:9px; line-height:1.5; }
 .email-auth-panel { margin-top:17px; }
 .auth-divider { display:flex; align-items:center; gap:10px; margin:8px 0 12px; color:#9393a0; font-size:10px; }
 .auth-divider::before,.auth-divider::after { content:""; height:1px; flex:1; background:#ecebf0; }
@@ -536,4 +546,5 @@ img { display: block; max-width: 100%; }
 .share-link-field input { flex:1; min-width:0; height:36px; padding:0 9px; border:1px solid #e4e2e9; border-radius:8px; background:#fafafd; color:#6f62a4; font:9px ui-monospace,monospace; }
 .item-menu [role=menuitem] svg { margin-right:7px; vertical-align:-2px; }
 @media(max-width:700px) { .share-login-card { grid-template-columns:1fr; } .share-login-art { min-height:190px; } .share-lock { width:76px; height:76px; border-radius:23px; } .share-login-content { padding:24px; } .share-manager { padding:15px; } .share-manager-heading { flex-wrap:wrap; } .share-session-actions { width:100%; margin-left:52px; } .share-manager-fields { grid-template-columns:1fr; align-items:stretch; } .share-manager-fields>.button { justify-self:start; } .share-link-field { align-items:stretch; flex-direction:column; } .share-link-field input { width:100%; } }
+@media(max-width:390px) { .social-auth-buttons { grid-template-columns:1fr; } }
 @media(prefers-reduced-motion:reduce) { .share-orbit,.share-lock,.share-sparkle { animation:none; } }

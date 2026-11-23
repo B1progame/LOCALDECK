@@ -1,11 +1,11 @@
 # Optional encrypted sharing
 
-Sharing is optional and stays off until you configure the app and Worker. Creating and managing links requires Google sign-in or an email account whose address has been verified. The recipient does not need to log in: possession of the complete share link grants access until its three-day expiry or until the owner deletes it.
+Sharing is optional and stays off until you configure the app and Worker. Creating and managing links requires sign-in with Google, verified email/password, GitHub, or Facebook. Microsoft is not offered. GitHub and Facebook users must verify the email address they share with Firebase before they can manage links. A recipient never needs an account: anyone with the complete link can open it until its three-day expiry or until the owner deletes it.
 
 ## Limits and privacy
 
 - Maximum 24 MiB per encrypted upload.
-- Maximum 48 MiB of active shares per Google account and 512 MiB across the whole service.
+- Maximum 48 MiB of active shares per account and 512 MiB across the whole service.
 - Maximum 3 uploads in progress globally and 3 per account.
 - Maximum 5 upload attempts per account per hour, 15 per account per UTC day, and 100 upload attempts globally per UTC day.
 - Maximum 50 active links shown per account. Links expire after 3 days and owners can delete them sooner.
@@ -17,7 +17,9 @@ Google sign-in uses only the standard identity scopes (email, profile, openid). 
 
 Email/password sign-in is an optional Firebase Authentication provider. Passwords are sent directly to Firebase over HTTPS and are never sent to the Cloudflare Worker or stored by LOCALDECK. The Worker checks Firebase's signed ID token, project audience, issuer, expiry, and `email_verified` claim for every owner action. Email sign-up requires confirmation; password-reset messages use Firebase's sender. No custom domain or mail server is required. Google and Firebase email logins have separate share accounts, even if they use the same email address; sign-in methods are not silently linked.
 
-The Firebase Web API key is public project configuration, not a secret or authorization credential. Restrict it to Firebase Authentication and review its quotas. Do not enable unrelated paid Google APIs or attach a billing account for this feature. Firebase's no-cost Spark plan has daily quotas for verification and reset messages; platform quotas can change.
+GitHub and Facebook use Firebase's browser SDK and Firebase's OAuth redirect handler. Their OAuth client secrets are entered only into the Firebase provider settings; never place them in GitHub Actions variables, the frontend, or the Worker. Firebase treats GitHub and Facebook email claims as untrusted, so LOCALDECK explicitly sends a Firebase email-verification message and the Worker rejects the account until the token says `email_verified: true`. Google sign-in is handled directly by Google Identity Services. Microsoft sign-in is intentionally omitted.
+
+The Firebase Web API key, Project ID, and Web App ID are public project configuration, not secrets or authorization credentials. Restrict the API key to Firebase Authentication / Identity Toolkit and review quotas. Do not enable unrelated paid Google APIs, enable Firebase Authentication with Identity Platform, or attach a billing account for this feature. Firebase Spark includes social sign-in at no cost; free-plan usage limits can stop sign-in or email delivery until they reset. Check Google's current [Spark pricing and limits](https://firebase.google.com/docs/projects/billing/firebase-pricing-plans) before enabling additional products.
 
 The Worker is designed for Cloudflare's free plan: 512 MiB active storage is below the included 1 GB KV storage limit, and the 24 MiB object maximum is below KV's 25 MiB value limit. KV includes 1,000 writes and 1,000 deletes per day, and Workers Free includes 100,000 requests per day; Cloudflare documents that free-plan KV operations fail after a quota is reached and the Workers request limit rejects additional requests. Service limits are a backstop, not a billing setting. Keep the account on Workers Free and do not enable R2, Workers Paid, or other paid storage. The account owner should also review their Cloudflare plan and billing settings directly.
 
@@ -42,6 +44,37 @@ Google's [client ID setup guide](https://developers.google.com/identity/gsi/web/
 7. Deploy the Worker from `cloudflare/` with `npx wrangler deploy`, then run the Pages workflow on `main` so it builds with the new Firebase variable.
 
 Firebase Authentication sends verification and password-reset messages from its managed sender; you do not need to set up SMTP, buy a domain, or publish your own mail server. Keep the project on Spark and check its current quotas before enabling more services. Google's Firebase [email/password guide](https://firebase.google.com/docs/auth/web/password-auth) and [free-plan limits](https://firebase.google.com/docs/auth/limits) document the current behavior.
+
+## Set up GitHub sign-in (free)
+
+GitHub sign-in is exchanged through Firebase, so the GitHub OAuth secret stays in the Firebase console. Email verification is required because Firebase does not treat GitHub's email claim as verified by itself.
+
+1. Finish the Firebase project, web app, and authorized-domain steps from the email setup above. Keep the project on Spark.
+2. In GitHub, open your profile menu → **Settings → Developer settings → OAuth Apps → New OAuth App**.
+3. Enter `LOCALDECK` for the application name, `https://b1progame.github.io/LOCALDECK/` as the homepage URL, and a placeholder callback URL for the initial save if GitHub requires one.
+4. In Firebase, open **Authentication → Sign-in method → Add new provider → GitHub**. Enable it. Firebase shows its OAuth callback URL; copy it.
+5. Return to GitHub's OAuth App settings and set **Authorization callback URL** to the exact Firebase callback URL, normally `https://<PROJECT_ID>.firebaseapp.com/__/auth/handler`. Save.
+6. Copy GitHub's **Client ID** and create a **Client secret**. In Firebase's GitHub provider settings, paste both values and save. Keep the client secret in Firebase only; never put it in this repository or GitHub Actions.
+7. In the Firebase **Project settings → General → Your apps** web app card, copy its **Project ID** and **App ID**.
+8. In `B1progame/LOCALDECK` → **Settings → Secrets and variables → Actions → Variables**, add `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`, and `VITE_FIREBASE_GITHUB_ENABLED` with the text `true`. The existing `VITE_FIREBASE_API_KEY` is also needed. These are public app settings, not secrets.
+9. Add `b1progame.github.io` to Firebase **Authentication → Settings → Authorized domains** if it is not already listed.
+10. Run the Pages workflow on `main`. On the Shared links page, choose **Continue with GitHub**. The first time, LOCALDECK sends a verification email; click it, return to LOCALDECK, and choose GitHub again.
+
+The Firebase [GitHub sign-in guide](https://firebase.google.com/docs/auth/web/github-auth) shows the provider setup and callback URL. GitHub sign-in does not ask for repository access: LOCALDECK requests only the email scope it needs to verify the account. If Firebase says the email already belongs to another sign-in method, use the original method; accounts are not silently merged.
+
+## Set up Facebook sign-in (free, optional)
+
+Facebook is an optional social login. It requires a Meta developer app and may require Meta's app review and privacy details before people outside the app's testers can use it. Skip this provider if you want the least setup; Google, GitHub, and email are enough.
+
+1. Create a Facebook developer app at [Meta for Developers](https://developers.facebook.com/) and add the **Facebook Login** product.
+2. In Firebase, open **Authentication → Sign-in method → Add new provider → Facebook**. Enable it and copy Firebase's OAuth callback URL.
+3. In the Meta app's **Facebook Login → Settings**, add that exact URL under **Valid OAuth Redirect URIs**.
+4. Copy the Meta **App ID** and **App Secret** into Firebase's Facebook provider settings. Keep the App Secret in Firebase only.
+5. Add `b1progame.github.io` to the Firebase authorized domains if needed. Set the Meta app to the mode/status required for your intended users.
+6. In GitHub Actions **Variables**, add `VITE_FIREBASE_FACEBOOK_ENABLED` with the text `true`. Keep `VITE_FIREBASE_PROJECT_ID` and `VITE_FIREBASE_APP_ID` set. If you skip Facebook, leave this variable unset so the button stays hidden.
+7. Run the Pages workflow on `main`. Facebook users must confirm their email before LOCALDECK accepts their sign-in.
+
+See Firebase's [Facebook Login guide](https://firebase.google.com/docs/auth/web/facebook-login) for its current console labels. LOCALDECK asks only for the email permission and does not call the Facebook API for profile data.
 
 ## Set up Cloudflare (Workers Free)
 
@@ -98,12 +131,15 @@ In the `B1progame/LOCALDECK` repository, open **Settings → Secrets and variabl
 
 - `VITE_SHARE_API_BASE`: the Worker origin printed by Wrangler, for example `https://localdeck-share.<your-account>.workers.dev`.
 - `VITE_GOOGLE_CLIENT_ID`: the same public Google web client ID you set on the Worker.
-- Optional `VITE_FIREBASE_API_KEY`: the Firebase Web API key if you enable email sign-up.
+- `VITE_FIREBASE_API_KEY`: the Firebase Web API key for email, GitHub, or Facebook sign-in.
+- `VITE_FIREBASE_PROJECT_ID` and `VITE_FIREBASE_APP_ID`: the public Firebase web app values needed for GitHub and Facebook sign-in.
+- Set `VITE_FIREBASE_GITHUB_ENABLED` to `true` only after GitHub is enabled in Firebase. Set `VITE_FIREBASE_FACEBOOK_ENABLED` to `true` only after Facebook is enabled in Firebase. Leave either variable empty to keep that button hidden.
 
 Run the Pages workflow after saving the variables. `VITE_GOOGLE_CLIENT_ID` will be visible in the built JavaScript because OAuth web client IDs are public by design. Never put a Google client secret, Cloudflare API token, or unrelated API key in a `VITE_` variable. None is needed for this feature.
 
 ## Operational notes
 
 - Cloudflare Free quotas are shared with other Workers/KV use on the account. When platform free limits are reached, sharing can temporarily stop working until the quota resets; this app does not enable paid services.
-- Google sign-in requires the app to be hosted on HTTPS, except localhost during development.
+- Google and Firebase social sign-in require the app to be hosted on HTTPS, except localhost during development.
+- Share creation, listing, and deletion require an account. Opening a valid share link does not: the Worker exposes only that link's encrypted payload and expiry metadata to anyone who has its random URL. Recipients never need to register.
 - If you later change storage providers or raise any caps, re-check the free plan's current limits and deploy new server-side enforcement before changing the UI limits.
