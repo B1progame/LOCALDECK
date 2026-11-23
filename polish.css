@@ -1,0 +1,3 @@
+:focus-visible{outline:2px solid #927bea;outline-offset:2px}
+.action-dialog .danger-action{background:#c65354;border-color:#c65354;box-shadow:0 3px 9px #be545430}
+.action-dialog .danger-action:hover{background:#b84a4b;border-color:#b84a4b}
