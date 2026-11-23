@@ -102,9 +102,20 @@ export function generatedCoverImage(item: LibraryItem): string {
 
 /** CSS background for a project: its own cover when present, generated art underneath as a fallback. */
 
+/** Object URLs for covers read straight from IndexedDB, used while the service worker is not controlling the page. */
+const coverCache = new Map<string, string>();
+export function cacheCover(itemId: string, path: string, blob: Blob): void {
+  const key = `${itemId}\n${path}`;
+  if (!coverCache.has(key)) coverCache.set(key, URL.createObjectURL(blob));
+}
+export const hasCachedCover = (itemId: string, path: string) => coverCache.has(`${itemId}\n${path}`);
+
 export function coverBackground(item: LibraryItem): string {
   const fallback = generatedCoverImage(item);
-  return item.artworkReferences.cover ? `url("${formatRoutePath(item.id, item.artworkReferences.cover)}"), ${fallback}` : fallback;
+  const path = item.artworkReferences.cover;
+  if (!path) return fallback;
+  const url = coverCache.get(`${item.id}\n${path}`) ?? formatRoutePath(item.id, path);
+  return `url("${url}"), ${fallback}`;
 }
 
 export function EmptyState({icon:Icon,title,detail,action}:{icon:LucideIcon;title:string;detail:string;action?:React.ReactNode}) { return <div className="empty-state"><div className="empty-icon"><Icon size={21}/></div><h2>{title}</h2><p>{detail}</p>{action}</div>; }

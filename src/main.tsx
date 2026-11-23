@@ -25,7 +25,7 @@ import {
   updateCollection, updateItem, type ItemSort,
 } from './services/library';
 import type { Collection, ContentType, ImportPreview, LibraryAsset, LibraryItem } from './types';
-import { EmptyState, ItemActionsContext, PageHeading, PreviewIcon, TYPE_LABEL, base, bytes, coverBackground, formatRoutePath, friendlyDate, go, type ItemActions, type Page } from './shared';
+import { cacheCover, hasCachedCover, EmptyState, ItemActionsContext, PageHeading, PreviewIcon, TYPE_LABEL, base, bytes, coverBackground, formatRoutePath, friendlyDate, go, type ItemActions, type Page } from './shared';
 import { CollectionsPage, HomePage, ItemDetailsPage, LibraryView } from './views';
 import { AuthActionPage, readAuthAction } from './authAction';
 import { demosEnabled, installDemos, removeDemos, syncDemos } from './demos';
@@ -104,6 +104,13 @@ function App() {
 
   const refresh = useCallback(async () => {
     const [nextItems, nextCollections, nextSubjects] = await Promise.all([getAllItems(), getCollections(), getSubjects()]);
+    // Without an active service worker, /__localdeck_asset/ URLs cannot resolve, so load covers from IndexedDB directly.
+    if (!navigator.serviceWorker?.controller) {
+      await Promise.all(nextItems.filter(item => item.artworkReferences.cover && !hasCachedCover(item.id, item.artworkReferences.cover)).map(async item => {
+        const asset = await db.assets.where('[itemId+normalizedPath]').equals([item.id, item.artworkReferences.cover!]).first();
+        if (asset) cacheCover(item.id, asset.normalizedPath, asset.blob);
+      }));
+    }
     setItems(nextItems); setCollections(nextCollections); setSubjects(nextSubjects); setLoaded(true);
   }, []);
   const closePlayer = useCallback(() => setPlaying(null), []);
