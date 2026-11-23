@@ -15,7 +15,7 @@ npm ci
 npm test
 npm run typecheck
 npm run build
-npm run dev -- --host 127.0.0.1 --port 5468
+npm run dev
 ```
 
 For service-worker and multi-file player checks, use the production build on an HTTPS or localhost origin. Keep development and production Worker secrets separate.

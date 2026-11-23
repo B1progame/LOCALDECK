@@ -23,6 +23,6 @@ function localdeckPrecache() {
 export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/LOCALDECK/' : '/',
   plugins: [react(), localdeckPrecache()],
-  server: { host: '127.0.0.1', port: 5468, strictPort: true },
+  server: { host: 'localhost', port: 5468, strictPort: true },
   build: { outDir: 'dist', emptyOutDir: true },
 }));

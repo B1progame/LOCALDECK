@@ -16,4 +16,4 @@ preview_id = "cca8b6d1388c464da7f6b4cb64e96539"
 crons = ["17 * * * *"]
 
 [vars]
-ALLOWED_ORIGIN = "https://b1progame.github.io"
+ALLOWED_ORIGIN = "https://b1progame.github.io,http://localhost:5468"

@@ -36,3 +36,17 @@ test('sharing API rejects unknown endpoints without revealing backend details', 
   assert.equal(response.status, 404);
   assert.deepEqual(await response.json(), { error: 'not_found' });
 });
+
+test('a failing database returns JSON with CORS instead of a bare crash', async () => {
+  const brokenDb = { prepare() { return { bind() { return this; }, async run() { throw new Error('no such table'); }, async first() { throw new Error('no such table'); } }; } };
+  const response = await worker.fetch(new Request('https://share.example/api/v1/shares/auth/firebase', { method: 'POST', headers: { Origin: env.ALLOWED_ORIGIN, 'content-type': 'application/json' }, body: '{"credential":"x.y.z"}' }), { ...env, SHARES_DB: brokenDb });
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get('access-control-allow-origin'), env.ALLOWED_ORIGIN);
+  assert.deepEqual(await response.json(), { error: 'service_unavailable' });
+});
+
+test('several allowed origins can be configured', async () => {
+  const multi = { ...env, ALLOWED_ORIGIN: 'https://example.pages.dev, http://localhost:5468' };
+  const local = await worker.fetch(new Request('https://share.example/api/v1/shares', { method: 'OPTIONS', headers: { Origin: 'http://localhost:5468' } }), multi);
+  assert.equal(local.headers.get('access-control-allow-origin'), 'http://localhost:5468');
+});

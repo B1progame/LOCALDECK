@@ -26,10 +26,15 @@ const SHARE_TTL_SECONDS = 3 * 24 * 60 * 60;
 let googleKeys: { keys: GoogleJwk[]; expiresAt: number } | null = null;
 let firebaseKeys: { keys: GoogleJwk[]; expiresAt: number } | null = null;
 
+/** ALLOWED_ORIGIN may list several origins separated by commas (e.g. the Pages site and local dev). */
+function allowedOrigins(env: Env): string[] {
+  return (env.ALLOWED_ORIGIN || '').split(',').map(value => value.trim().replace(/\/$/, '')).filter(Boolean);
+}
+
 function cors(request: Request, env: Env): Headers {
   const origin = request.headers.get('Origin');
   const headers = new Headers({ 'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS', 'access-control-allow-headers': 'authorization, content-type', 'access-control-max-age': '86400', vary: 'Origin' });
-  if (origin && origin === env.ALLOWED_ORIGIN) headers.set('access-control-allow-origin', origin);
+  if (origin && allowedOrigins(env).includes(origin)) headers.set('access-control-allow-origin', origin);
   return headers;
 }
 
@@ -191,9 +196,32 @@ async function cleanupExpired(env: Env): Promise<void> {
   await env.SHARES_DB.prepare('DELETE FROM user_storage WHERE active_bytes = 0 AND active_uploads = 0 AND NOT EXISTS (SELECT 1 FROM shares WHERE shares.owner_id = user_storage.owner_id)').run();
 }
 
+/* The D1 schema (mirrors cloudflare/schema.sql). Applied once per isolate so a fresh or never-migrated
+   database cannot make every request fail. All statements are idempotent. */
+const SCHEMA = [
+  'CREATE TABLE IF NOT EXISTS shares ( id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN (\'active\', \'revoked\')) DEFAULT \'active\', created_at TEXT NOT NULL, expires_at TEXT NOT NULL, size_bytes INTEGER NOT NULL CHECK (size_bytes > 0) )',
+  'CREATE INDEX IF NOT EXISTS shares_expiration_idx ON shares(expires_at)',
+  'CREATE INDEX IF NOT EXISTS shares_owner_idx ON shares(owner_id, created_at DESC)',
+  'CREATE TABLE IF NOT EXISTS upload_windows ( owner_id TEXT NOT NULL, window_start INTEGER NOT NULL, uploads INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (owner_id, window_start) )',
+  'CREATE TABLE IF NOT EXISTS daily_upload_windows ( owner_id TEXT NOT NULL, window_start INTEGER NOT NULL, uploads INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (owner_id, window_start) )',
+  'CREATE TABLE IF NOT EXISTS global_upload_windows ( window_start INTEGER PRIMARY KEY, uploads INTEGER NOT NULL DEFAULT 0 )',
+  'CREATE TABLE IF NOT EXISTS auth_windows ( client_hash TEXT NOT NULL, window_start INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (client_hash, window_start) )',
+  'CREATE TABLE IF NOT EXISTS read_windows ( client_hash TEXT NOT NULL, window_start INTEGER NOT NULL, reads INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (client_hash, window_start) )',
+  'CREATE TABLE IF NOT EXISTS user_storage ( owner_id TEXT PRIMARY KEY, active_bytes INTEGER NOT NULL DEFAULT 0 CHECK (active_bytes >= 0 AND active_bytes <= 50331648), active_uploads INTEGER NOT NULL DEFAULT 0 CHECK (active_uploads >= 0 AND active_uploads <= 3) )',
+  'CREATE TABLE IF NOT EXISTS storage_state ( id INTEGER PRIMARY KEY CHECK (id = 1), reserved_bytes INTEGER NOT NULL DEFAULT 0 CHECK (reserved_bytes >= 0 AND reserved_bytes <= 536870912), active_uploads INTEGER NOT NULL DEFAULT 0 CHECK (active_uploads >= 0 AND active_uploads <= 3) )',
+  'INSERT OR IGNORE INTO storage_state (id, reserved_bytes, active_uploads) VALUES (1, 0, 0)',
+];
+let schemaReady: Promise<void> | null = null;
+function ensureSchema(env: Env): Promise<void> {
+  if (!env.SHARES_DB) return Promise.resolve();
+  schemaReady ??= (async () => { for (const sql of SCHEMA) await env.SHARES_DB.prepare(sql).run(); })().catch(error => { schemaReady = null; throw error; });
+  return schemaReady;
+}
+
 const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
+      if (request.method !== 'OPTIONS') await ensureSchema(env);
       return await worker.handle(request, env);
     } catch (error) {
       console.error('unhandled_request_error', error);
@@ -321,7 +349,7 @@ const worker = {
     return json({ error: 'not_found' }, 404, headers);
   },
 
-  async scheduled(_controller: ScheduledController, env: Env, context: ExecutionContext): Promise<void> { context.waitUntil(cleanupExpired(env)); },
+  async scheduled(_controller: ScheduledController, env: Env, context: ExecutionContext): Promise<void> { context.waitUntil(ensureSchema(env).then(() => cleanupExpired(env))); },
 };
 
 export default worker;

@@ -74,7 +74,7 @@ npm ci
 npm run dev
 ```
 
-Open <http://127.0.0.1:5468>. Other useful scripts:
+Open <http://localhost:5468>. Other useful scripts:
 
 ```powershell
 npm test            # importer, ZIP, sharing, worker and demo tests
