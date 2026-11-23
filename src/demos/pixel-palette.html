@@ -15,6 +15,13 @@
   button.primary { border: 0; background: #fafafa; color: #111; }
   .swatches { flex: 1; display: grid; grid-template-columns: repeat(5, 1fr); }
   .sw { position: relative; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 10px; padding: 24px 8px; cursor: pointer; transition: flex .3s; }
+  .sw { animation: drop .5s cubic-bezier(.2,1.2,.4,1) both; transition: flex .35s cubic-bezier(.2,.8,.2,1), background-color .4s; }
+  .swatches { display: flex; } .sw { flex: 1; } .sw:hover { flex: 1.35; }
+  @keyframes drop { from { opacity: 0; transform: translateY(-30px); } }
+  .sw .hex { transition: transform .2s; } .sw:hover .hex { transform: scale(1.08); }
+  .sw .lock { transition: transform .2s, background .2s; } .sw .lock:hover { transform: scale(1.12); }
+  @media (max-width: 640px) { .swatches { flex-direction: column; } }
+  @media (prefers-reduced-motion: reduce) { .sw { animation: none; } }
   .sw .hex { font: 700 20px ui-monospace, Consolas, monospace; letter-spacing: .04em; }
   .sw .name { font-size: 12px; opacity: .75; }
   .sw .lock { width: 40px; height: 40px; border: 0; border-radius: 50%; background: #0002; color: inherit; font-size: 18px; }
@@ -54,7 +61,7 @@ function generate() {
 }
 const lum = hex => { const [, , l] = hexToHsl(hex); return l; };
 function render() {
-  $('sw').innerHTML = colors.map((c, i) => `<div class="sw" data-i="${i}" style="background:${c};color:${lum(c) > 60 ? '#111' : '#fff'}"><button class="lock ${locked[i] ? 'on' : ''}" data-lock="${i}" title="Lock color" aria-label="Lock color ${i + 1}">${locked[i] ? '🔒' : '🔓'}</button><span class="hex">${c.toUpperCase()}</span><span class="name">${names[(parseInt(c.slice(1), 16) >> 4) % names.length]}</span></div>`).join('');
+  $('sw').innerHTML = colors.map((c, i) => `<div class="sw" data-i="${i}" style="background:${c};color:${lum(c) > 60 ? '#111' : '#fff'};animation-delay:${locked[i] ? 0 : i * 60}ms;${locked[i] ? 'animation:none' : ''}"><button class="lock ${locked[i] ? 'on' : ''}" data-lock="${i}" title="Lock color" aria-label="Lock color ${i + 1}">${locked[i] ? '🔒' : '🔓'}</button><span class="hex">${c.toUpperCase()}</span><span class="name">${names[(parseInt(c.slice(1), 16) >> 4) % names.length]}</span></div>`).join('');
 }
 function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 1400); }
 async function copy(text, label) { try { await navigator.clipboard.writeText(text); toast(`${label} copied`); } catch { toast(text); } }

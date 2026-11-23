@@ -9,7 +9,7 @@ import revolution from './franzoesische-revolution.html?raw';
 import pomodoro from './pomodoro-focus.html?raw';
 import sorting from './sorting-visualizer.html?raw';
 import { analyzeFiles } from '../services/importer';
-import { createItem, deleteItem, getSettings, setSettings } from '../services/library';
+import { createItem, deleteItem, getSettings, replaceItemFiles, setSettings } from '../services/library';
 import { db } from '../services/database';
 
 export const DEMO_FILES: Array<{ file: string; html: string }> = [
@@ -33,19 +33,31 @@ export async function demosEnabled(): Promise<boolean> {
 /** Adds every demo that is not already in the library. Resolves with the number added. */
 export async function installDemos(): Promise<number> {
   const existing = await getSettings<string[]>(KEY, []);
-  const present = new Set((await db.items.bulkGet(existing)).filter(Boolean).map(item => item!.originalFilename));
-  const ids = existing.filter(Boolean);
+  const items = (await db.items.bulkGet(existing)).filter((item): item is NonNullable<typeof item> => Boolean(item));
+  const byFile = new Map(items.map(item => [item.originalFilename, item]));
+  const ids = items.map(item => item.id);
   let added = 0;
   for (const demo of DEMO_FILES) {
-    if (present.has(demo.file)) continue;
     const [preview] = await analyzeFiles([new File([demo.html], demo.file, { type: 'text/html' })]);
     if (!preview) continue;
+    const current = byFile.get(demo.file);
+    if (current) {
+      // Refresh demos whose code changed in a newer LocalDeck version; the user's favorites and collections stay.
+      const entry = await db.assets.where('[itemId+normalizedPath]').equals([current.id, current.entryFile]).first();
+      if (entry && await entry.blob.text() !== demo.html) await replaceItemFiles(current.id, preview);
+      continue;
+    }
     const item = await createItem(preview);
     ids.push(item.id);
     added++;
   }
   await setSettings(KEY, ids);
   return added;
+}
+
+/** Keeps installed demos up to date. Safe to call on every start. */
+export async function syncDemos(): Promise<void> {
+  if (await demosEnabled()) await installDemos();
 }
 
 /** Removes the demo projects that were added by installDemos. Projects the user imported stay. */

@@ -28,7 +28,7 @@ import type { Collection, ContentType, ImportPreview, LibraryAsset, LibraryItem 
 import { EmptyState, ItemActionsContext, PageHeading, PreviewIcon, TYPE_LABEL, base, bytes, coverBackground, formatRoutePath, friendlyDate, go, type ItemActions, type Page } from './shared';
 import { CollectionsPage, HomePage, ItemDetailsPage, LibraryView } from './views';
 import { AuthActionPage, readAuthAction } from './authAction';
-import { demosEnabled, installDemos, removeDemos } from './demos';
+import { demosEnabled, installDemos, removeDemos, syncDemos } from './demos';
 import { PackageBuilder } from './packageBuilder';
 import './styles.css';
 
@@ -163,7 +163,7 @@ function App() {
   const pageTitle = currentPage === 'item' ? items.find(x => x.id === route.itemId)?.title ?? 'Project' : currentPage === 'collections' && route.collectionId ? collections.find(x => x.id === route.collectionId)?.name ?? 'Collection' : ({ home:'Home', library:'All items', favorites:'Favorites', recent:'Recently opened', learning:'Learning hub', games:'Games & apps', collections:'Collections', import:'Import center', studio:'AI studio', storage:'Storage & backups', sharing:'Shared links', login:'Sign in', settings:'Settings', shared:'Shared project' } as Record<string,string>)[currentPage];
 
   const openProject = (item: LibraryItem) => setPlaying(item);
-  useEffect(() => { void demosEnabled().then(setDemosOn).catch(() => undefined); }, []);
+  useEffect(() => { void demosEnabled().then(async on => { setDemosOn(on); if (on) { await syncDemos(); await refresh(); } }).catch(() => undefined); }, [refresh]);
   const toggleDemos = async (on: boolean) => {
     setBusy(true);
     try { const count = on ? await installDemos() : await removeDemos(); setDemosOn(on); await refresh(); notify(on ? (count ? `Added ${count} demo project${count === 1 ? '' : 's'} to your library.` : 'The demo projects are already in your library.') : `Removed ${count} demo project${count === 1 ? '' : 's'}. Your own projects were not touched.`); }

@@ -24,6 +24,13 @@
   .result { text-align: center; }
   .big { font-size: 64px; font-weight: 800; background: linear-gradient(90deg, #86efac, #fde047); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .hidden { display: none; }
+  .card { animation: rise .6s cubic-bezier(.2,.8,.2,1); } @keyframes rise { from { opacity: 0; transform: translateY(24px) scale(.97); } }
+  .swap { animation: swap .4s cubic-bezier(.2,.8,.2,1); } @keyframes swap { from { opacity: 0; transform: translateX(26px); } }
+  .answers button.wrong { animation: shake .4s; } @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+  .answers button.right { animation: glow 1s; } @keyframes glow { 30% { box-shadow: 0 0 0 6px #4ade8040; } }
+  .leaf { position: fixed; top: -40px; font-size: 22px; opacity: .35; pointer-events: none; animation: fall linear infinite; } @keyframes fall { to { transform: translateY(110vh) rotate(540deg); } }
+  .big { animation: rise .7s cubic-bezier(.2,1.4,.4,1); }
+  @media (prefers-reduced-motion: reduce) { .leaf { display: none; } }
 </style>
 </head>
 <body>
@@ -43,6 +50,16 @@
   </div>
 </div>
 <script>
+
+function confetti(n = 140) {
+  const cv = document.createElement('canvas'); cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:99';
+  document.body.appendChild(cv); const g = cv.getContext('2d'); cv.width = innerWidth * devicePixelRatio; cv.height = innerHeight * devicePixelRatio;
+  const colors = ['#a78bfa', '#f472b6', '#facc15', '#4ade80', '#38bdf8', '#fb923c'];
+  const ps = Array.from({ length: n }, () => ({ x: cv.width / 2, y: cv.height * .35, vx: (Math.random() - .5) * 26 * devicePixelRatio, vy: (-Math.random() * 18 - 6) * devicePixelRatio, r: Math.random() * Math.PI, vr: (Math.random() - .5) * .4, s: (6 + Math.random() * 7) * devicePixelRatio, c: colors[Math.floor(Math.random() * colors.length)] }));
+  let f = 0; (function tick() { g.clearRect(0, 0, cv.width, cv.height); for (const p of ps) { p.vy += .5 * devicePixelRatio; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr; g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.fillStyle = p.c; g.globalAlpha = Math.max(0, 1 - f / 160); g.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); g.restore(); } if (++f < 170) requestAnimationFrame(tick); else cv.remove(); })();
+}
+
+for (let k = 0; k < 9; k++) { const l = document.createElement('span'); l.className = 'leaf'; l.textContent = k % 3 ? '🍃' : '🌿'; l.style.left = `${Math.random() * 100}%`; l.style.animationDuration = `${9 + Math.random() * 9}s`; l.style.animationDelay = `${-Math.random() * 15}s`; document.body.appendChild(l); }
 const Q = [
   ['Wo findet die Photosynthese in der Pflanzenzelle statt?', ['Mitochondrien', 'Chloroplasten', 'Zellkern', 'Ribosomen'], 1, 'In den Chloroplasten – sie enthalten das grüne Pigment Chlorophyll.'],
   ['Welche Ausgangsstoffe braucht die Photosynthese?', ['Sauerstoff und Glucose', 'Kohlenstoffdioxid und Wasser', 'Stickstoff und Wasser', 'Glucose und Wasser'], 1, '6 CO₂ + 6 H₂O → C₆H₁₂O₆ + 6 O₂ (mit Lichtenergie).'],
@@ -61,6 +78,7 @@ function show() {
   $('bar').style.width = `${i / Q.length * 100}%`; $('q').textContent = q;
   $('answers').innerHTML = a.map((t, k) => `<button data-k="${k}">${t}</button>`).join('');
   $('explain').classList.add('hidden'); $('next').classList.add('hidden');
+  for (const id of ['q', 'answers']) { $(id).classList.remove('swap'); void $(id).offsetWidth; $(id).classList.add('swap'); }
 }
 $('answers').onclick = e => {
   const k = e.target.dataset?.k; if (k === undefined) return;
@@ -74,7 +92,7 @@ $('answers').onclick = e => {
 $('next').onclick = () => { i++; if (i < Q.length) show(); else finish(); };
 function finish() {
   $('quiz').classList.add('hidden'); $('result').classList.remove('hidden');
-  $('final').textContent = `${score}/${Q.length}`;
+  $('final').textContent = `${score}/${Q.length}`; if (score >= Q.length - 1) confetti(score === Q.length ? 200 : 90);
   $('verdict').textContent = score === Q.length ? 'Perfekt – du hast die Photosynthese voll verstanden! 🌱' : score >= 5 ? 'Gut gemacht! Schau dir die falschen Fragen noch einmal an.' : 'Noch ein Durchgang? Die Erklärungen helfen dir dabei.';
 }
 $('again').onclick = () => { i = 0; score = 0; $('result').classList.add('hidden'); $('quiz').classList.remove('hidden'); show(); };

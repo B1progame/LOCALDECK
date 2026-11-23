@@ -55,7 +55,7 @@ function step(now) {
   trail.push([bx, by]); if (trail.length > 90) trail.shift();
   x.clearRect(0, 0, c.width, c.height);
   x.strokeStyle = '#ffffff0d'; x.lineWidth = 1; for (let i = 0; i < c.width; i += 40 * devicePixelRatio) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, c.height); x.stroke(); }
-  x.beginPath(); trail.forEach(([a, b], i) => { x.strokeStyle = `rgba(34,211,238,${i / trail.length * .6})`; }); x.lineWidth = 3 * devicePixelRatio; x.strokeStyle = '#22d3ee55'; trail.forEach(([a, b], i) => i ? x.lineTo(a, b) : x.moveTo(a, b)); x.stroke();
+  x.lineCap = 'round'; for (let i = 1; i < trail.length; i++) { x.strokeStyle = `rgba(34,211,238,${(i / trail.length) ** 2 * .75})`; x.lineWidth = (1 + i / trail.length * 5) * devicePixelRatio; x.beginPath(); x.moveTo(trail[i - 1][0], trail[i - 1][1]); x.lineTo(trail[i][0], trail[i][1]); x.stroke(); }
   x.strokeStyle = '#cbd5e1'; x.lineWidth = 2 * devicePixelRatio; x.beginPath(); x.moveTo(ox, oy); x.lineTo(bx, by); x.stroke();
   x.fillStyle = '#64748b'; x.fillRect(ox - 60 * devicePixelRatio, oy - 6 * devicePixelRatio, 120 * devicePixelRatio, 6 * devicePixelRatio);
   const grad = x.createRadialGradient(bx - 8, by - 8, 4, bx, by, 26 * devicePixelRatio); grad.addColorStop(0, '#a5f3fc'); grad.addColorStop(1, '#0891b2');

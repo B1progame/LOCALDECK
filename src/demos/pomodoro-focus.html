@@ -14,7 +14,13 @@
   .modes button { padding: 8px 16px; border: 0; border-radius: 99px; background: transparent; color: #c7d2fe; font: 600 14px system-ui; cursor: pointer; }
   .modes button.on { background: #fff; color: #1e1b4b; }
   .ring { position: relative; width: 280px; height: 280px; margin: 30px auto; }
-  .ring svg { transform: rotate(-90deg); }
+  .ring svg { transform: rotate(-90deg); filter: drop-shadow(0 0 18px #a5b4fc66); }
+  .ring::before { content: ''; position: absolute; inset: 20px; border-radius: 50%; background: radial-gradient(circle, #a78bfa55, transparent 70%); opacity: .4; }
+  body.running .ring::before { animation: breathe 8s ease-in-out infinite; } @keyframes breathe { 50% { transform: scale(1.18); opacity: .9; } }
+  .done-pulse { animation: donepulse 1s ease 3; } @keyframes donepulse { 50% { transform: scale(1.06); } }
+  .actions button { transition: transform .15s, filter .15s; } .actions button:hover { filter: brightness(1.08); transform: translateY(-2px); } .actions button:active { transform: scale(.96); }
+  .tasks li { animation: slidein .3s cubic-bezier(.2,.8,.2,1); } @keyframes slidein { from { opacity: 0; transform: translateX(-10px); } }
+  @media (prefers-reduced-motion: reduce) { body.running .ring::before, .done-pulse, .tasks li { animation: none; } }
   .ring circle { fill: none; stroke-width: 12; }
   .ring .track { stroke: #ffffff14; } .ring .prog { stroke: url(#g); stroke-linecap: round; transition: stroke-dashoffset .5s linear; }
   .time { position: absolute; inset: 0; display: grid; place-content: center; }
@@ -43,12 +49,12 @@ const $ = id => document.getElementById(id), C = 2 * Math.PI * 126;
 $('prog').style.strokeDasharray = C;
 let total = 25 * 60, left = total, timer = null, sessions = 0, tasks = [];
 function draw() { const m = String(Math.floor(left / 60)).padStart(2, '0'), s = String(left % 60).padStart(2, '0'); $('t').textContent = `${m}:${s}`; $('prog').style.strokeDashoffset = C * (1 - left / total); document.title = `${m}:${s} · Pomodoro Focus`; }
-function setMode(min) { clearInterval(timer); timer = null; total = left = min * 60; $('go').textContent = 'Start'; document.body.classList.toggle('break', min !== 25); $('label').textContent = min === 25 ? 'Ready to focus' : 'Time for a break'; document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('on', +b.dataset.m === min)); draw(); }
+function setMode(min) { clearInterval(timer); timer = null; document.body.classList.remove('running'); total = left = min * 60; $('go').textContent = 'Start'; document.body.classList.toggle('break', min !== 25); $('label').textContent = min === 25 ? 'Ready to focus' : 'Time for a break'; document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('on', +b.dataset.m === min)); draw(); }
 function beep() { try { const a = new AudioContext(), o = a.createOscillator(), g = a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value = 880; g.gain.setValueAtTime(.2, a.currentTime); g.gain.exponentialRampToValueAtTime(.001, a.currentTime + .8); o.start(); o.stop(a.currentTime + .8); } catch {} }
 $('go').onclick = () => {
-  if (timer) { clearInterval(timer); timer = null; $('go').textContent = 'Resume'; $('label').textContent = 'Paused'; return; }
-  $('go').textContent = 'Pause'; $('label').textContent = total === 25 * 60 ? 'Focusing…' : 'Relax…';
-  timer = setInterval(() => { left--; draw(); if (left <= 0) { clearInterval(timer); timer = null; beep(); if (total === 25 * 60) { sessions++; $('count').textContent = `${sessions} focus session${sessions === 1 ? '' : 's'} today`; setMode(5); } else setMode(25); } }, 1000);
+  if (timer) { document.body.classList.remove('running'); clearInterval(timer); timer = null; $('go').textContent = 'Resume'; $('label').textContent = 'Paused'; return; }
+  document.body.classList.add('running'); $('go').textContent = 'Pause'; $('label').textContent = total === 25 * 60 ? 'Focusing…' : 'Relax…';
+  timer = setInterval(() => { left--; draw(); if (left <= 0) { clearInterval(timer); timer = null; beep(); document.body.classList.remove('running'); const r = document.querySelector('.ring'); r.classList.remove('done-pulse'); void r.offsetWidth; r.classList.add('done-pulse'); if (total === 25 * 60) { sessions++; $('count').textContent = `${sessions} focus session${sessions === 1 ? '' : 's'} today`; setMode(5); } else setMode(25); } }, 1000);
 };
 $('reset').onclick = () => setMode(total / 60);
 document.querySelector('.modes').onclick = e => { const m = e.target.dataset?.m; if (m) setMode(+m); };
