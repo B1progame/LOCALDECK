@@ -3,8 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from 'motion/react';
 import {
   Activity, Archive, ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, Clock3,
-  Cloud, Copy, FileText, FolderPlus, Gamepad2, Heart, Home, Image, Info, Library, ListFilter,
-  LoaderCircle, Menu, MoreHorizontal, PackageOpen, Play, Plus, Search, Settings, ShieldCheck,
+  Cloud, Code2, Copy, Eye, FileText, FolderPlus, Gamepad2, Heart, Home, Image, Info, Library, ListFilter,
+  LoaderCircle, Menu, MoreHorizontal, PackageOpen, Play, Plus, Save, Search, Settings, ShieldCheck,
   Share2, Sparkles, Trash2, Upload, X,
 } from 'lucide-react';
 import { openLibrary, db } from './services/database';
@@ -15,11 +15,11 @@ import { createStoredZip } from './services/zip';
 import { buildHtmlHandoffPrompt, inspectHtml, type HtmlInspection } from './services/htmlInspection';
 import {
   addToCollection, checkLibraryIntegrity, createCollection, createItem, deleteCollection, deleteItem, duplicateItem,
-  finishOpenSession, getAllItems, getAssets, getCollections,
+  finishOpenSession, getAllItems, getAssets, getCollections, updateHtmlAsset,
   getSettings, getSubjects, recordOpenSession, removeFromCollection, repairLibrary, saveSubject, toggleFavorite,
   updateCollection, updateItem, type ItemSort,
 } from './services/library';
-import type { Collection, ContentType, ImportPreview, LibraryItem } from './types';
+import type { Collection, ContentType, ImportPreview, LibraryAsset, LibraryItem } from './types';
 import './styles.css';
 
 type Page = 'home' | 'library' | 'favorites' | 'recent' | 'learning' | 'games' | 'collections' | 'import' | 'studio' | 'storage' | 'sharing' | 'settings';
@@ -84,6 +84,7 @@ function App() {
   const [mobileNav, setMobileNav] = useState(false);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [playing, setPlaying] = useState<LibraryItem | null>(null);
+  const [codeEditorItem, setCodeEditorItem] = useState<LibraryItem | null>(null);
   const [dialogError, setDialogError] = useState('');
   const [importPreviews, setImportPreviews] = useState<ImportPreview[]>([]);
   const [storage, setStorage] = useState<{ usage?: number; quota?: number; persisted?: boolean }>({});
@@ -301,7 +302,7 @@ function App() {
       <AnimatePresence mode="wait" initial={false}>
         <motion.div key={`${currentPage}-${route.shareId ?? ''}`} className="page-content" {...routeMotion}>
           {currentPage === 'home' && <HomePage items={items} open={openProject} add={() => fileInput.current?.click()} navigate={go} favorite={async item=>{try{await toggleFavorite(item.id);await refresh();}catch(error){notify(safeError(error),true);}}} />}
-          {['library','favorites','recent','learning','games'].includes(currentPage) && <LibraryPage page={currentPage as Page} items={pageItems} query={query} setQuery={setQuery} sort={sort} setSort={setSort} open={openProject} edit={item => setModal({ kind:'edit',item })} collect={item=>setModal({kind:'collect',item})} share={prepareShare} remove={deleteProject} favorite={async item => { try { await toggleFavorite(item.id); await refresh(); } catch (error) { notify(safeError(error), true); } }} exportOne={async item => { try { const blob = await exportItem(item.id); downloadBlob(blob, `${item.title.replace(/[^a-z0-9_-]+/gi,'-')}.zip`); notify(`Project archive ready · ${bytes(blob.size)}`); } catch (error) { notify(safeError(error), true); } }} duplicate={async item => { try { await duplicateItem(item.id); await refresh(); notify('Project duplicated.'); } catch (error) { notify(safeError(error), true); } }} />}
+          {['library','favorites','recent','learning','games'].includes(currentPage) && <LibraryPage page={currentPage as Page} items={pageItems} query={query} setQuery={setQuery} sort={sort} setSort={setSort} open={openProject} edit={item => setModal({ kind:'edit',item })} editCode={item=>setCodeEditorItem(item)} collect={item=>setModal({kind:'collect',item})} share={prepareShare} remove={deleteProject} favorite={async item => { try { await toggleFavorite(item.id); await refresh(); } catch (error) { notify(safeError(error), true); } }} exportOne={async item => { try { const blob = await exportItem(item.id); downloadBlob(blob, `${item.title.replace(/[^a-z0-9_-]+/gi,'-')}.zip`); notify(`Project archive ready · ${bytes(blob.size)}`); } catch (error) { notify(safeError(error), true); } }} duplicate={async item => { try { await duplicateItem(item.id); await refresh(); notify('Project duplicated.'); } catch (error) { notify(safeError(error), true); } }} />}
           {currentPage === 'collections' && (route.collectionId ? <CollectionDetail collection={collections.find(x=>x.id===route.collectionId)} items={pageItems} onBack={()=>go('collections')} open={openProject} favorite={async item=>{try{await toggleFavorite(item.id);await refresh();}catch(error){notify(safeError(error),true);}}} onChange={async (collectionId,ordered)=>{await updateCollection(collectionId,{orderedItemIds:ordered});await refresh();}} onRemove={async item=>{if(!route.collectionId)return;await removeFromCollection(item.id,route.collectionId);await refresh();notify('Project removed from this collection.');}} /> : <CollectionsPage collections={collections} items={items} add={() => setModal({ kind:'collection' })} open={id => go('collections', `?collection=${encodeURIComponent(id)}`)} remove={async collection => { if (!window.confirm(`Delete the “${collection.name}” collection? Projects stay in your library.`)) return; await deleteCollection(collection.id); await refresh(); notify('Collection deleted.'); }} />)}
           {currentPage === 'import' && <ImportPage previews={importPreviews} busy={busy} addFiles={() => fileInput.current?.click()} addFolder={() => folderInput.current?.click()} save={savePreview} discard={preview => setImportPreviews(list => list.filter(x => x !== preview))} editPreview={preview => setModal({ kind:'entry',preview })} onDrop={files=>void handlePickedFiles(files)} />}
           {currentPage === 'studio' && <StudioPage items={items} notify={notify} />}
@@ -314,7 +315,8 @@ function App() {
     </main>
     <AnimatePresence>{toast && <motion.div className={`toast ${toast.error ? 'toast-error' : ''}`} role={toast.error ? 'alert' : 'status'} initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:6 }}><span className="toast-icon">{toast.error ? '!' : '✓'}</span>{toast.message}</motion.div>}</AnimatePresence>
     <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} value={query} onChange={setQuery} items={items} onOpen={item => { setSearchOpen(false); void openProject(item); }} />
-    <AnimatePresence>{modal && <Modal modal={modal} collections={collections} busy={busy} onClose={() => { setModal(null); setDialogError(''); }} onSubmit={saveModal} error={dialogError} onPreviewChange={(update) => setModal(current => current?.preview ? { ...current, preview: { ...current.preview, ...update } } : current)} />}</AnimatePresence>
+    <AnimatePresence>{modal && <Modal modal={modal} collections={collections} busy={busy} onClose={() => { setModal(null); setDialogError(''); }} onEditCode={item=>setCodeEditorItem(item)} onSubmit={saveModal} error={dialogError} onPreviewChange={(update) => setModal(current => current?.preview ? { ...current, preview: { ...current.preview, ...update } } : current)} />}</AnimatePresence>
+    <AnimatePresence>{codeEditorItem && <HtmlCodeEditor item={codeEditorItem} onClose={()=>setCodeEditorItem(null)} onSaved={refresh} notify={notify} />}</AnimatePresence>
     <AnimatePresence>{playing && <Player key={playing.id} item={playing} close={closePlayer} onOpened={playerOpened} />}</AnimatePresence>
   </div></MotionConfig>;
 }
@@ -354,9 +356,9 @@ function HomePage({ items, open, add, navigate, favorite }: { items: LibraryItem
 function collectionsCount(items: LibraryItem[]) { return new Set(items.flatMap(x=>x.collectionIds)).size; }
 function ExploreTile({ icon:Icon,title,detail,color,onClick }: { icon: typeof Library; title:string; detail:string; color:string; onClick:()=>void }) { return <button className="explore-tile" onClick={onClick}><span className={`start-icon ${color}`}><Icon size={17}/></span><span><b>{title}</b><small>{detail}</small></span></button>; }
 
-function LibraryPage({ page, items, query, setQuery, sort, setSort, open, edit, collect, share, remove, favorite, exportOne, duplicate }: {
+function LibraryPage({ page, items, query, setQuery, sort, setSort, open, edit, editCode, collect, share, remove, favorite, exportOne, duplicate }: {
   page: Page; items: LibraryItem[]; query:string; setQuery:(value:string)=>void; sort:ItemSort; setSort:(value:ItemSort)=>void;
-  open:(item:LibraryItem)=>void; edit:(item:LibraryItem)=>void; collect:(item:LibraryItem)=>void; share:(item:LibraryItem)=>void; remove:(item:LibraryItem)=>void; favorite:(item:LibraryItem)=>void;
+  open:(item:LibraryItem)=>void; edit:(item:LibraryItem)=>void; editCode:(item:LibraryItem)=>void; collect:(item:LibraryItem)=>void; share:(item:LibraryItem)=>void; remove:(item:LibraryItem)=>void; favorite:(item:LibraryItem)=>void;
   exportOne:(item:LibraryItem)=>void; duplicate:(item:LibraryItem)=>void;
 }) {
   const meta: Record<string,{ kicker:string; title:string; description:string }> = {
@@ -372,17 +374,17 @@ function LibraryPage({ page, items, query, setQuery, sort, setSort, open, edit, 
   return <>
     <PageHeading eyebrow={metaFor.kicker} title={metaFor.title} description={metaFor.description} action={<button className="button primary" onClick={()=>go('import')}><Plus size={17}/> Import</button>} />
     <div className="library-toolbar"><label className="field-search"><Search size={16}/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder={`Search ${metaFor.title.toLowerCase()}…`} aria-label={`Search ${metaFor.title}`} />{query && <button aria-label="Clear search" onClick={()=>setQuery('')}><X size={15}/></button>}</label><label className="select-wrap"><ListFilter size={15}/><select aria-label="Sort projects" value={sort} onChange={event=>setSort(event.target.value as ItemSort)}><option value="imported">Recently added</option><option value="name">Name</option><option value="opened">Last opened</option><option value="size">File size</option><option value="modified">Recently modified</option></select><ChevronDown size={14}/></label><label className="select-wrap type-select"><select aria-label="Filter by type" value={typeFilter} onChange={event=>setTypeFilter(event.target.value)}><option value="all">All types</option>{Object.entries(TYPE_LABEL).map(([type,label])=><option key={type} value={type}>{label}</option>)}</select><ChevronDown size={14}/></label></div>
-    {shown.length ? <div className="item-grid">{shown.map((item,index)=><ItemCard key={item.id} item={item} index={index} onOpen={()=>open(item)} onFavorite={()=>favorite(item)} onEdit={()=>edit(item)} onCollect={()=>collect(item)} onShare={()=>share(item)} onDelete={()=>remove(item)} onExport={()=>exportOne(item)} onDuplicate={()=>duplicate(item)} />)}</div> : <EmptyState icon={page==='favorites'?Heart:page==='recent'?Clock3:page==='learning'?BookOpen:Library} title={query?'No matches found':page==='favorites'?'Nothing saved as a favorite yet':page==='recent'?'Your recent projects will appear here':'Your library is ready for its first project'} detail={query?'Try a different title, subject, or tag.':page==='favorites'?'Tap the heart on a project to keep it close.':page==='recent'?'Open something from your library and it will be waiting here.':'Import an HTML project, ZIP, PDF, or folder. Everything stays on this device.'} action={<button className="button primary" onClick={()=>go('import')}><Plus size={16}/> Import a project</button>} />}
+    {shown.length ? <div className="item-grid">{shown.map((item,index)=><ItemCard key={item.id} item={item} index={index} onOpen={()=>open(item)} onFavorite={()=>favorite(item)} onEdit={()=>edit(item)} onEditCode={/\.html?$/i.test(item.entryFile)?()=>editCode(item):undefined} onCollect={()=>collect(item)} onShare={()=>share(item)} onDelete={()=>remove(item)} onExport={()=>exportOne(item)} onDuplicate={()=>duplicate(item)} />)}</div> : <EmptyState icon={page==='favorites'?Heart:page==='recent'?Clock3:page==='learning'?BookOpen:Library} title={query?'No matches found':page==='favorites'?'Nothing saved as a favorite yet':page==='recent'?'Your recent projects will appear here':'Your library is ready for its first project'} detail={query?'Try a different title, subject, or tag.':page==='favorites'?'Tap the heart on a project to keep it close.':page==='recent'?'Open something from your library and it will be waiting here.':'Import an HTML project, ZIP, PDF, or folder. Everything stays on this device.'} action={<button className="button primary" onClick={()=>go('import')}><Plus size={16}/> Import a project</button>} />}
   </>;
 }
 
-function ItemCard({ item,index,onOpen,onFavorite,onEdit,onCollect,onShare,onDelete,onExport,onDuplicate,compact=false,simple=false }: { item:LibraryItem; index:number; onOpen:()=>void; onFavorite:()=>void; onEdit:()=>void; onCollect?:()=>void; onShare?:()=>void; onDelete:()=>void; onExport:()=>void; onDuplicate:()=>void; compact?:boolean; simple?:boolean }) {
+function ItemCard({ item,index,onOpen,onFavorite,onEdit,onEditCode,onCollect,onShare,onDelete,onExport,onDuplicate,compact=false,simple=false }: { item:LibraryItem; index:number; onOpen:()=>void; onFavorite:()=>void; onEdit:()=>void; onEditCode?:()=>void; onCollect?:()=>void; onShare?:()=>void; onDelete:()=>void; onExport:()=>void; onDuplicate:()=>void; compact?:boolean; simple?:boolean }) {
   const [menu,setMenu]=useState(false); const Icon=TYPE_ICON[item.type];
   return <motion.article className={`item-card ${compact?'item-card-compact':''}`} layout initial={{opacity:0,y:7}} animate={{opacity:1,y:0}} transition={{duration:.2,delay:Math.min(index*.025,.18)}}>
     <button className={`item-cover cover-${item.type}`} onClick={onOpen} aria-label={`Open ${item.title}`}><span className="cover-type"><Icon size={21}/></span><span className="cover-title">{item.title}</span><span className="cover-meta">{item.subject || TYPE_LABEL[item.type]}</span><span className="cover-play"><Play size={14} fill="currentColor"/></span>{item.artworkReferences.cover && <span className="cover-art" style={{backgroundImage:`url("${formatRoutePath(item.id,item.artworkReferences.cover)}")`}} aria-hidden="true" />}</button>
     <div className="item-info"><div className="item-title-row"><button className="item-title-button" onClick={onOpen}><b>{item.title}</b><small>{TYPE_LABEL[item.type]}{item.subject ? ` · ${item.subject}` : ''}</small></button><button className={`icon-button favorite-button ${item.favorite?'favorite-on':''}`} onClick={onFavorite} aria-label={`${item.favorite?'Remove':'Add'} ${item.title} ${item.favorite?'from':'to'} favorites`}><Heart size={17} fill={item.favorite?'currentColor':'none'}/></button>{!simple&&<button className="icon-button item-menu-button" onClick={()=>setMenu(value=>!value)} aria-expanded={menu} aria-label={`More actions for ${item.title}`}><MoreHorizontal size={18}/></button>}</div>
       <div className="item-foot"><span>{bytes(item.storageSize)}</span><span>{item.fileCount} file{item.fileCount===1?'':'s'}</span></div>
-      {menu && <><button className="menu-dismiss" aria-label="Close project menu" onClick={()=>setMenu(false)} /><div className="item-menu" role="menu"><button role="menuitem" onClick={()=>{setMenu(false);onEdit();}}>Edit details</button><button role="menuitem" onClick={()=>{setMenu(false);onCollect?.();}}>Add to collection</button><button role="menuitem" onClick={()=>{setMenu(false);onShare?.();}}><Share2 size={14}/> Create encrypted link</button><button role="menuitem" onClick={()=>{setMenu(false);onDuplicate();}}>Make a copy</button><button role="menuitem" onClick={()=>{setMenu(false);onExport();}}>Export project</button><button role="menuitem" className="danger-menu" onClick={()=>{setMenu(false);onDelete();}}>Remove from library</button></div></>}
+      {menu && <><button className="menu-dismiss" aria-label="Close project menu" onClick={()=>setMenu(false)} /><div className="item-menu" role="menu"><button role="menuitem" onClick={()=>{setMenu(false);onEdit();}}>Edit details</button>{onEditCode&&<button role="menuitem" onClick={()=>{setMenu(false);onEditCode();}}><Code2 size={14}/> Edit HTML code</button>}<button role="menuitem" onClick={()=>{setMenu(false);onCollect?.();}}>Add to collection</button><button role="menuitem" onClick={()=>{setMenu(false);onShare?.();}}><Share2 size={14}/> Create encrypted link</button><button role="menuitem" onClick={()=>{setMenu(false);onDuplicate();}}>Make a copy</button><button role="menuitem" onClick={()=>{setMenu(false);onExport();}}>Export project</button><button role="menuitem" className="danger-menu" onClick={()=>{setMenu(false);onDelete();}}>Remove from library</button></div></>}
     </div>
   </motion.article>;
 }
@@ -511,6 +513,74 @@ function Player({item,close,onOpened}:{item:LibraryItem;close:()=>void;onOpened:
   return <div className="player-overlay" role="dialog" aria-modal="true" aria-label={`${item.title} player`}><header className="player-top"><div className="player-name"><button className="icon-button" onClick={close} aria-label="Back to library"><ArrowLeft size={19}/></button><span className="player-live-dot"/><b>{item.title}</b><small>LOCAL PROJECT</small></div><div className="player-controls"><button className="button" onClick={()=>{if(frame.current)frame.current.src=entryUrl;}} title="Restart project">Restart</button><button className="icon-button" onClick={()=>void fullscreen()} title="Fullscreen" aria-label="Fullscreen"><span className="fullscreen-glyph">⛶</span></button><button className="button primary" onClick={close}>Done</button></div></header><div className={`player-stage ${item.type==='document'?'document-stage':''}`}><iframe key={`${item.id}-${entryUrl}`} ref={frame} title={item.title} src={entryUrl} sandbox={item.type==='document'?'allow-downloads allow-same-origin':'allow-scripts allow-forms allow-pointer-lock allow-presentation allow-downloads allow-same-origin'} allow="fullscreen; autoplay; gamepad" referrerPolicy="no-referrer" /></div><footer className="player-footer"><span><ShieldCheck size={14}/> Runs in an isolated browser frame</span><span>{item.offlineCompatibility.score==='likely'?'Offline-compatible signals found':'Some features may need the internet or a different browser'}</span></footer></div>;
 }
 
+function HtmlCodeEditor({item,onClose,onSaved,notify}:{item:LibraryItem;onClose:()=>void;onSaved:()=>Promise<void>;notify:(message:string,error?:boolean)=>void}) {
+  const dialog=useRef<HTMLDialogElement>(null);
+  const editor=useRef<HTMLTextAreaElement>(null);
+  const [htmlFiles,setHtmlFiles]=useState<LibraryAsset[]>([]);
+  const [path,setPath]=useState(item.entryFile);
+  const [draft,setDraft]=useState('');
+  const [savedSource,setSavedSource]=useState('');
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [preview,setPreview]=useState(false);
+  const [previewVersion,setPreviewVersion]=useState(0);
+  const [error,setError]=useState('');
+  const dirty=draft!==savedSource;
+
+  useEffect(()=>{
+    const element=dialog.current;
+    if(element&&!element.open)element.showModal();
+    let active=true;
+    void getAssets(item.id).then(assets=>{
+      if(!active)return;
+      const html=assets.filter(asset=>/\.html?$/i.test(asset.normalizedPath));
+      setHtmlFiles(html);
+      const entry=html.find(asset=>asset.normalizedPath===item.entryFile)??html[0];
+      if(!entry)throw new Error('This project does not contain an HTML file to edit.');
+      setPath(entry.normalizedPath);
+      return entry.blob.text().then(text=>{if(active){setDraft(text);setSavedSource(text);}});
+    }).catch(reason=>{if(active)setError(safeError(reason));}).finally(()=>{if(active)setLoading(false);});
+    return()=>{active=false;if(element?.open)element.close();};
+  },[item.id,item.entryFile]);
+
+  const persist=async()=>{
+    if(!dirty)return true;
+    setSaving(true);setError('');
+    try{await updateHtmlAsset(item.id,path,draft);setSavedSource(draft);setPreviewVersion(version=>version+1);await onSaved();notify('HTML saved on this device.');return true;}
+    catch(reason){setError(safeError(reason));return false;}
+    finally{setSaving(false);}
+  };
+  const close=()=>{if(saving)return;if(dirty&&!window.confirm('Discard your unsaved HTML changes?'))return;onClose();};
+  const chooseFile=async(nextPath:string)=>{
+    if(nextPath===path||saving)return;
+    if(dirty&&!window.confirm('Discard your unsaved changes and open another file?'))return;
+    setLoading(true);setError('');setPreview(false);
+    try{const asset=htmlFiles.find(file=>file.normalizedPath===nextPath);if(!asset)throw new Error('This HTML file could not be found.');const text=await asset.blob.text();setPath(nextPath);setDraft(text);setSavedSource(text);}
+    catch(reason){setError(safeError(reason));}
+    finally{setLoading(false);}
+  };
+  const showPreview=async()=>{if(await persist()){setPreview(true);setPreviewVersion(version=>version+1);}};
+  const editTab=(event:React.KeyboardEvent<HTMLTextAreaElement>)=>{
+    const area=event.currentTarget;
+    if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='s'){event.preventDefault();void persist();return;}
+    if(event.key==='Tab'){
+      event.preventDefault();
+      const start=area.selectionStart,end=area.selectionEnd;
+      area.setRangeText('  ',start,end,'end');
+      setDraft(area.value);
+    }
+  };
+
+  return <motion.div className="code-editor-scrim" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={event=>{if(event.target===event.currentTarget)close();}}>
+    <motion.dialog ref={dialog} className="code-editor-dialog" aria-label={`Edit HTML for ${item.title}`} onCancel={event=>{event.preventDefault();close();}} initial={{opacity:0,y:10,scale:.99}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8,scale:.99}} transition={{duration:.18}}>
+      <header className="code-editor-header"><div className="code-editor-title"><span className="code-editor-icon"><Code2 size={18}/></span><span><small>EDITING PROJECT</small><b>{item.title}</b></span></div><div className="code-editor-actions">{preview?<button className="button" onClick={()=>setPreview(false)}><Code2 size={15}/> Code</button>:<button className="button" disabled={loading||saving||!draft} onClick={()=>void showPreview()}><Eye size={15}/> Save & preview</button>}<button className="button primary" disabled={!dirty||saving||loading} onClick={()=>void persist()}>{saving?<LoaderCircle size={15} className="spin"/>:<Save size={15}/>} Save</button><button className="icon-button" onClick={close} aria-label="Close editor"><X size={18}/></button></div></header>
+      <div className="code-editor-toolbar"><label className="code-file-select"><FileText size={15}/>{htmlFiles.length>1?<select value={path} disabled={saving} onChange={event=>void chooseFile(event.target.value)} aria-label="Choose HTML file">{htmlFiles.map(file=><option key={file.id} value={file.normalizedPath}>{file.normalizedPath}</option>)}</select>:<span>{path}</span>}</label><span className={`code-save-state ${dirty?'unsaved':''}`}><i/>{dirty?'Unsaved changes':'Saved on this device'}</span></div>
+      <div className="code-editor-body">{preview?<iframe key={`${item.id}-${path}-${previewVersion}`} title={`${item.title} HTML preview`} src={formatRoutePath(item.id,path)} sandbox="allow-scripts allow-forms allow-pointer-lock allow-presentation allow-downloads allow-same-origin" allow="fullscreen; autoplay; gamepad" referrerPolicy="no-referrer"/>:loading?<div className="code-editor-loading"><LoaderCircle size={22} className="spin"/><span>Opening your HTML…</span></div>:<textarea ref={editor} className="code-source" aria-label={`HTML source for ${path}`} value={draft} onChange={event=>setDraft(event.target.value)} onKeyDown={editTab} spellCheck={false} autoCapitalize="off" autoCorrect="off" autoComplete="off" readOnly={saving} wrap="off" placeholder="Your HTML source will appear here."/>}</div>
+      <footer className="code-editor-footer"><span>{error?<b className="code-editor-error" role="alert">{error}</b>:<><span>{path}</span><i>·</i><span>{draft.split('\n').length} lines</span><i>·</i><span>{bytes(new Blob([draft]).size)}</span></>}</span><span>{dirty?'Changes stay local until saved':'Saved to this browser · Tab indents · ⌘/Ctrl S saves'}</span></footer>
+    </motion.dialog>
+  </motion.div>;
+}
+
 function SearchOverlay({open,onClose,value,onChange,items,onOpen}:{open:boolean;onClose:()=>void;value:string;onChange:(value:string)=>void;items:LibraryItem[];onOpen:(item:LibraryItem)=>void}) {
   const input=useRef<HTMLInputElement>(null);
   useEffect(()=>{if(open)input.current?.focus();},[open]);
@@ -518,12 +588,12 @@ function SearchOverlay({open,onClose,value,onChange,items,onOpen}:{open:boolean;
   return <AnimatePresence>{open&&<motion.div className="search-overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}><motion.div className="search-panel" initial={{opacity:0,y:-10,scale:.99}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:-6}} transition={{duration:.16}}><div className="search-panel-input"><Search size={19}/><input ref={input} value={value} onChange={event=>onChange(event.target.value)} placeholder="Search your library…"/><kbd>ESC</kbd><button className="icon-button" onClick={onClose} aria-label="Close search"><X size={18}/></button></div>{value.trim()&&<div className="search-panel-results">{results.length?results.map(item=><button key={item.id} onClick={()=>onOpen(item)}><span className="search-result-icon"><PreviewIcon type={item.type}/></span><span><b>{item.title}</b><small>{item.subject||TYPE_LABEL[item.type]}</small></span><ArrowRight size={15}/></button>):<p>No matches found. Try another title, subject, or tag.</p>}</div>}<div className="search-footer">Search titles, subjects, topics, descriptions, and tags</div></motion.div></motion.div>}</AnimatePresence>;
 }
 
-function Modal({modal,collections,busy,onClose,onSubmit,error,onPreviewChange}:{modal:ModalState;collections:Collection[];busy:boolean;onClose:()=>void;onSubmit:(event:React.FormEvent<HTMLFormElement>)=>void;error:string;onPreviewChange:(update:Partial<ImportPreview>)=>void}) {
+function Modal({modal,collections,busy,onClose,onEditCode,onSubmit,error,onPreviewChange}:{modal:ModalState;collections:Collection[];busy:boolean;onClose:()=>void;onEditCode:(item:LibraryItem)=>void;onSubmit:(event:React.FormEvent<HTMLFormElement>)=>void;error:string;onPreviewChange:(update:Partial<ImportPreview>)=>void}) {
   const dialogRef=useRef<HTMLDialogElement>(null);
   useEffect(()=>{const dialog=dialogRef.current;if(!dialog)return;dialog.showModal();return()=>{if(dialog.open)dialog.close();};},[]);
   const title=modal.kind==='edit'?'Edit project details':modal.kind==='collect'?'Add to collections':modal.kind==='collection'?'New collection':modal.kind==='subject'?'Add a subject':modal.kind==='restore'?'Restore a backup':modal.kind==='share'?'Create a private link':'Import details';
   return <motion.div className="modal-scrim" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}><motion.dialog ref={dialogRef} className="form-dialog" onCancel={event=>{event.preventDefault();onClose();}} initial={{opacity:0,y:10,scale:.985}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8,scale:.99}} transition={{duration:.18}}><form onSubmit={onSubmit}><button type="button" className="dialog-close icon-button" aria-label="Close" onClick={onClose}><X size={18}/></button><div className="eyebrow">LOCALDECK</div><h2>{title}</h2><p className="dialog-description">{modal.kind==='edit'?'Adjust the details used to organize and search this project.':modal.kind==='collection'?'Create a space for a class, topic, or group of projects.':modal.kind==='subject'?'Add a subject that you can use across your learning materials.':modal.kind==='restore'?'Choose a LOCALDECK ZIP backup. Existing project IDs will be kept as separate copies.':`Check the entry page and details for ${modal.preview?.sourceName ?? 'this project'}.`}</p>
-      {modal.kind==='edit'&&modal.item&&<><label className="form-field"><span>Name</span><input name="title" defaultValue={modal.item.title} required maxLength={120}/></label><label className="form-field"><span>Type</span><select name="type" defaultValue={modal.item.type}>{Object.entries(TYPE_LABEL).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label><label className="form-field"><span>Subject or category</span><input name="subject" defaultValue={modal.item.subject}/></label><label className="form-field"><span>Topic</span><input name="topic" defaultValue={modal.item.topic}/></label><label className="form-field"><span>Description</span><textarea name="description" rows={3} defaultValue={modal.item.description}/></label><label className="form-field"><span>Tags, separated by commas</span><input name="tags" defaultValue={modal.item.tags.join(', ')}/></label></>}
+      {modal.kind==='edit'&&modal.item&&<><label className="form-field"><span>Name</span><input name="title" defaultValue={modal.item.title} required maxLength={120}/></label><label className="form-field"><span>Type</span><select name="type" defaultValue={modal.item.type}>{Object.entries(TYPE_LABEL).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label><label className="form-field"><span>Subject or category</span><input name="subject" defaultValue={modal.item.subject}/></label><label className="form-field"><span>Topic</span><input name="topic" defaultValue={modal.item.topic}/></label><label className="form-field"><span>Description</span><textarea name="description" rows={3} defaultValue={modal.item.description}/></label><label className="form-field"><span>Tags, separated by commas</span><input name="tags" defaultValue={modal.item.tags.join(', ')}/></label>{/\.html?$/i.test(modal.item.entryFile)&&<button type="button" className="button code-editor-launch" onClick={()=>onEditCode(modal.item!)}><Code2 size={15}/> Edit HTML code</button>}</>}
       {modal.kind==='collect'&&modal.item&&<>{collections.length? <div className="collection-checks">{collections.map(collection=><label key={collection.id}><input type="checkbox" name="collectionIds" value={collection.id} defaultChecked={modal.item!.collectionIds.includes(collection.id)}/><span><b>{collection.name}</b><small>{collection.description||'Collection'}</small></span></label>)}</div>:<div className="empty-collections"><p>You do not have a collection yet. Create one to group this project with others.</p><button type="button" className="button" onClick={()=>{onClose();go('collections');}}>Go to collections</button></div>}</>}
       {modal.kind==='collection'&&<><label className="form-field"><span>Name</span><input name="name" placeholder="e.g. Biology exam prep" required maxLength={80}/></label><label className="form-field"><span>Description</span><input name="description" placeholder="Optional" maxLength={160}/></label></>}
       {modal.kind==='subject'&&<><label className="form-field"><span>Subject name</span><input name="name" placeholder="e.g. Biology" required maxLength={80}/></label><label className="form-field"><span>Description</span><input name="description" placeholder="Optional"/></label></>}

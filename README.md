@@ -7,6 +7,7 @@ Your personal library for learning, games, tools, and all the little things you 
 - Import one or more HTML files, or a ZIP containing a complete HTML project.
 - Keep projects and metadata in this browser's IndexedDB. Imports are not uploaded.
 - Run local projects in a sandboxed player, including files such as images, CSS, and scripts inside ZIP packages.
+- Edit saved HTML files in the browser, save changes to this device, and preview them in the isolated player.
 - Search, favorite, rename, and remove projects; browse learning and games separately.
 - Export a portable ZIP backup and restore it later.
 - Inspect one HTML file in AI Studio and prepare a precise, single-file AI prompt.

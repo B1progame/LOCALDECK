@@ -62,6 +62,23 @@ export async function getItem(itemId: string): Promise<LibraryItem | undefined> 
 export async function getAllItems(): Promise<LibraryItem[]> { return db.items.toArray(); }
 export async function getAssets(itemId: string): Promise<LibraryAsset[]> { return db.assets.where('itemId').equals(itemId).sortBy('normalizedPath'); }
 
+export async function updateHtmlAsset(itemId: string, path: string, source: string): Promise<void> {
+  if (!/\.html?$/i.test(path)) throw new Error('Only HTML files can be edited here.');
+  const blob = new Blob([source], { type: 'text/html; charset=utf-8' });
+  let contentHash = '';
+  if (globalThis.crypto?.subtle) {
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()));
+    contentHash = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+  await db.transaction('rw', db.items, db.assets, async () => {
+    const item = await db.items.get(itemId);
+    const asset = await db.assets.where('[itemId+normalizedPath]').equals([itemId, path]).first();
+    if (!item || !asset) throw new Error('This HTML file is no longer in your library.');
+    await db.assets.put({ ...asset, blob, fileSize: blob.size, mimeType: blob.type, contentHash });
+    await db.items.put({ ...item, storageSize: Math.max(0, item.storageSize + blob.size - asset.fileSize), updatedAt: Date.now() });
+  });
+}
+
 export async function updateItem(itemId: string, changes: Partial<Omit<LibraryItem, 'id' | 'packageId' | 'createdAt' | 'importedAt'>>): Promise<LibraryItem> {
   let updated: LibraryItem | undefined;
   await db.transaction('rw', db.items, async () => {

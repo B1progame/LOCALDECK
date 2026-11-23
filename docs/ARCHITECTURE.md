@@ -7,7 +7,8 @@ LOCALDECK is a static React and TypeScript app with two independent parts: the o
 - Vite builds the app under the `/LOCALDECK/` GitHub Pages path and uses hash routes.
 - Dexie stores item metadata, file blobs, collections, subjects, usage history, preferences, and import jobs in IndexedDB.
 - A versioned service worker caches the app shell and serves item files from IndexedDB at `__localdeck_asset/<item>/<path>`.
-- The player uses an opaque-origin sandboxed iframe. No privileged bridge is exposed to project scripts.
+- The player and HTML editor preview use an opaque-origin sandboxed iframe. The service worker adds a response-level CSP sandbox before project scripts run, so Safari can route same-origin file requests without exposing the parent app. No privileged bridge is exposed to project scripts.
+- The HTML editor updates the selected HTML blob, size, and content hash in one IndexedDB transaction. Edits stay in this browser and flow into exports and share packages.
 - Import previews are created before a transaction writes item and assets. Failed writes roll back and leave a failed import record.
 - Backups are versioned ZIP archives validated before the restore transaction.
 
