@@ -377,9 +377,9 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 .update-project-button { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text-2); font-size: 12px; font-weight: 600; }
 .update-project-button:hover:not(:disabled) { border-color: var(--accent-line); color: var(--accent); }
 .item-card-compact .item-foot { display: none; }
-.menu-dismiss { position: fixed; inset: 0; z-index: 40; border: 0; background: transparent; cursor: default; }
+.menu-dismiss { position: fixed; inset: 0; z-index: 120; border: 0; background: transparent; cursor: default; }
 .item-menu {
-  position: absolute; top: 50px; right: 10px; z-index: 41; display: grid; min-width: 214px; padding: 6px;
+  position: fixed; z-index: 121; display: grid; min-width: 214px; max-height: calc(100dvh - 20px); padding: 6px; overflow-y: auto;
   border: 1px solid var(--line-strong); border-radius: 14px; background: var(--elevated); box-shadow: var(--shadow-3);
   animation: pop .14s var(--ease);
 }
@@ -881,7 +881,6 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 [data-theme='pearl'] .theme-toggle .icon-moon { display: block; }
 
 /* An open card menu lifts its card above neighbours; no transform so the fixed dismiss layer covers the viewport. */
-.item-card:has(.item-menu) { z-index: 45; transform: none !important; }
 
 /* ---------- Remake: shared browsing components ---------- */
 .muted-text { color: var(--muted); font-size: 13px; }
@@ -908,8 +907,6 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 .item-row-meta { display: inline-flex; flex: none; align-items: center; gap: 6px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .item-row-meta i { font-style: normal; opacity: .6; }
 .item-row-open { min-height: 34px; padding: 0 14px; }
-.item-row .item-menu { top: 52px; }
-.item-row:has(.item-menu) { z-index: 45; }
 
 .shelves .shelf:first-child { margin-top: 0; }
 .shelf .item-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
@@ -958,7 +955,6 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 .details-copy p { max-width: 60ch; margin-top: 10px; opacity: .8; font-size: 15px; }
 .details-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 22px; }
 .details-more { position: relative; }
-.details-more .item-menu { top: 48px; right: auto; left: 0; color: var(--text); }
 .icon-only { width: 44px; padding: 0; }
 .details-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; margin-top: 18px; }
 .details-main, .details-side { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 18px; }
@@ -1189,8 +1185,7 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 .hero-copy { will-change: transform; }
 
 /* ---------- Visual fixes, round 3 ---------- */
-/* Details "more" menu opened to the right and ran off screen: anchor it to the button's right edge. */
-.details-more .item-menu { right: 0; left: auto; transform-origin: top right; }
+
 /* Card menus never wider than the viewport */
 .item-menu { max-width: calc(100vw - 24px); }
 .item-menu button { white-space: nowrap; }
@@ -1573,3 +1568,20 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 @media (pointer: coarse) { .language-picker select { min-height: 44px; } }
 @media (max-width: 640px) { .language-grid { grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; } .language-card { gap: 9px; padding: 8px 10px 8px 8px; } .language-card:first-child { grid-column: 1 / -1; } .language-check { display: none; } }
 .panel-title-row { flex-wrap: wrap; row-gap: 8px; }
+
+/* ---------- Links of this account ---------- */
+.share-item { border: 1px solid var(--line); border-radius: 15px; background: var(--bg); transition: border-color .18s ease; }
+.share-item.open { border-color: var(--accent-line); }
+.share-item .share-row { border: 0; background: none; }
+.share-row-actions { display: flex; flex: none; gap: 8px; }
+.share-chevron { transition: transform .2s var(--ease); }
+.share-item.open .share-chevron { transform: rotate(180deg); }
+.share-detail { padding: 4px 14px 14px; animation: scrim-in .2s ease; }
+.share-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.share-detail-note { display: flex; gap: 8px; margin-top: 12px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.share-detail-note svg { flex: none; margin-top: 2px; color: var(--warning); }
+.share-link-status:empty { display: none; }
+.share-link-status { margin: 8px 0 0; color: var(--text-2); font-size: 13px; }
+@media (max-width: 640px) { .share-row-actions { width: 100%; } .share-row-actions .button, .share-detail-actions .button { flex: 1; } }
+.share-list { grid-template-columns: minmax(0, 1fr); }
+.share-link-field input { width: 0; }

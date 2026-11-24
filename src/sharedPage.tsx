@@ -5,6 +5,7 @@ import { ArrowDownToLine, Info, LoaderCircle, Plus, RefreshCw } from 'lucide-rea
 import { analyzeFiles } from './services/importer';
 import { createItem } from './services/library';
 import { fetchShare, parseSharedRoute, shareProblem, type ShareProblem } from './services/shareLink';
+import { rememberKey } from './services/savedShares';
 import { decryptSharePackage } from './services/sharing';
 import { createStoredZip } from './services/zip';
 import type { ImportPreview } from './types';
@@ -65,6 +66,7 @@ export function SharedPage({ hash, notify }: { hash: string; notify: (message: s
       const clear = await decryptSharePackage(encrypted, key);
       const previews = await analyzeFiles([new File([clear], `shared-${id}.zip`, { type: 'application/zip' })]);
       if (previews.length !== 1) throw new Error(t('The shared archive does not contain a valid project.'));
+      void rememberKey(id, key, expiresAt).catch(() => undefined);
       show({ kind: 'ready', preview: previews[0]!, expires: friendlyDate(Date.parse(expiresAt)) });
     })().catch(error => fail({ title: t('This share could not be opened'), message: asMessage(error), retry: true }));
     return () => { active = false; };

@@ -238,7 +238,7 @@ export function ItemDetailsPage({ item, collections }: { item: LibraryItem | und
     [t('Entry page'), <code key="e">{item.entryFile}</code>],
     [t('Imported'), friendlyDate(item.importedAt)],
     [t('Last opened'), friendlyDate(item.lastOpenedAt)],
-    [t('Opened'), `${item.openCount} time${item.openCount === 1 ? '' : 's'}`],
+    [t('Opened'), plural(item.openCount, '{0} time', '{0} times', item.openCount)],
     ...(timeSpent ? [[t('Time spent'), minutes < 1 ? t('Under a minute') : minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`] as [string, string]] : []),
     [t('Source file'), item.originalFilename],
   ];

@@ -172,14 +172,40 @@ export function ItemMenu({ item, onClose }: { item: LibraryItem; onClose: () => 
   const run = (fn: () => void) => () => { onClose(); fn(); };
   const menu = useRef<HTMLDivElement>(null);
   useReturnFocus();
-  React.useEffect(() => { menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus(); }, []);
+  const marker = useRef<HTMLSpanElement>(null);
+  // The menu is drawn above the whole page. Inside its card, other panels could cover it or cut it off.
+  // Phones get a sheet at the bottom, larger screens get it next to the button that opened it.
+  const [sheet] = useState(() => matchMedia('(max-width: 640px)').matches);
+  React.useLayoutEffect(() => {
+    const element = menu.current;
+    if (!element) return;
+    if (!sheet) {
+      const button = marker.current?.closest('.item-card, .item-row, .details-more')?.querySelector('[aria-expanded="true"]');
+      const anchor = (button ?? marker.current?.parentElement)?.getBoundingClientRect();
+      const { offsetWidth: width, offsetHeight: height } = element;
+      if (anchor) {
+        const below = anchor.bottom + 6;
+        const top = below + height <= innerHeight - 10 ? below : anchor.top - 6 - height;
+        element.style.top = `${Math.max(10, Math.min(top, innerHeight - height - 10))}px`;
+        element.style.left = `${Math.max(10, Math.min(anchor.right - width, innerWidth - width - 10))}px`;
+      }
+    }
+    element.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
+  }, [sheet]);
+  const close = useRef(onClose);
+  close.current = onClose;
+  React.useEffect(() => {
+    if (sheet) return;
+    const onMove = (event: Event) => { if (!(event.target instanceof Node && menu.current?.contains(event.target))) close.current(); };
+    window.addEventListener('scroll', onMove, true); window.addEventListener('resize', onMove);
+    return () => { window.removeEventListener('scroll', onMove, true); window.removeEventListener('resize', onMove); };
+  }, [sheet]);
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
     rovingKeys(event, '[role="menuitem"]');
   };
-  // Phones get a sheet at the bottom of the screen. It leaves the card, because scrolling rows would cut it off.
-  const [sheet] = useState(() => matchMedia('(max-width: 640px)').matches);
-  const content = <><button className={sheet ? 'menu-dismiss-sheet' : 'menu-dismiss'} tabIndex={-1} aria-hidden="true" onClick={onClose} /><div ref={menu} className={`item-menu ${sheet ? 'item-menu-sheet' : ''}`} role="menu" aria-label={t('Actions for {0}', item.title)} onKeyDown={onKeyDown}>
+  // React passes events from here on to the card, which must not tilt because of them.
+  const content = <div className="item-menu-layer" onPointerMove={event => event.stopPropagation()} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }}><button className={sheet ? 'menu-dismiss-sheet' : 'menu-dismiss'} tabIndex={-1} aria-hidden="true" onClick={onClose} /><div ref={menu} className={`item-menu ${sheet ? 'item-menu-sheet' : ''}`} role="menu" aria-label={t('Actions for {0}', item.title)} onKeyDown={onKeyDown}>
     {sheet && <div className="item-menu-title" role="presentation">{item.title}</div>}
     <button role="menuitem" onClick={run(() => a.details(item))}><Info size={15}/> {t('View details')}</button>
     <button role="menuitem" onClick={run(() => a.edit(item))}><Pencil size={15}/> {t('Edit details')}</button>
@@ -189,8 +215,8 @@ export function ItemMenu({ item, onClose }: { item: LibraryItem; onClose: () => 
     <button role="menuitem" onClick={run(() => a.duplicate(item))}><Copy size={15}/> {t('Make a copy')}</button>
     <button role="menuitem" onClick={run(() => a.exportOne(item))}><ArrowDownToLine size={15}/> {t('Export project')}</button>
     <button role="menuitem" className="danger-menu" onClick={run(() => a.remove(item))}><Trash2 size={15}/> {t('Remove from library')}</button>
-  </div></>;
-  return sheet ? createPortal(content, document.body) : content;
+  </div></div>;
+  return <><span ref={marker} hidden/>{createPortal(content, document.body)}</>;
 }
 
 export function ItemCard({ item, index = 0, compact = false }: { item: LibraryItem; index?: number; compact?: boolean }) {
