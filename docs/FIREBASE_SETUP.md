@@ -103,7 +103,7 @@ Do these in order. Full HTML for the message bodies is in [`EMAIL_TEMPLATES.md`]
 3. **From**: leave `noreply@login-localdeck.firebaseapp.com` (changing it needs your own domain).
 4. **Reply to**: empty, or your address.
 5. **Subject**: `Confirm your email for LocalDeck`
-6. **Message**: paste the verification HTML from `EMAIL_TEMPLATES.md`. Keep `%LINK%`, `%EMAIL%`, `%APP_NAME%` exactly. If the box is grey and locked, skip this step.
+6. **Message**: paste the verification HTML from `EMAIL_TEMPLATES.md`. Keep `%LINK%`, `%EMAIL%`, `%APP_NAME%` exactly. Firebase usually locks this box for the verification email to prevent spam. If it is grey, skip this step.
 7. Don't save yet: do 4b first.
 
 ### 4b. Action URL (once, applies to every email)
@@ -138,14 +138,14 @@ The Worker checks every Firebase sign-in before it allows uploads. It is deploye
 
 | Item | Where | Status |
 |---|---|---|
-| `FIREBASE_PROJECT_ID` = `login-localdeck` | Worker secret | ✅ |
+| `FIREBASE_PROJECT_ID` = `login-localdeck` | Worker secret | ✅ exists (its value is hidden, so a real sign-in is the proof) |
 | `ALLOWED_ORIGIN` = `https://b1progame.github.io,http://localhost:5468` | `cloudflare/wrangler.toml` | ✅ |
 | Database tables | created automatically by the Worker | ✅ |
 
 Redeploy after changing anything in `cloudflare/`:
 
 ```powershell
-cd "C:\Users\bslid.BENJI-PC\OneDrive\Dokumente\BENJI\ran\LOCALDECK\cloudflare"
+cd cloudflare
 ```
 
 ```powershell
