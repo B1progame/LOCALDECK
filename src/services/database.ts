@@ -55,6 +55,9 @@ export async function openLibrary(): Promise<void> {
   await db.open();
   await db.items.filter(item => item.offlineCompatibility?.score === 'partial' && item.offlineCompatibility.findings.length === 1 && item.offlineCompatibility.findings[0]!.startsWith('No common remote-resource'))
     .modify(item => { item.offlineCompatibility = { ...item.offlineCompatibility, score: 'likely' }; }).catch(() => undefined);
+  // Ratings that came from the AI alone are not trusted any more.
+  await db.items.filter(item => item.contentCheck?.reasons.length === 1 && item.contentCheck.reasons[0] === 'ai' && !item.contentCheck.hint)
+    .modify(item => { item.contentCheck = { ...item.contentCheck!, rating: 'ok', reasons: [] }; }).catch(() => undefined);
   const migrated = await db.settings.get('migration-v1-complete');
   if (migrated) return;
   const oldProjects = await readLegacyProjects();

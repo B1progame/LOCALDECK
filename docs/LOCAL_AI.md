@@ -10,7 +10,7 @@ A language model that runs inside the website, on the device of the person using
 
 ## Content check
 
-Every import and every shared link is also checked by rules, without any AI (`src/services/contentCheck.ts`): words in the project, hashtags such as `18plus` or `16plus`, and password fields. The result is nothing, 16+ or 18+. The AI can raise it, never lower it. A lesson about a topic is not flagged like the topic itself. An 18+ project asks before it is opened or imported, and **This is fine** removes the mark. Pictures are not looked at and the check can be wrong, so it is a hint and no protection for children.
+Every import and every shared link is also checked by rules, without any AI (`src/services/contentCheck.ts`): words in the project, hashtags such as `18plus` or `16plus`, and password fields. The result is nothing, 16+ or 18+. The AI can raise it by one step, and only when the project itself contains a sign for it. It never lowers it. A lesson about a topic is not flagged like the topic itself. An 18+ project asks before it is opened or imported, and **This is fine** removes the mark. Pictures are not looked at and the check can be wrong, so it is a hint and no protection for children.
 
 A click on a hashtag shows all projects with it. `#word` in the search does the same.
 

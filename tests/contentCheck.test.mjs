@@ -38,8 +38,12 @@ test('a password field is named', () => {
 });
 
 test('the AI can raise the rating but not lower it', () => {
-  const clean = rating('Snake'), adult = rating('Hentai');
-  assert.deepEqual([withOpinion(clean, 18, 'S').rating, withOpinion(clean, 18, 'S').reasons, withOpinion(clean, 18, 'S').summary], ['18', ['ai'], 'S']);
+  const clean = rating('Vulkan Quiz', 'Was ist Magma?'), adult = rating('Hentai'), mild = rating('Zombie night', 'kill the zombie, blood'), casino = rating('Lucky', 'casino roulette');
+  // Without any sign in the project the AI is not believed.
+  assert.deepEqual([withOpinion(clean, 18, 'S').rating, withOpinion(clean, 18, 'S').reasons, withOpinion(clean, 18, 'S').summary], ['ok', [], 'S']);
+  assert.deepEqual([mild.rating, withOpinion(mild, 18, '').rating, withOpinion(mild, 18, '').reasons, withOpinion(mild, 0, '').rating], ['ok', '16', ['ai'], 'ok']);
+  assert.deepEqual([casino.rating, withOpinion(casino, 18, '').rating], ['16', '18']);
+  assert.equal(withOpinion(rating('Geschichte Quiz', 'Mord und Blut'), 18, '').rating, 'ok');
   assert.equal(withOpinion(adult, 0, '').rating, '18');
   assert.deepEqual([withOpinion(clean, null, '').rating, withOpinion(clean, 6, '').rating], ['ok', 'ok']);
 });

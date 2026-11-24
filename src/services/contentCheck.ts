@@ -3,7 +3,8 @@
    The local AI can add its own opinion (see projectScan). */
 export type Rating = 'ok' | '16' | '18';
 export type Reason = 'marked' | 'sexual' | 'violence' | 'drugs' | 'gambling' | 'selfharm' | 'password' | 'ai';
-export type ContentCheck = { rating: Rating; reasons: Reason[]; by: 'rules' | 'ai'; checkedAt: number; summary?: string; confirmed?: boolean };
+/** `hint`: a single word that is too little for a rating, but enough to take the AI seriously. */
+export type ContentCheck = { rating: Rating; reasons: Reason[]; by: 'rules' | 'ai'; checkedAt: number; summary?: string; confirmed?: boolean; hint?: boolean };
 
 const ORDER: Rating[] = ['ok', '16', '18'];
 export const higher = (a: Rating, b: Rating): Rating => ORDER.indexOf(a) >= ORDER.indexOf(b) ? a : b;
@@ -16,6 +17,7 @@ const VIOLENCE = word('gore|gory|torture[ds]?|folter(?:n|t)?|beheading|enthaupt(
 const DRUGS = word('cocaine|kokain|cocaïne|cocaína|cocaina|heroin|heroína|eroina|crystal ?meth|meth|lsd|ecstasy|mdma|cannabis|marihuana|marijuana|kiffen|joints?|weed|crack|ketamin[ea]?|fentanyl');
 const GAMBLING = word('casino|kasino|slot ?machines?|spielautomat(?:en)?|roulette|jackpots?|sportwetten?|sports ?betting|real money|echtgeld|bet now|blackjack|einzahlungsbonus|deposit bonus|apuestas|scommesse|tragaperras');
 const SELFHARM = word('suicide|suizid|selbstmord|self[- ]?harm|selbstverletz\\p{L}*|ritzen|suicidio|autolesi[oó]n\\p{L}*|automutilation');
+const MILD = word(String.raw`kill(?:s|ed|ing|er)?|töten|mord|murder\p{L}*|blut|blood\p{L}*|weapons?|waffen?|alkohol|alcohol|vodka|wodka|horror|zombies?|flirt\p{L}*|küssen|verführ\p{L}*|seduc\p{L}*|tueur|tuer|matar|sangre|uccidere|sangue`);
 /** Signs of a lesson. There such words are the subject, not the content. */
 const LESSON = word('biologie|biology|biología|biologia|geschichte|history|histoire|historia|storia|aufklärung|prävention|prevention|prévention|prevención|prevenzione|medizin|medicine|unterricht|schule|school|lernzettel|quiz|gesundheit|health|anatomie|anatomy|fortpflanzung|reproduction|ethik|ethics');
 
@@ -52,12 +54,14 @@ export function checkContent(project: { top: string; text: string; source?: stri
   if (harm.total >= 2 && !lesson) add('selfharm', '16');
   // Not about age, but nobody should type a password into a shared project.
   if (project.source && /<input[^>]+type\s*=\s*["']?password/i.test(project.source)) reasons.push('password');
-  return { rating, reasons, by: 'rules', checkedAt: Date.now() };
+  const hint = rating !== 'ok' || (!lesson && [ADULT, SEXUAL, VIOLENCE, DRUGS, GAMBLING, SELFHARM, MILD].some(pattern => count(text, pattern).total > 0));
+  return { rating, reasons, by: 'rules', checkedAt: Date.now(), ...(hint ? { hint } : {}) };
 }
 
-/** Adds what the local AI thinks. It can raise the rating, never lower what the rules found. */
+/** Adds what the local AI thinks. It can raise the rating by one step and only when the project itself gives a reason:
+    a small model also calls a volcano quiz "18". It never lowers what the rules found. */
 export function withOpinion(rules: ContentCheck, age: number | null, summary: string): ContentCheck {
-  const opinion: Rating = age === null ? 'ok' : age >= 18 ? '18' : age >= 16 ? '16' : 'ok';
+  const opinion: Rating = age === null || !rules.hint ? 'ok' : age >= 18 && rules.rating !== 'ok' ? '18' : age >= 16 ? '16' : 'ok';
   const rating = higher(rules.rating, opinion);
   return { ...rules, rating, reasons: rating === rules.rating ? rules.reasons : [...rules.reasons, 'ai'], by: 'ai', checkedAt: Date.now(), ...(summary ? { summary } : {}) };
 }
