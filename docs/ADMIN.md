@@ -4,7 +4,7 @@
 
 | Tab | What it does |
 |---|---|
-| Overview | Accounts, active links, storage, uploads of today, and 30 days of uploads, downloads, sign-ins and data |
+| Overview | Accounts, active links, storage, how full the three databases are, uploads of today, and 30 days of uploads, downloads, sign-ins and data |
 | Accounts | First and last sign-in, uploads, downloads, storage. Own limits, block, delete all links |
 | Links | All active links with owner, size, downloads and expiry. Delete any link |
 | Limits | Size per link, storage, uploads per hour and day, and days online, for everyone and for admins. Total storage. Pause uploads. Allow or stop AI connections ([`AI_CONNECTION.md`](AI_CONNECTION.md)) |
@@ -15,11 +15,12 @@
 | Limit | Range | Why |
 |---|---|---|
 | Size per link | 1 to 80 MiB | Over 24 MiB the app uploads parts of 20 MiB, because a KV value holds 25 MiB. The app itself imports ZIPs up to 80 MB |
-| Storage, per account and total | up to 900 MiB | The free KV plan holds 1 GB |
+| Storage per account | up to 900 MiB | |
+| Storage total | up to 1,800 MiB | Three databases hold about 930 MiB, KV 900 MiB |
 | Uploads of the whole service | up to 800 a day | The free KV plan allows 1,000 writes a day |
 | Days online | 1 to 30 | |
 | AI changes per day | 0 to 1,000 | 0 switches AI off for that account |
-| AI projects online | 1 to 180 days after the last change | Stored in D1, not in KV |
+| AI projects online | 1 to 180 days after the last change | Stored in the databases, not in KV |
 
 A change applies to the next upload. Links that already exist keep their expiry.
 

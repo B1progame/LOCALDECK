@@ -5,11 +5,13 @@ import path from 'node:path';
 
 function localdeckPrecache() {
   let emitted: string[] = [];
+  // Only the local AI needs these (about 27 MB). The service worker keeps them on first use, not for everyone.
+  const onDemand = /ort-wasm|^assets\/worker-/;
   return {
     name: 'localdeck-offline-shell',
     apply: 'build' as const,
     generateBundle(_options: unknown, bundle: Record<string, { type: string; fileName: string }>) {
-      emitted = Object.values(bundle).map(entry => entry.fileName).filter(name => !name.endsWith('.map'));
+      emitted = Object.values(bundle).map(entry => entry.fileName).filter(name => !name.endsWith('.map') && !onDemand.test(name));
     },
     async writeBundle(options: { dir?: string }) {
       const outDir = options.dir ?? 'dist';
@@ -24,5 +26,6 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/LOCALDECK/' : '/',
   plugins: [react(), localdeckPrecache()],
   server: { host: 'localhost', port: 5468, strictPort: true },
+  worker: { format: 'es' },
   build: { outDir: 'dist', emptyOutDir: true },
 }));

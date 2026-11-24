@@ -41,5 +41,5 @@ Limits: 1 MiB and 60 files per project, 240 calls per hour, and the admin limits
 ## Technical
 
 - `cloudflare/worker/src/mcp.ts`: protocol. Stateless, HTTP POST, JSON answers. Speaks 2026-07-28 and the 2024 to 2025 versions with the `initialize` handshake.
-- `cloudflare/worker/src/ai.ts`: connections, encryption, projects. Stored in the same D1 database (500 MB on the free plan); AI projects use at most 300 MiB of it.
+- `cloudflare/worker/src/ai.ts`: connections, encryption, projects. Project data is spread over three D1 databases (`cloudflare/worker/src/blobs.ts`), 500 MB each on the free plan. About 930 MiB of projects fit, because they are stored as text.
 - Tested with the official MCP SDK against a local D1. Very large projects may run into the 10 ms computing limit of the free Workers plan.

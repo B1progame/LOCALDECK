@@ -15,6 +15,7 @@ type Share = { id: string; ownerId: string; owner: string | null; createdAt: str
 type Overview = {
   totals: { links: number; bytes: number; limitBytes: number; uploadsToday: number; uploadsLimit: number; accounts: number; activeWeek: number; blocked: number };
   ai: { connections: number; projects: number; bytes: number; changes: number };
+  databases?: Array<{ name: string; bytes: number; projects: number; capBytes: number }>; kv?: { bytes: number; capBytes: number };
   settings: Settings; defaults: Settings; bounds: Record<string, [number, number]>; days: Day[]; accounts: Account[]; shares: Share[]; log: Array<{ at: number; admin: string; action: string; target: string }>;
 };
 type Notify = (message: string, error?: boolean) => void;
@@ -270,6 +271,7 @@ export function AdminPage({ api, session, notify }: { api: string; session: { to
             <div><dt>{t('Blocked')}</dt><dd>{number(totals.blocked)}</dd></div>
           </dl>
           <div className="panel admin-meters"><Meter label={t('Storage')} value={totals.bytes} max={totals.limitBytes} format={bytes}/><Meter label={t('Uploads today')} value={totals.uploadsToday} max={totals.uploadsLimit} format={number}/></div>
+          {data.databases && <div className="panel admin-meters">{data.databases.map((database, index) => <Meter key={database.name} label={t('Database {0}', index + 1)} value={database.bytes} max={database.capBytes} format={bytes}/>)}{data.kv && <Meter label={t('Large links')} value={data.kv.bytes} max={data.kv.capBytes} format={bytes}/>}</div>}
           <div className="admin-charts">
             <DayChart title={t('Uploads')} days={data.days} value={byUploads}/>
             <DayChart title={t('Downloads')} days={data.days} value={byDownloads}/>

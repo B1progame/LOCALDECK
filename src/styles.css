@@ -1706,3 +1706,31 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 .ai-privacy svg { flex: none; margin-top: 2px; color: var(--success); }
 .share-row-main .admin-tag { margin-left: 8px; }
 @media (max-width: 640px) { .ai-connect { padding: 16px; } .ai-new { flex-direction: column; align-items: stretch; } .ai-new .form-field { max-width: none; } .ai-list li { flex-wrap: wrap; } .ai-name { flex-basis: calc(100% - 60px); } .ai-list .button { width: 100%; } .ai-connect > .button { justify-self: stretch; } }
+
+/* ---------- Local AI ---------- */
+.local-ai { display: grid; gap: 14px; padding: 18px; }
+.local-ai > * { margin: 0; }
+.local-ai-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.local-ai-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.local-ai-status:empty { display: none; }
+.local-ai-status > .local-ai-line { flex: 1 1 100%; }
+.local-ai-status > .progress-bar { flex: none; width: 100%; }
+.local-ai-line { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+.local-ai-line svg { flex: none; }
+.local-ai-line.good svg { color: var(--success); }
+.local-ai-line.warn svg { color: var(--danger); }
+.local-ai .local-ai-note { margin: 0; }
+.local-ai > .text-button { justify-self: start; }
+.scan-panel h2:focus { outline: 0; }
+.scan-panel > .muted-text { margin-bottom: 14px; }
+.scan-run { display: grid; justify-items: start; gap: 12px; }
+.scan-run p { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 14px; }
+.scan-run .progress-bar { width: 100%; }
+.scan-panel .dialog-error { margin-top: 12px; }
+.scan-panel form { margin-top: 14px; }
+.scan-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.scan-panel .form-field { min-width: 0; align-content: start; }
+.scan-before { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.scan-hint { margin-bottom: 14px; color: var(--text-2); font-size: 13px; }
+.scan-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+@media (max-width: 640px) { .scan-fields { grid-template-columns: 1fr; } .local-ai { padding: 14px; } }

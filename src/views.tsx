@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { db } from './services/database';
 import { useProfile } from './profile';
+import { ProjectScanPanel } from './projectScanPanel';
 import { rovingKeys, useStillMotion } from './a11y';
 import { getAssets, type ItemSort } from './services/library';
 import type { Collection, ContentType, LibraryAsset, LibraryItem } from './types';
@@ -269,6 +270,7 @@ export function ItemDetailsPage({ item, collections }: { item: LibraryItem | und
           {item.tags.length > 0 && <div className="tag-list">{item.tags.map(tag => <span key={tag} className="tag">#{tag}</span>)}</div>}
           {!item.description && <button className="text-button" onClick={() => a.edit(item)}><Pencil size={14}/> {t('Add a description')}</button>}
         </section>
+        {isHtmlItem(item) && <ProjectScanPanel key={item.id} item={item}/>}
         <section className="panel">
           <div className="panel-title-row"><h2>{t('Compatibility')}</h2><span className={`status-pill ${score}`}><ShieldCheck size={14}/>{score === 'likely' ? t('Likely works offline') : score === 'partial' ? t('Needs a look') : t('Not checked')}</span></div>
           <ul className="finding-list">{item.offlineCompatibility.findings.map(f => <li key={f}>{tm(f)}</li>)}</ul>

@@ -2,7 +2,8 @@ import {
   changeAccount, changeSettings, cleanup, countDownload, limitsFor, logShareRemoval, overview, partKey, partSize, pendingShare, readSettings,
   recordSignIn, removeAccountShares, removeShare, reserve, SCHEMA, SINGLE_BYTES, PART_BYTES, MIB, BOUNDS, storePart, usageFor, type Owner,
 } from './service.ts';
-import { createConnection, listConnections, projectBlob, removeConnection } from './ai.ts';
+import { createConnection, listConnections, removeConnection } from './ai.ts';
+import { readBlob } from './blobs.ts';
 import { handleMcp } from './mcp.ts';
 import { sendVerificationLink, type MailEnv } from './verificationMail.ts';
 
@@ -11,6 +12,9 @@ interface Env extends MailEnv {
   ADMIN_EMAILS?: string;
   SHARES_KV: KVNamespace;
   SHARES_DB: D1Database;
+  /** More room for projects. The service also runs without them. */
+  PROJECTS_DB_2?: D1Database;
+  PROJECTS_DB_3?: D1Database;
   GOOGLE_CLIENT_ID: string;
   FIREBASE_PROJECT_ID?: string;
   ALLOWED_ORIGIN: string;
@@ -189,7 +193,7 @@ async function isAuthorized(request: Request, env: Env): Promise<Owner | null> {
   } catch { return null; }
 }
 
-const SCHEMA_VERSION = '4';
+const SCHEMA_VERSION = '5';
 let schemaReady = false;
 /** Only the finished result is shared between requests. A shared in-flight promise would belong to the
     request that started it, and Workers can fail every other request that waits on it.
@@ -407,7 +411,8 @@ const worker = {
     if (blobRoute) {
       const part = Number(url.searchParams.get('part') ?? 0);
       if (!Number.isSafeInteger(part) || part < 0 || part >= row.parts) return json({ error: 'not_found' }, 404, headers);
-      const blob = (part === 0 ? await projectBlob(env, id) : null) ?? await env.SHARES_KV.get(partKey(id, part), 'arrayBuffer');
+      const stored = part === 0 ? await readBlob(env, id) : null;
+      const blob = stored === 'missing' ? null : stored?.bytes ?? await env.SHARES_KV.get(partKey(id, part), 'arrayBuffer');
       if (!blob) return json({ error: 'share_blob_missing' }, 404, headers);
       if (part === 0) await countDownload(env, id, row.owner_id).catch(error => console.error('download_not_counted', error));
       return response(blob, 200, headers, { 'content-type': 'application/octet-stream', 'content-length': String(blob.byteLength), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });

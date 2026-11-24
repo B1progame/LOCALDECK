@@ -8,7 +8,7 @@ import { readZip } from '../src/services/zip.ts';
 /** D1 on top of SQLite, so the real SQL runs. */
 function d1() {
   const db = new DatabaseSync(':memory:');
-  return { prepare(sql) {
+  return { async batch(statements) { for (const statement of statements) await statement.run(); }, prepare(sql) {
     let values = [];
     return {
       bind(...next) { values = next; return this; },
@@ -187,7 +187,6 @@ test('limits can be changed by the admin only, and stay within what the service 
   assert.deepEqual([me.admin, me.limits.linkMiB, me.limits.days], [false, 10, 30]);
   const share = await (await upload(guest)).json();
   assert.ok(Date.parse(share.expiresAt) - Date.now() > 29 * 86_400_000);
-  assert.equal(env.SHARES_KV.store.get(share.id).ttl, 30 * 86_400);
   const large = new Uint8Array(11 * 1024 * 1024);
   assert.equal((await call('', guest, { method: 'POST', body: large, headers: { 'content-length': String(large.length) } })).status, 413);
 });
@@ -356,6 +355,7 @@ test('an AI creates a project, the link opens it, and an update keeps the link',
   assert.equal((await tool(url, 'delete_project', { project_id: id })).isError, false);
   assert.equal((await open(link)).status, 410);
   assert.equal(await SHARES_DB.prepare('SELECT id FROM ai_projects WHERE id = ?').bind(id).first(), null);
+  assert.equal(await SHARES_DB.prepare('SELECT id FROM blobs WHERE id = ?').bind(id).first(), null);
 });
 
 test('the database holds nothing readable about an AI project', async () => {
@@ -363,7 +363,8 @@ test('the database holds nothing readable about an AI project', async () => {
   const created = await tool(url, 'create_project', { title: 'Geheimtitel', files: [{ path: 'index.html', content: page('Geheimtext') }] });
   const key = linkOf(created.text).split('k=')[1];
   const row = await SHARES_DB.prepare('SELECT * FROM ai_projects WHERE id = ?').bind(idOf(created.text)).first();
-  const everything = JSON.stringify(row) + atob(row.data) + atob(row.sealed) + JSON.stringify(await SHARES_DB.prepare('SELECT * FROM ai_tokens').bind().all());
+  const blob = await SHARES_DB.prepare('SELECT * FROM blobs WHERE id = ?').bind(idOf(created.text)).first();
+  const everything = JSON.stringify(row) + JSON.stringify(blob) + atob(blob.data) + atob(row.sealed) + JSON.stringify(await SHARES_DB.prepare('SELECT * FROM ai_tokens').bind().all());
   for (const secret of ['Geheimtitel', 'Geheimtext', key, url.split('/').pop()]) assert.equal(everything.includes(secret), false, secret);
 });
 
@@ -422,4 +423,66 @@ test('guessing connection addresses is limited', async () => {
   let last = 0;
   for (let i = 0; i < 242; i++) last = (await worker.fetch(new Request(`https://share.example/mcp/ld_${'A'.repeat(43)}`, { method: 'POST', headers: { 'CF-Connecting-IP': '203.0.113.9' }, body: '{}' }), env)).status;
   assert.equal(last, 429);
+});
+
+/* ---------- Several databases ---------- */
+
+const three = { ...env, PROJECTS_DB_2: d1(), PROJECTS_DB_3: d1() };
+const onThree = (path, credential, init = {}) => worker.fetch(new Request(SHARES + path, { ...init, headers: { ...(credential ? { Authorization: `Bearer ${credential}` } : {}), ...init.headers } }), three);
+const sendThree = (size = 300 * 1024, fill = 7) => onThree('', admin, { method: 'POST', body: new Uint8Array(size).fill(fill), headers: { 'content-length': String(size) } });
+const storeOf = async id => (await SHARES_DB.prepare('SELECT store, version, bytes FROM blob_index WHERE id = ?').bind(id).first());
+
+test('projects are spread over all databases, and each one can be read back', async () => {
+  const ids = [];
+  for (let i = 0; i < 9; i++) { const { id } = await (await sendThree(300 * 1024, i)).json(); ids.push(id); }
+  assert.deepEqual([...new Set(await Promise.all(ids.map(async id => (await storeOf(id)).store)))].sort(), [1, 2, 3]);
+  for (const [i, id] of ids.entries()) { const bytes = new Uint8Array(await (await onThree(`/${id}/blob`)).arrayBuffer()); assert.deepEqual([bytes.length, bytes[0], bytes.at(-1)], [300 * 1024, i, i]); }
+  const data = await (await onThree('/admin/overview', admin)).json();
+  assert.deepEqual([data.databases.map(entry => entry.name), data.databases.every(entry => entry.projects > 0 && entry.bytes > 0)], [['localdeck-shares', 'localdeck-projects-2', 'localdeck-projects-3'], true]);
+  for (const id of ids) assert.equal((await onThree(`/${id}`, admin, { method: 'DELETE' })).status, 200);
+  for (const db of [SHARES_DB, three.PROJECTS_DB_2, three.PROJECTS_DB_3]) for (const id of ids) assert.equal(await db.prepare('SELECT id FROM blobs WHERE id = ?').bind(id).first(), null);
+});
+
+test('when one database fails, uploads go to the others and its projects report a clear error', async () => {
+  const inTwo = []; for (let i = 0; i < 6 && !inTwo.length; i++) { const { id } = await (await sendThree()).json(); if ((await storeOf(id)).store === 2) inTwo.push(id); }
+  const broken = { prepare() { throw new Error('D1_ERROR: unavailable'); } };
+  const partly = { ...three, PROJECTS_DB_2: broken, PROJECTS_DB_3: broken };
+  const size = 1000;
+  const response = await worker.fetch(new Request(SHARES, { method: 'POST', headers: { Authorization: `Bearer ${admin}`, 'content-length': String(size) }, body: new Uint8Array(size) }), partly);
+  assert.equal(response.status, 201);
+  const { id } = await response.json();
+  assert.equal((await storeOf(id)).store, 1);
+  if (inTwo.length) assert.equal((await worker.fetch(new Request(`${SHARES}/${inTwo[0]}/blob`), partly)).status, 503);
+  assert.equal((await onThree(`/${id}/blob`)).status, 200);
+});
+
+test('large projects still use KV, small ones do not', async () => {
+  const large = await (await sendThree(2 * 1024 * 1024)).json(), small = await (await sendThree(1000)).json();
+  assert.deepEqual([three.SHARES_KV.store.has(large.id), three.SHARES_KV.store.has(small.id), await storeOf(large.id)], [true, false, null]);
+});
+
+test('an AI project keeps its link when a change moves it to another database', async () => {
+  const guest = await token({ sub: 'ai-move', email: 'ai-move@example.com' });
+  const { url } = await (await onThree('/ai', guest, { method: 'POST', body: '{"name":"x"}' })).json();
+  const run = async (name, args) => (await (await worker.fetch(new Request(url, { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) }), three)).json()).result;
+  const created = (await run('create_project', { title: 'Move', files: [{ path: 'index.html', content: page('A'.repeat(200_000)) }] })).content[0].text;
+  const id = idOf(created), seen = new Set([(await storeOf(id)).store]);
+  for (let i = 0; i < 6; i++) { const result = await run('update_project', { project_id: id, files: [{ path: 'index.html', content: page(String(i).repeat(200_000)) }] }); assert.equal(result.isError, false, result.content[0].text); assert.equal(linkOf(result.content[0].text), linkOf(created)); seen.add((await storeOf(id)).store); }
+  assert.ok(seen.size > 1);
+  let rows = 0;
+  for (const db of [SHARES_DB, three.PROJECTS_DB_2, three.PROJECTS_DB_3]) rows += (await db.prepare('SELECT COUNT(*) as n FROM blobs WHERE id = ?').bind(id).first()).n;
+  assert.equal(rows, 1);
+  const both = await Promise.all([run('update_project', { project_id: id, title: 'One' }), run('update_project', { project_id: id, title: 'Two' })]);
+  assert.ok(both.some(result => !result.isError));
+  const now = JSON.parse((await run('list_projects', {})).content[0].text)[0];
+  assert.ok(['One', 'Two'].includes(now.title));
+  assert.equal((await run('read_project', { project_id: id, path: 'index.html' })).isError, false);
+});
+
+test('the cleanup empties all databases of expired projects', async () => {
+  const ids = []; for (let i = 0; i < 6; i++) ids.push((await (await sendThree()).json()).id);
+  for (const id of ids) await SHARES_DB.prepare('UPDATE shares SET expires_at = ? WHERE id = ?').bind(new Date(Date.now() - 1000).toISOString(), id).run();
+  let done; await worker.scheduled({}, three, { waitUntil(promise) { done = promise; } }); await done;
+  for (const db of [SHARES_DB, three.PROJECTS_DB_2, three.PROJECTS_DB_3]) for (const id of ids) assert.equal(await db.prepare('SELECT id FROM blobs WHERE id = ?').bind(id).first(), null);
+  assert.equal(await storeOf(ids[0]), null);
 });

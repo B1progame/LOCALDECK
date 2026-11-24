@@ -91,7 +91,9 @@ Copy the returned namespace IDs into `wrangler.toml` as `id` and `preview_id`. T
 npx wrangler d1 create localdeck-shares
 ```
 
-Update `database_id` with the returned ID. For a **new empty database**, initialize it with the current schema:
+Update `database_id` with the returned ID. Two more databases hold project data (`PROJECTS_DB_2`, `PROJECTS_DB_3`, created with `localdeck-projects-2` and `localdeck-projects-3`). The Worker creates their tables itself and puts every project of up to 1 MiB into the emptiest one. Without them everything goes into the first database.
+
+For a **new empty database**, initialize it with the current schema:
 
 ```powershell
 npx wrangler d1 execute localdeck-shares --remote --file schema.sql

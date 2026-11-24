@@ -4,6 +4,7 @@
    normal share link opens it. Its key and title are stored only encrypted with a key that is derived from the
    token. The database knows the hash of a token, so without the token itself it cannot read them. */
 import { createStoredZip, normalizePackagePath, readZip } from '../../../src/services/zip.ts';
+import { dropVersion, fromBase64, indexBlob, putBlob, readBlob, removeBlob, toBase64 } from './blobs.ts';
 import { dayStart, hourStart, limitsFor, MIB, readSettings, recordAi, removeShare, type Limits, type Owner, type StoreEnv } from './service.ts';
 
 export interface AiEnv extends StoreEnv { APP_URL?: string; ADMIN_EMAILS?: string }
@@ -12,7 +13,6 @@ export type ProjectFile = { path: string; data: Uint8Array };
 
 /** One database row holds at most 2 MB, and the free plan gives little computing time per request. */
 export const MAX_PROJECT_BYTES = MIB;
-const MAX_AI_BYTES = 300 * MIB;
 const MAX_FILES = 60;
 const MAX_CONNECTIONS = 5;
 const MAX_CALLS_PER_HOUR = 240;
@@ -24,18 +24,6 @@ export class AiError extends Error {}
 
 /* ---------- Encoding and keys ---------- */
 
-type Base64Bytes = Uint8Array & { toBase64?: () => string };
-function toBase64(bytes: Uint8Array): string {
-  const native = (bytes as Base64Bytes).toBase64;
-  if (native) return native.call(bytes);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(binary);
-}
-function fromBase64(text: string): Uint8Array {
-  const native = (Uint8Array as unknown as { fromBase64?: (value: string) => Uint8Array }).fromBase64;
-  return native ? native.call(Uint8Array, text) : Uint8Array.from(atob(text), char => char.charCodeAt(0));
-}
 const toUrl = (text: string) => text.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const random = (length: number) => crypto.getRandomValues(new Uint8Array(length));
 
@@ -160,7 +148,7 @@ async function pack(files: Map<string, Uint8Array>): Promise<Uint8Array> {
 /* ---------- Projects ---------- */
 
 type Sealed = { key: string; title: string };
-type Row = { id: string; sealed: string; data: string; version: number; expiresAt: string };
+type Row = { id: string; sealed: string; version: number; expiresAt: string };
 export type ProjectInfo = { id: string; title: string; link: string; expiresAt: string; version: number; size: number };
 
 const link = (env: AiEnv, id: string, key: string) => `${env.APP_URL}#/shared/${id}?k=${key}`;
@@ -189,29 +177,33 @@ export async function createProject(env: AiEnv, connection: Connection, input: P
   const now = new Date().toISOString(), expiresAt = new Date(Date.now() + connection.limits.aiDays * 86_400_000).toISOString();
   const reserved = await env.SHARES_DB.prepare(`INSERT INTO shares (id, owner_id, status, created_at, expires_at, size_bytes) SELECT ?1, ?2, 'revoked', ?3, ?4, ?5
     WHERE (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE expires_at > ?3) + ?5 <= ?6
-      AND (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE expires_at > ?3 AND owner_id = ?2) + ?5 <= ?7
-      AND (SELECT COALESCE(SUM(size_bytes), 0) FROM shares JOIN ai_projects ON ai_projects.id = shares.id) + ?5 <= ?8 RETURNING id`)
-    .bind(id, connection.owner.id, now, expiresAt, data.length, settings.service.totalMiB * MIB, connection.limits.storageMiB * MIB, MAX_AI_BYTES).first();
+      AND (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE expires_at > ?3 AND owner_id = ?2) + ?5 <= ?7 RETURNING id`)
+    .bind(id, connection.owner.id, now, expiresAt, data.length, settings.service.totalMiB * MIB, connection.limits.storageMiB * MIB).first();
   if (!reserved) throw storageError();
   try {
-    await env.SHARES_DB.prepare('INSERT INTO ai_projects (id, token_id, sealed, data, version, updated_at) VALUES (?, ?, ?, ?, 1, ?)').bind(id, connection.id, await seal(connection, { key, title }), toBase64(data), Date.now()).run();
+    const store = await putBlob(env, id, 1, data);
+    if (store === null) throw storageError();
+    await indexBlob(env, id, store, 1, data.length);
+    await env.SHARES_DB.prepare('INSERT INTO ai_projects (id, token_id, sealed, version, updated_at) VALUES (?, ?, ?, 1, ?)').bind(id, connection.id, await seal(connection, { key, title }), Date.now()).run();
     await env.SHARES_DB.prepare('INSERT INTO share_meta (id, parts, received) VALUES (?, 1, 1)').bind(id).run();
     await env.SHARES_DB.prepare("UPDATE shares SET status = 'active' WHERE id = ?").bind(id).run();
-  } catch (error) { await removeShare(env, id, connection.owner.id).catch(() => undefined); throw error; }
+  } catch (error) { await removeBlob(env, id).catch(() => undefined); await removeShare(env, id, connection.owner.id).catch(() => undefined); throw error; }
   await recordAi(env, connection, data.length).catch(() => undefined);
   return { id, title, link: link(env, id, key), expiresAt, version: 1, size: zip.length };
 }
 
-async function load(env: AiEnv, connection: Connection, id: string): Promise<{ row: Row; sealed: Sealed; raw: Uint8Array; files: Map<string, Uint8Array> }> {
-  const row = /^[a-f0-9-]{36}$/i.test(id) ? await env.SHARES_DB.prepare("SELECT ai_projects.id, sealed, data, version, shares.expires_at as expiresAt FROM ai_projects JOIN shares ON shares.id = ai_projects.id WHERE ai_projects.id = ? AND token_id = ? AND shares.status = 'active' AND shares.expires_at > ?").bind(id.toLowerCase(), connection.id, new Date().toISOString()).first<Row>() : null;
+async function load(env: AiEnv, connection: Connection, id: string): Promise<{ row: Row; store: number; sealed: Sealed; raw: Uint8Array; files: Map<string, Uint8Array> }> {
+  const row = /^[a-f0-9-]{36}$/i.test(id) ? await env.SHARES_DB.prepare("SELECT ai_projects.id, sealed, version, shares.expires_at as expiresAt FROM ai_projects JOIN shares ON shares.id = ai_projects.id WHERE ai_projects.id = ? AND token_id = ? AND shares.status = 'active' AND shares.expires_at > ?").bind(id.toLowerCase(), connection.id, new Date().toISOString()).first<Row>() : null;
   if (!row) throw new AiError('There is no such project. Use list_projects to see the projects of this connection. Deleted and expired projects are gone.');
   const sealed = await unseal(connection, row.sealed);
   const raw = fromBase64(sealed.key.replace(/-/g, '+').replace(/_/g, '/') + '=');
-  const zip = await decrypt(await projectKey(raw), fromBase64(row.data));
+  const blob = await readBlob(env, row.id);
+  if (!blob || blob === 'missing' || blob.version !== row.version) throw new AiError('The project could not be loaded right now. Try again in a moment.');
+  const zip = await decrypt(await projectKey(raw), blob.bytes);
   const entries = await readZip(new Blob([zip as Uint8Array<ArrayBuffer>]));
   const files = new Map<string, Uint8Array>();
   for (const entry of entries) files.set(entry.path, new Uint8Array(await entry.blob.arrayBuffer()));
-  return { row, sealed, raw, files };
+  return { row, store: blob.store, sealed, raw, files };
 }
 
 export type Edit = { path: string; find: string; replace: string };
@@ -224,8 +216,25 @@ export function readEdits(value: unknown): Edit[] {
   });
 }
 
+/** Returns the new version number, or null when someone else changed the project first. */
+async function saveVersion(env: AiEnv, connection: Connection, row: Row, next: { data: Uint8Array; sealed: string }, oldStore: number): Promise<number | null> {
+  // Claim the number first: only one of two parallel changes gets it, so they cannot overwrite each other's data.
+  const claimed = await env.SHARES_DB.prepare('UPDATE ai_projects SET claim = ? WHERE id = ? AND token_id = ? AND version = ? AND (claim IS NULL OR claim < ?) RETURNING id').bind(Date.now(), row.id, connection.id, row.version, Date.now() - 30_000).first();
+  if (!claimed) return null;
+  const version = row.version + 1;
+  const store = await putBlob(env, row.id, version, next.data);
+  if (store === null) { await env.SHARES_DB.prepare('UPDATE ai_projects SET claim = NULL WHERE id = ?').bind(row.id).run(); throw storageError(); }
+  // Both together or not at all, so index and project never disagree about the version.
+  await env.SHARES_DB.batch([
+    env.SHARES_DB.prepare('UPDATE blob_index SET store = ?, version = ?, bytes = ? WHERE id = ?').bind(store, version, next.data.length, row.id),
+    env.SHARES_DB.prepare('UPDATE ai_projects SET sealed = ?, version = ?, updated_at = ?, claim = NULL WHERE id = ?').bind(next.sealed, version, Date.now(), row.id),
+  ]);
+  await dropVersion(env, oldStore, row.id, row.version);
+  return version;
+}
+
 export async function updateProject(env: AiEnv, connection: Connection, id: string, change: { files: ProjectFile[]; edits: Edit[]; remove: string[]; details: Details }): Promise<ProjectInfo> {
-  const { row, sealed, raw, files } = await load(env, connection, id);
+  const { row, store: oldStore, sealed, raw, files } = await load(env, connection, id);
   for (const path of change.remove) { if (path === 'index.html') throw new AiError('index.html cannot be removed.'); if (!files.delete(path)) throw new AiError(`There is no file ${path} to remove.`); }
   for (const file of change.files) files.set(file.path, file.data);
   for (const edit of change.edits) {
@@ -244,12 +253,12 @@ export async function updateProject(env: AiEnv, connection: Connection, id: stri
   const fits = await env.SHARES_DB.prepare(`SELECT 1 as ok WHERE (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE expires_at > ?1 AND id <> ?2) + ?3 <= ?4
     AND (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE expires_at > ?1 AND id <> ?2 AND owner_id = ?5) + ?3 <= ?6`).bind(now, row.id, data.length, settings.service.totalMiB * MIB, connection.owner.id, connection.limits.storageMiB * MIB).first();
   if (!fits) throw storageError();
-  // The version check keeps two parallel changes from overwriting each other.
-  const saved = await env.SHARES_DB.prepare('UPDATE ai_projects SET data = ?, sealed = ?, version = version + 1, updated_at = ? WHERE id = ? AND token_id = ? AND version = ? RETURNING version').bind(toBase64(data), await seal(connection, { key: sealed.key, title }), Date.now(), row.id, connection.id, row.version).first<{ version: number }>();
+  // The new version is written next to the old one, which stays readable until the index points to the new one.
+  const saved = await saveVersion(env, connection, row, { data, sealed: await seal(connection, { key: sealed.key, title }) }, oldStore);
   if (!saved) throw new AiError('The project was changed at the same time. Read it again and repeat the change.');
   await env.SHARES_DB.prepare('UPDATE shares SET size_bytes = ?, expires_at = ? WHERE id = ?').bind(data.length, expiresAt, row.id).run();
   await recordAi(env, connection, 0).catch(() => undefined);
-  return { id: row.id, title, link: link(env, row.id, sealed.key), expiresAt, version: saved.version, size: zip.length };
+  return { id: row.id, title, link: link(env, row.id, sealed.key), expiresAt, version: saved, size: zip.length };
 }
 
 export async function readProject(env: AiEnv, connection: Connection, id: string, path?: string): Promise<string> {
@@ -274,8 +283,3 @@ export async function deleteProject(env: AiEnv, connection: Connection, id: stri
   await removeShare(env, row.id, connection.owner.id);
 }
 
-/** The encrypted project for a share link, or null when the share is not an AI project. */
-export async function projectBlob(env: StoreEnv, id: string): Promise<Uint8Array | null> {
-  const row = await env.SHARES_DB.prepare('SELECT data FROM ai_projects WHERE id = ?').bind(id).first<{ data: string }>();
-  return row ? fromBase64(row.data) : null;
-}

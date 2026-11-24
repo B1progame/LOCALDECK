@@ -38,6 +38,7 @@ import { ShareLinkField, ShareList, type ShareRecord } from './shareList';
 import { forgetShare, saveShare, shareUrl } from './services/savedShares';
 import { AdminPage } from './adminPage';
 import { AiConnect } from './aiConnect';
+import { LocalAiSettings } from './localAiSettings';
 import { DEFAULT_ACCOUNT, getAccount, uploadShare, type ShareAccount } from './services/shareService';
 import { sendVerificationMail } from './services/verificationMail';
 import { rovingKeys, useBackgroundMotion, useConnection, useReturnFocus } from './a11y';
@@ -232,6 +233,7 @@ function App() {
     favorite: item => runSafely(async () => { const next = await toggleFavorite(item.id); await refresh(); notify(next.favorite ? t('Added “{0}” to favorites.', item.title) : t('Removed “{0}” from favorites.', item.title)); }),
     edit: item => setModal({ kind: 'edit', item }),
     editCode: item => setCodeEditorItem(item),
+    describe: async (item, changes) => { try { await updateItem(item.id, changes); await refresh(); notify(t('Project details updated.')); } catch (error) { notify(t('The details could not be saved.'), true); throw error; } },
     update: (item, file) => updateProject(item, file),
     collect: item => setModal({ kind: 'collect', item }),
     share: item => void prepareShare(item),
@@ -572,6 +574,7 @@ function SettingsPage({notify,appearance,setAppearance,demosOn,busy,onDemos,redu
     <section className="settings-section"><h2>{t('Library')}</h2><div className="settings-list">
       <label className="setting-row"><span><b>{t('Demo projects')}</b><small>{t('Adds 8 working examples: a game, a study sheet, a quiz, a simulation, a palette tool, a presentation, a focus timer and a sorting visualizer. Turning this off removes only the demos.')}</small></span><input type="checkbox" checked={demosOn} disabled={busy} onChange={event=>onDemos(event.target.checked)}/></label>
     </div></section>
+    <section className="settings-section" id="local-ai"><h2>{t('Local AI')}</h2><div className="settings-list"><LocalAiSettings/></div></section>
     {import.meta.env.VITE_SHARE_API_BASE && <section className="settings-section" id="connect-ai"><h2>{t('Connect an AI')}</h2><div className="settings-list"><AiConnect api={import.meta.env.VITE_SHARE_API_BASE.replace(/\/$/,'')} token={getShareSession()?.token ?? null} notify={notify}/></div></section>}
     <section className="settings-section"><h2>{t('Motion & accessibility')}</h2><div className="settings-list">
       <label className="setting-row"><span><b>{t('Background animations')}</b><small>{t('The moving light, glow and sign-in scene. Turn this off to pause them.')}</small></span><input type="checkbox" checked={backgroundMotion} onChange={event=>setBackgroundMotion(event.target.checked)}/></label>

@@ -70,9 +70,23 @@ CREATE TABLE IF NOT EXISTS ai_projects (
   id TEXT PRIMARY KEY,
   token_id TEXT NOT NULL,
   sealed TEXT NOT NULL,
-  data TEXT NOT NULL,
   version INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  claim INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS blob_index (
+  id TEXT PRIMARY KEY,
+  store INTEGER NOT NULL,
+  version INTEGER NOT NULL,
+  bytes INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS blobs (
+  id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  PRIMARY KEY (id, version)
 );
 
 CREATE INDEX IF NOT EXISTS ai_projects_token_idx ON ai_projects(token_id);

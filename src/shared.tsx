@@ -148,6 +148,7 @@ export type ItemActions = {
   details: (item: LibraryItem) => void;
   favorite: (item: LibraryItem) => void;
   edit: (item: LibraryItem) => void;
+  describe: (item: LibraryItem, changes: Pick<LibraryItem, 'title' | 'type' | 'subject' | 'topic' | 'description' | 'tags'>) => Promise<void>;
   editCode: (item: LibraryItem) => void;
   update: (item: LibraryItem, file: File) => Promise<void>;
   collect: (item: LibraryItem) => void;

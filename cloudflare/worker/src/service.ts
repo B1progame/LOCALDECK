@@ -1,6 +1,8 @@
 /* Limits, accounts, statistics and stored shares. Everything that talks to D1 and KV for them lives here. */
 
-export interface StoreEnv { SHARES_KV: KVNamespace; SHARES_DB: D1Database }
+import { BLOB_TABLE, indexBlob, MAX_BLOB_BYTES, putBlob, removeBlob, sweepBlobs, usage, type BlobEnv } from './blobs.ts';
+
+export interface StoreEnv extends BlobEnv { SHARES_KV: KVNamespace }
 export type Owner = { id: string; email: string; name: string; picture: string; provider: string; admin: boolean };
 export type Limits = { linkMiB: number; storageMiB: number; perHour: number; perDay: number; days: number; aiPerDay: number; aiDays: number };
 export type ServiceLimits = { totalMiB: number; perDay: number; open: boolean; ai: boolean };
@@ -11,6 +13,8 @@ export const MIB = 1024 * 1024;
 export const PART_BYTES = 20 * MIB;
 /** One upload without parts may be as large as before. */
 export const SINGLE_BYTES = 24 * MIB;
+/** The free KV plan holds 1 GB. */
+const MAX_KV_BYTES = 900 * MIB;
 const PENDING_MS = 15 * 60_000;
 const MAX_PENDING_PER_OWNER = 3;
 const MAX_PENDING = 8;
@@ -21,7 +25,7 @@ export const DEFAULTS: Settings = {
   service: { totalMiB: 512, perDay: 100, open: true, ai: true },
 };
 /** What the free plans of Cloudflare and the app itself can carry. KV has 1 GB and 1,000 writes a day. */
-export const BOUNDS = { linkMiB: [1, 80], storageMiB: [1, 900], perHour: [1, 200], perDay: [1, 500], days: [1, 30], aiPerDay: [0, 1000], aiDays: [1, 180], totalMiB: [50, 900], servicePerDay: [1, 800] } as const;
+export const BOUNDS = { linkMiB: [1, 80], storageMiB: [1, 900], perHour: [1, 200], perDay: [1, 500], days: [1, 30], aiPerDay: [0, 1000], aiDays: [1, 180], totalMiB: [50, 1800], servicePerDay: [1, 800] } as const;
 
 /* The D1 schema (mirrors cloudflare/schema.sql). Every statement is idempotent. */
 export const SCHEMA = [
@@ -34,7 +38,9 @@ export const SCHEMA = [
   'CREATE TABLE IF NOT EXISTS service_settings ( id TEXT PRIMARY KEY, value TEXT NOT NULL )',
   'CREATE TABLE IF NOT EXISTS admin_log ( id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, admin TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL )',
   'CREATE TABLE IF NOT EXISTS ai_tokens ( id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL, created_at INTEGER NOT NULL, last_used INTEGER, calls INTEGER NOT NULL DEFAULT 0 )',
-  'CREATE TABLE IF NOT EXISTS ai_projects ( id TEXT PRIMARY KEY, token_id TEXT NOT NULL, sealed TEXT NOT NULL, data TEXT NOT NULL, version INTEGER NOT NULL, updated_at INTEGER NOT NULL )',
+  'CREATE TABLE IF NOT EXISTS ai_projects ( id TEXT PRIMARY KEY, token_id TEXT NOT NULL, sealed TEXT NOT NULL, version INTEGER NOT NULL, updated_at INTEGER NOT NULL, claim INTEGER )',
+  'CREATE TABLE IF NOT EXISTS blob_index ( id TEXT PRIMARY KEY, store INTEGER NOT NULL, version INTEGER NOT NULL, bytes INTEGER NOT NULL )',
+  BLOB_TABLE,
   'CREATE INDEX IF NOT EXISTS ai_projects_token_idx ON ai_projects(token_id)',
   'CREATE TABLE IF NOT EXISTS ai_daily ( day INTEGER PRIMARY KEY, created INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL DEFAULT 0 )',
   'CREATE TABLE IF NOT EXISTS upload_windows ( owner_id TEXT NOT NULL, window_start INTEGER NOT NULL, uploads INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (owner_id, window_start) )',
@@ -143,9 +149,10 @@ export async function reserve(env: StoreEnv, owner: Owner, size: number, parts: 
     SELECT ?1, ?2, 'revoked', ?3, ?4, ?5
     WHERE (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE expires_at > ?3) + ?5 <= ?6
       AND (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE expires_at > ?3 AND owner_id = ?2) + ?5 <= ?7
+      AND (?5 <= ?11 OR (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE expires_at > ?3 AND NOT EXISTS (SELECT 1 FROM blob_index WHERE blob_index.id = shares.id)) + ?5 <= ?12)
       AND (SELECT COUNT(*) FROM shares WHERE status = 'revoked' AND created_at > ?8) < ?9
       AND (SELECT COUNT(*) FROM shares WHERE status = 'revoked' AND created_at > ?8 AND owner_id = ?2) < ?10
-    RETURNING id`).bind(id, owner.id, now.toISOString(), expiresAt, size, settings.service.totalMiB * MIB, limits.storageMiB * MIB, recent, MAX_PENDING, MAX_PENDING_PER_OWNER).first<{ id: string }>();
+    RETURNING id`).bind(id, owner.id, now.toISOString(), expiresAt, size, settings.service.totalMiB * MIB, limits.storageMiB * MIB, recent, MAX_PENDING, MAX_PENDING_PER_OWNER, MAX_BLOB_BYTES, MAX_KV_BYTES).first<{ id: string }>();
   if (!created) {
     const mine = (await db.prepare('SELECT COALESCE(SUM(size_bytes), 0) as bytes FROM shares WHERE expires_at > ? AND owner_id = ?').bind(nowIso(), owner.id).first<{ bytes: number }>())?.bytes ?? 0;
     return { error: mine + size > limits.storageMiB * MIB ? 'user_storage_limit' : 'storage_or_upload_limit', status: 429 };
@@ -156,9 +163,16 @@ export async function reserve(env: StoreEnv, owner: Owner, size: number, parts: 
 
 export const partKey = (id: string, part: number) => part ? `${id}.${part}` : id;
 
+async function singlePart(env: StoreEnv, id: string): Promise<boolean> {
+  return (await env.SHARES_DB.prepare('SELECT parts FROM share_meta WHERE id = ?').bind(id).first<{ parts: number }>())?.parts === 1;
+}
+
 /** Stores one part. The share becomes active as soon as all parts are there. */
 export async function storePart(env: StoreEnv, owner: Owner, id: string, part: number, bytes: ArrayBuffer, ttl: number): Promise<boolean> {
-  await env.SHARES_KV.put(partKey(id, part), bytes, { expirationTtl: ttl });
+  // Small projects go into the databases: they are there at once everywhere and do not use up the KV writes.
+  const store = part === 0 && bytes.byteLength <= MAX_BLOB_BYTES && await singlePart(env, id) ? await putBlob(env, id, 1, new Uint8Array(bytes)) : null;
+  if (store === null) await env.SHARES_KV.put(partKey(id, part), bytes, { expirationTtl: ttl });
+  else await indexBlob(env, id, store, 1, bytes.byteLength);
   const meta = await env.SHARES_DB.prepare('UPDATE share_meta SET received = received | ? WHERE id = ? RETURNING parts, received').bind(1 << part, id).first<{ parts: number; received: number }>();
   if (!meta || meta.received !== (1 << meta.parts) - 1) return false;
   const active = await env.SHARES_DB.prepare("UPDATE shares SET status = 'active' WHERE id = ? AND owner_id = ? AND status = 'revoked' RETURNING size_bytes").bind(id, owner.id).first<{ size_bytes: number }>();
@@ -187,8 +201,8 @@ export async function removeShare(env: StoreEnv, id: string, ownerId: string | n
   const row = await env.SHARES_DB.prepare("UPDATE shares SET status = 'revoked' WHERE id = ?1 AND (?2 IS NULL OR owner_id = ?2) RETURNING id").bind(id, ownerId).first<{ id: string }>();
   if (!row) return false;
   try {
-    const ai = await env.SHARES_DB.prepare('DELETE FROM ai_projects WHERE id = ? RETURNING id').bind(id).first();
-    const parts = ai ? 0 : (await env.SHARES_DB.prepare('SELECT parts FROM share_meta WHERE id = ?').bind(id).first<{ parts: number }>())?.parts ?? 1;
+    await env.SHARES_DB.prepare('DELETE FROM ai_projects WHERE id = ?').bind(id).run();
+    const parts = await removeBlob(env, id) ? 0 : (await env.SHARES_DB.prepare('SELECT parts FROM share_meta WHERE id = ?').bind(id).first<{ parts: number }>())?.parts ?? 1;
     for (let part = 0; part < parts; part++) await env.SHARES_KV.delete(partKey(id, part));
     await env.SHARES_DB.prepare('DELETE FROM shares WHERE id = ?').bind(id).run();
     await env.SHARES_DB.prepare('DELETE FROM share_meta WHERE id = ?').bind(id).run();
@@ -200,9 +214,10 @@ export async function cleanup(env: StoreEnv): Promise<void> {
   const db = env.SHARES_DB;
   // KV drops the data of expired links by itself.
   await db.prepare('DELETE FROM shares WHERE expires_at <= ?').bind(nowIso()).run();
-  const stale = await db.prepare("SELECT id FROM shares WHERE status = 'revoked' AND created_at < ? LIMIT 3").bind(new Date(Date.now() - 3 * PENDING_MS).toISOString()).all<{ id: string }>();
+  const stale = await db.prepare("SELECT id FROM shares WHERE status = 'revoked' AND created_at < ? LIMIT 2").bind(new Date(Date.now() - 3 * PENDING_MS).toISOString()).all<{ id: string }>();
   for (const { id } of stale.results) await removeShare(env, id, null);
   await db.prepare('DELETE FROM ai_projects WHERE NOT EXISTS (SELECT 1 FROM shares WHERE shares.id = ai_projects.id)').run();
+  await sweepBlobs(env);
   await db.prepare('DELETE FROM ai_daily WHERE day < ?').bind(Date.now() - 400 * 86_400_000).run();
   await db.prepare('DELETE FROM ai_tokens WHERE COALESCE(last_used, created_at) < ? OR NOT EXISTS (SELECT 1 FROM accounts WHERE accounts.owner_id = ai_tokens.owner_id)').bind(Date.now() - 180 * 86_400_000).run();
   await db.prepare('DELETE FROM share_meta WHERE NOT EXISTS (SELECT 1 FROM shares WHERE shares.id = share_meta.id)').run();
@@ -248,10 +263,12 @@ export async function overview(env: StoreEnv, owner: Owner): Promise<unknown> {
     FROM shares LEFT JOIN accounts ON accounts.owner_id = shares.owner_id LEFT JOIN share_meta ON share_meta.id = shares.id
     WHERE shares.status = 'active' AND shares.expires_at > ? ORDER BY shares.created_at DESC LIMIT 300`).bind(now).all<{ ownerId: string; ai: number }>();
   const ai = await db.prepare('SELECT (SELECT COUNT(*) FROM ai_tokens) as connections, (SELECT COUNT(*) FROM ai_projects JOIN shares ON shares.id = ai_projects.id WHERE shares.expires_at > ?1) as projects, (SELECT COALESCE(SUM(size_bytes), 0) FROM shares JOIN ai_projects ON ai_projects.id = shares.id WHERE shares.expires_at > ?1) as bytes, (SELECT COALESCE(SUM(created + updated), 0) FROM ai_daily WHERE day > ?2) as changes').bind(now, today - 30 * 86_400_000).first();
+  const kv = await db.prepare('SELECT COALESCE(SUM(size_bytes), 0) as bytes FROM shares WHERE expires_at > ? AND NOT EXISTS (SELECT 1 FROM blob_index WHERE blob_index.id = shares.id)').bind(now).first<{ bytes: number }>();
   const entries = await db.prepare('SELECT at, admin, action, target FROM admin_log ORDER BY id DESC LIMIT 30').bind().all();
   return {
     totals: { links: totals?.links ?? 0, owners: new Set(shares.results.map(share => share.ownerId)).size, bytes: totals?.bytes ?? 0, limitBytes: settings.service.totalMiB * MIB, uploadsToday: uploads?.uploads ?? 0, uploadsLimit: settings.service.perDay, accounts: people?.accounts ?? 0, activeWeek: people?.week ?? 0, blocked: people?.blocked ?? 0 },
-    ai, settings, defaults: DEFAULTS, bounds: BOUNDS, days: days.results,
+    ai, databases: (await usage(env)).map(({ name, bytes, projects, capBytes }) => ({ name, bytes, projects, capBytes })), kv: { bytes: kv?.bytes ?? 0, capBytes: MAX_KV_BYTES },
+    settings, defaults: DEFAULTS, bounds: BOUNDS, days: days.results,
     accounts: accounts.results.map(account => { let limits: unknown = null; try { limits = account.limits ? JSON.parse(account.limits) : null; } catch { /* broken override */ } return { ...account, limits, blocked: Boolean(account.blocked), mine: account.id === owner.id }; }),
     shares: shares.results.map(share => ({ ...share, ai: Boolean(share.ai), mine: share.ownerId === owner.id })),
     log: entries.results,
