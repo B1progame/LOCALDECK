@@ -41,6 +41,7 @@ import { AdminPage } from './adminPage';
 import { AiConnect } from './aiConnect';
 import { LocalAiSettings } from './localAiSettings';
 import { ITEMS_CHANGED, readProjectText, ruleCheck, scanImported } from './autoScan';
+import { asksFirst, setContentMarks, useContentMarks } from './contentMarks';
 import { ContentNote } from './contentNote';
 import { DEFAULT_ACCOUNT, getAccount, uploadShare, type ShareAccount } from './services/shareService';
 import { sendVerificationMail } from './services/verificationMail';
@@ -226,7 +227,7 @@ function App() {
 
   const pageTitle = currentPage === 'item' ? items.find(x => x.id === route.itemId)?.title ?? t('Project') : currentPage === 'collections' && route.collectionId ? collections.find(x => x.id === route.collectionId)?.name ?? t('Collection') : ({ home:t('Home'), library:t('All items'), favorites:t('Favorites'), recent:t('Recently opened'), learning:t('Learning hub'), games:t('Games & apps'), collections:t('Collections'), import:t('Import center'), studio:t('AI studio'), storage:t('Storage & backups'), sharing:t('Shared links'), admin:t('Admin'), login:t('Sign in'), settings:t('Settings'), shared:t('Shared project') } as Record<string,string>)[currentPage];
 
-  const openProject = (item: LibraryItem) => { if (item.contentCheck?.rating === '18' && !item.contentCheck.confirmed && !window.confirm(t('“{0}” may be for adults only (18+). Open it anyway?', item.title))) return; setPlaying(item); };
+  const openProject = (item: LibraryItem) => { if (asksFirst(item.contentCheck) && !window.confirm(t('“{0}” may be for adults only (18+). Open it anyway?', item.title))) return; setPlaying(item); };
   useEffect(() => { void demosEnabled().then(async on => { setDemosOn(on); if (on) { await syncDemos(); await refresh(); } }).catch(() => undefined); }, [refresh]);
   const toggleDemos = async (on: boolean) => {
     setBusy(true);
@@ -574,6 +575,7 @@ function StoragePage({items,storage,integrity,busy,backup,restore,requestPersist
 
 function SettingsPage({notify,appearance,setAppearance,demosOn,busy,onDemos,reducedMotion,onMotion}:{notify:(message:string,error?:boolean)=>void;appearance:Appearance;setAppearance:(next:Partial<Appearance>)=>void;demosOn:boolean;busy:boolean;onDemos:(value:boolean)=>void;reducedMotion:boolean;onMotion:(value:boolean)=>void}) {
   const [backgroundMotion, setBackgroundMotion] = useBackgroundMotion();
+  const { on: contentMarks } = useContentMarks();
   const customAccent = appearance.accent && !ACCENTS.includes(appearance.accent) ? appearance.accent : null;
   return <><PageHeading title={t('Settings')} description={t('Tune how LocalDeck looks and behaves in this browser.')}/>
     <section className="settings-section" id="profile"><h2>{t('Profile')}</h2><div className="settings-list"><ProfileSettings notify={notify} account={getShareSession()}/></div></section>
@@ -598,6 +600,7 @@ function SettingsPage({notify,appearance,setAppearance,demosOn,busy,onDemos,redu
       <label className="setting-row"><span><b>{t('Reduce motion')}</b><small>{t('Use simple fades instead of movement, even when your system allows animation.')}</small></span><input type="checkbox" checked={reducedMotion} onChange={event=>onMotion(event.target.checked)}/></label>
     </div></section>
     <section className="settings-section"><h2>{t('Privacy & security')}</h2><div className="settings-list">
+      <label className="setting-row"><span><b>{t('Show 16+ and 18+ marks')}</b><small>{t('Marks projects that may not be for children and asks before an 18+ project is opened or imported. It is a hint from an automatic check on this device and can be wrong.')}</small></span><input type="checkbox" checked={contentMarks} onChange={event=>setContentMarks(event.target.checked)}/></label>
       <div className="setting-row"><span><b>{t('Project isolation')}</b><small>{t('Imported HTML opens in an opaque sandbox. Its scripts cannot read LocalDeck\'s IndexedDB or page.')}</small></span><ShieldCheck size={18} className="settings-secure"/></div>
       <div className="setting-row"><span><b>{t('Protected sharing accounts')}</b><small>{t('Google, verified email, GitHub, or Facebook sign-in can manage links. The Worker validates each signed identity token.')}</small></span><Cloud size={18} className="settings-secure"/></div>
     </div></section>

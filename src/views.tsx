@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { db } from './services/database';
 import { useProfile } from './profile';
+import { tagsWithMark, useContentMarks } from './contentMarks';
 import { ContentNote } from './contentNote';
 import { ProjectScanPanel } from './projectScanPanel';
 import { rovingKeys, useStillMotion } from './a11y';
@@ -215,6 +216,7 @@ export function CollectionsPage({ collections, items, add, remove }: { collectio
 
 export function ItemDetailsPage({ item, collections }: { item: LibraryItem | undefined; collections: Collection[] }) {
   const a = useItemActions();
+  const { on: marks } = useContentMarks();
   const [assets, setAssets] = useState<LibraryAsset[] | null>(null);
   const [timeSpent, setTimeSpent] = useState(0);
   const [menu, setMenu] = useState(false);
@@ -227,6 +229,7 @@ export function ItemDetailsPage({ item, collections }: { item: LibraryItem | und
   }, [item?.id, item?.updatedAt]);
   if (!item) return <EmptyState icon={Library} title={t('This project isn’t in your library')} detail={t('It may have been removed from this browser.')} action={<button className="button" onClick={() => go('library')}><ArrowLeft size={15}/> {t('Back to library')}</button>} />;
   const Icon = TYPE_ICON[item.type];
+  const tags = tagsWithMark(item.tags, item.contentCheck, marks);
   const art = coverBackground(item);
   const memberOf = collections.filter(c => item.collectionIds.includes(c.id));
   const minutes = Math.round(timeSpent / 60_000);
@@ -267,7 +270,7 @@ export function ItemDetailsPage({ item, collections }: { item: LibraryItem | und
         <section className="panel">
           <h2>{t('About')}</h2>
           <p className="details-description">{item.description || t('No description yet. Add one so this project is easier to find in search.')}</p>
-          {item.tags.length > 0 && <div className="tag-list">{item.tags.map(tag => <button key={tag} type="button" className="tag tag-link" title={t('Show projects with #{0}', tag)} onClick={() => a.showTag(tag)}>#{tag}</button>)}</div>}
+          {tags.length > 0 && <div className="tag-list">{tags.map(tag => <button key={tag} type="button" className={`tag tag-link ${tag === '18+' ? 'tag-18' : tag === '16+' ? 'tag-16' : ''}`} title={t('Show projects with #{0}', tag)} onClick={() => a.showTag(tag)}>#{tag}</button>)}</div>}
           {!item.description && <button className="text-button" onClick={() => a.edit(item)}><Pencil size={14}/> {t('Add a description')}</button>}
           {item.contentCheck && <ContentNote check={item.contentCheck}>{item.contentCheck.rating !== 'ok' && !item.contentCheck.confirmed && <button type="button" className="text-button" onClick={() => a.confirmContent(item)}>{t('This is fine')}</button>}</ContentNote>}
         </section>

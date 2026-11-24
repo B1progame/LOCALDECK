@@ -1,6 +1,7 @@
 /* Shows what the check of a project found. */
 import React from 'react';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
+import { useContentMarks } from './contentMarks';
 import { t } from './i18n';
 import type { ContentCheck, Reason } from './services/contentCheck';
 
@@ -9,15 +10,16 @@ const reasonText = (reason: Reason): string => ({
   gambling: t('gambling'), selfharm: t('self-harm'), password: t('asks for a password'), ai: t('opinion of the local AI'),
 })[reason];
 
-export const ratingLabel = (rating: ContentCheck['rating']) => rating === 'ok' ? t('Nothing unusual') : `${rating}+`;
-
 /** Small mark for covers and lists. */
 export function RatingBadge({ check }: { check?: ContentCheck }) {
-  if (!check || check.rating === 'ok' || check.confirmed) return null;
+  const { on } = useContentMarks();
+  if (!on || !check || check.rating === 'ok' || check.confirmed) return null;
   return <span className={`rating-badge r${check.rating}`} title={t('May not be for children')}>{check.rating}+</span>;
 }
 
 export function ContentNote({ check, children }: { check: ContentCheck; children?: React.ReactNode }) {
+  const { on } = useContentMarks();
+  if (!on) return null;
   const fine = check.rating === 'ok' || check.confirmed;
   const reasons = check.reasons.map(reasonText).join(', ');
   return <div className={`content-note ${fine ? check.reasons.includes('password') ? 'watch' : '' : `r${check.rating}`}`} role={fine ? undefined : 'note'}>

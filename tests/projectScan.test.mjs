@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { guessType, MAX_PARTS, parseSuggestion, parseTags, scriptTexts, suggestDetails, textParts } from '../src/services/projectScan.ts';
+import { grounded, guessType, MAX_PARTS, parseSuggestion, parseTags, scriptTexts, suggestDetails, textParts } from '../src/services/projectScan.ts';
 
 test('texts inside scripts are found, code is not', () => {
   const texts = scriptTexts(`const q = [{ q: 'Was ist die Hauptstadt von Frankreich?', a: "Paris" }]; el.style.color = 'rgb(1,2,3)'; document.querySelector('.card'); import('./x.js'); const k = 'keydown'; const h = \`<b>Richtig, \${name}!</b>\`; fetch('https://example.com/a b');`);
@@ -52,7 +52,14 @@ test('typical mistakes of the small model are corrected', async () => {
   assert.deepEqual([game.title, game.type, game.subject], ['NEON DRIFT', 'game', '']);
 });
 
-const project = text => ({ title: 'T', language: 'de', description: '', headings: ['H'], buttons: [], text });
+test('the name on the page wins, a meaningless one does not', async () => {
+  const run = title => suggestDetails({ ...project('x'), title }, { filename: 'a.html', language: 'German', ask: async () => 'Name: Erfunden\nTopic: T\nTags: a1, b1, c1, d1, e1, f1, g1, h1' }).then(result => result.suggestion);
+  assert.equal((await run('Pixel Palette')).title, 'Pixel Palette');
+  for (const title of ['Document', 'Vite + React App', '']) assert.equal((await run(title)).title, 'Erfunden', title);
+  assert.equal((await run('')).tags.length, 6);
+});
+
+const project = text => ({ title: '', language: 'de', description: '', headings: ['H'], buttons: [], text });
 const final = 'Name: Nokia\nType: game\nSubject: -\nTopic: Snake\nDescription: Ein Spiel.\nTags: Snake';
 
 test('a short project needs one request, a long one reads every part first', async () => {
@@ -63,7 +70,7 @@ test('a short project needs one request, a long one reads every part first', asy
   assert.equal(short.suggestion.title, 'Nokia');
   asked.length = 0;
   const steps = [];
-  const long = await suggestDetails(project('Wort '.repeat(2500)), { filename: 'a.html', language: 'German', ask, onStep: (step, all) => steps.push([step, all]) });
+  const long = await suggestDetails(project('Snake '.repeat(2500)), { filename: 'a.html', language: 'German', ask, onStep: (step, all) => steps.push([step, all]) });
   assert.equal(long.read, long.total);
   assert.equal(asked.length, long.total + 1);
   assert.deepEqual(steps.at(-1), [long.total + 1, long.total + 1]);
@@ -74,4 +81,13 @@ test('a stopped scan asks nothing more', async () => {
   let count = 0;
   await assert.rejects(suggestDetails(project('Wort '.repeat(2500)), { filename: 'a.html', language: 'German', ask: async () => { count++; return 'x'; }, cancelled: () => count >= 1 }), /cancelled/);
   assert.equal(count, 1);
+});
+
+test('an invented answer is replaced by one that fits the page', async () => {
+  const text = 'Was ist die Hauptstadt von Frankreich?\nWas ist die Hauptstadt von Spanien?\nParis\nMadrid';
+  assert.equal(grounded('mathematik Quiz', text), 0);
+  assert.ok(grounded('Frankreich, Spanien', text) === 1);
+  const ask = async messages => { const question = messages.at(-1).content; return question.includes('Only the keywords') ? 'Frankreich, Spanien, Paris, Algebra' : question.includes('In one sentence') ? 'Ein Quiz über die Hauptstadt von Frankreich und Spanien.' : 'Name: Quiz\nSubject: mathematik\nTopic: mathematik\nDescription: Mathe.\nTags: mathematik, math\nAge: 0'; };
+  const { suggestion } = await suggestDetails({ ...project(text), headings: [], kind: 'quiz' }, { filename: 'main.html', language: 'German', ask });
+  assert.deepEqual(suggestion, { title: 'Quiz: Frankreich, Spanien, Paris', type: 'quiz', subject: '', topic: '', description: 'Ein Quiz über die Hauptstadt von Frankreich und Spanien.', tags: ['Frankreich', 'Spanien', 'Paris'] });
 });

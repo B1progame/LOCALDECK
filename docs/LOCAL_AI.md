@@ -1,16 +1,16 @@
 # Local AI
 
-A language model that runs inside the website, on the device of the person using it. It reads projects, explains what they are, adds hashtags and warns about content that may be for adults. No account, no key, no server.
+A language model that runs inside the website, on the device of the person using it. It reads projects, explains what they are and adds hashtags. No account, no key, no server.
 
 1. **Settings → Local AI**: choose an AI (off by default). Qwen is then loaded once with **Set up the AI**.
-2. From then on every import is scanned in the background. The AI fills in only what is missing and adds hashtags. A name is changed only when it says nothing, such as `index`. **Scan every import automatically** in Settings turns this off.
+2. From then on every import is scanned in the background. The AI fills in only what is missing and adds hashtags. A name is changed only when it says nothing, such as `index`. The title on the page is preferred, and an answer that has nothing in common with the page is asked for again in plain questions. **Scan every import automatically** in Settings turns this off.
 3. A shared link shows what the project is before it is imported.
 4. **Scan this project** in the details of a project suggests everything anew. Nothing changes before you press **Save**.
 5. **Check the whole library** scans projects that are already there.
 
 ## Content check
 
-Every import and every shared link is also checked by rules, without any AI (`src/services/contentCheck.ts`): words in the project, hashtags such as `18plus` or `16plus`, and password fields. The result is nothing, 16+ or 18+. The AI can raise it by one step, and only when the project itself contains a sign for it. It never lowers it. A lesson about a topic is not flagged like the topic itself. An 18+ project asks before it is opened or imported, and **This is fine** removes the mark. Pictures are not looked at and the check can be wrong, so it is a hint and no protection for children.
+Every import and every shared link is also checked by rules, without any AI (`src/services/contentCheck.ts`): words in the project, hashtags such as `18plus` or `16plus`, and password fields. The result is nothing, 16+ or 18+. While the marks are on, the local AI answers two plain questions per part of a project: is it erotic, and is it about violence, drugs or gambling. It can raise the result, never lower it. For violence, drugs and gambling a word in the project must support it. A lesson about a topic is not flagged like the topic itself. In a test with the real model on 36 short pages 34 were right (two misses were fixed afterwards). Marked projects also get the hashtag `#16+` or `#18+`, which can be searched. It goes away with the mark. The marks are off by default. **Settings → Privacy & security → Show 16+ and 18+ marks** turns them on. Then an 18+ project asks before it is opened or imported, and **This is fine** removes the mark. Pictures are not looked at and the check can be wrong, so it is a hint and no protection for children.
 
 A click on a hashtag shows all projects with it. `#word` in the search does the same.
 

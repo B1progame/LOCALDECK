@@ -47,7 +47,7 @@ export function ProjectScanPanel({ item }: { item: LibraryItem }) {
       const { suggestion } = result;
       if (!suggestion.title && !suggestion.description && !suggestion.tags.length) { setProblem(t('The AI gave no usable answer. Try again.')); return; }
       const tags = mergeTags(item.tags, suggestion.tags);
-      setFound({ ...result, check: withOpinion(ruleCheck(project, { ...item, tags }), result.age, suggestion.description) });
+      setFound({ ...result, check: withOpinion(ruleCheck(project, { ...item, tags }), result.found, suggestion.description) });
       setDraft({ title: suggestion.title || item.title, type: suggestion.type || item.type, subject: suggestion.subject || item.subject, topic: suggestion.topic || item.topic, description: suggestion.description || item.description, tags: tags.join(', ') });
       window.setTimeout(() => heading.current?.focus(), 0);
     } catch (error) {

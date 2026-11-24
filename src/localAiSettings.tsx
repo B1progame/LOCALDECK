@@ -51,17 +51,16 @@ export function LocalAiSettings() {
     { id: 'qwen', name: MODEL.name, detail: t('Loaded once, {0}', bytes(MODEL.bytes)), icon: Cpu },
   ];
   return <div className="local-ai">
-    <p className="ai-intro">{t('Choose an AI that runs inside this website on your device. It reads every project you import and every shared link you open, explains what it is, adds hashtags and warns about content that may be for adults. You can also press “Scan this project” in the details. Your projects never leave the device.')}</p>
+    <p className="ai-intro">{t('Choose an AI that runs inside this website on your device. It reads every project you import and every shared link you open, explains what it is and adds hashtags. You can also press “Scan this project” in the details. Your projects never leave the device.')}</p>
     <div className="local-ai-choice" role="radiogroup" aria-label={t('Local AI')} onKeyDown={event => rovingKeys(event, '[role="radio"]', true)}>{choices.map(({ id, name, detail, icon: Icon }) => <button key={id} type="button" role="radio" aria-checked={engine === id} tabIndex={engine === id ? 0 : -1} disabled={busy} className="language-card" onClick={() => chooseEngine(id)}><span className="language-mark" aria-hidden="true"><Icon size={17}/></span><span className="language-name"><b>{name}</b><small>{detail}</small></span>{engine === id && <Check size={16} className="language-check"/>}</button>)}</div>
     <LocalAiStatus/>
     {engine === 'qwen' && <p className="local-ai-note">{t('It is a small model and makes mistakes, so check its suggestions. Qwen needs a computer or phone with a fairly new graphics chip. The model files come from Hugging Face, which sees your IP address while they load.')}</p>}
     {engine !== 'none' && <label className="setting-row local-ai-auto"><span><b>{t('Scan every import automatically')}</b><small>{t('Fills in what is missing and adds hashtags. What you wrote stays.')}</small></span><input type="checkbox" checked={queue.auto} onChange={event => setAutoScan(event.target.checked)}/></label>}
-    <div className="local-ai-status">
+    {engine !== 'none' && <div className="local-ai-status">
       {running ? <><p className="local-ai-line" role="status"><LoaderCircle size={16} className="spin"/> {queue.total > 1 ? t('Reading project {0} of {1}…', Math.min(queue.done + 1, queue.total), queue.total) : t('Reading the project…')}</p>{queue.waiting.length > 0 && <button type="button" className="button" onClick={cancelWaiting}><X size={15}/> {t('Cancel')}</button>}</>
         : <button type="button" className="button" onClick={() => void scanAll()}><ScanText size={15}/> {t('Check the whole library')}</button>}
       {answer && <p className="local-ai-line good" role="status"><Check size={16}/> {answer}</p>}
-    </div>
-    <p className="local-ai-note">{t('Without an AI, imports and shared links are still checked by rules for content that may be for adults.')}</p>
+    </div>}
     {engine !== 'none' && <button type="button" className="text-button" onClick={() => go('library')}>{t('Go to the library')}</button>}
   </div>;
 }

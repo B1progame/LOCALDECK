@@ -1,6 +1,7 @@
 /* Checks every imported project: at once by rules, then with the local AI when one is chosen in Settings.
    The AI runs one project after the other in the background. */
 import { create } from 'zustand';
+import { useContentMarks } from './contentMarks';
 import { language } from './i18n';
 import { checkLocalAi, generateText, loadLocalAi, useLocalAi } from './localAi/engine';
 import { checkContent, withOpinion, type ContentCheck } from './services/contentCheck';
@@ -78,7 +79,7 @@ export async function askAbout(project: ReadProject, filename: string, options: 
   if (options.cancelled?.() || (options.background && !await aiIsReady())) throw new Error('cancelled');
   await loadLocalAi();
   return suggestDetails(project, {
-    filename, language: languageName(project.language), ...options,
+    filename, language: languageName(project.language), ...options, rate: useContentMarks.getState().on,
     ask: (messages, maxTokens) => options.cancelled?.() ? Promise.reject(new Error('cancelled')) : generateText(messages, () => undefined, { maxTokens, temperature: 0 }),
   });
 }
@@ -116,7 +117,7 @@ async function describe(id: string): Promise<void> {
   const { suggestion } = result;
   if (!suggestion.title && !suggestion.description && !suggestion.tags.length) return;
   const details = missingDetails(latest, result);
-  const check = withOpinion(ruleCheck(project, { ...latest, ...details }), result.age, suggestion.description);
+  const check = withOpinion(ruleCheck(project, { ...latest, ...details }), result.found, suggestion.description);
   await updateItem(id, { ...details, contentCheck: { ...check, ...(latest.contentCheck?.confirmed ? { confirmed: true } : {}) } }, { touch: false });
   changed(latest.title);
 }
@@ -152,7 +153,7 @@ export async function scanImported(item: LibraryItem): Promise<void> {
 export async function scanLibrary(): Promise<number> {
   const items = (await db.items.toArray()).filter(item => /\.html?$/i.test(item.entryFile));
   const ready = await aiIsReady();
-  const todo = items.filter(item => ready ? item.contentCheck?.by !== 'ai' : !item.contentCheck);
+  const todo = items.filter(item => ready ? item.contentCheck?.by !== 'ai' || (useContentMarks.getState().on && !item.contentCheck.rated) : !item.contentCheck);
   for (const item of todo) {
     if (!item.contentCheck) { try { await updateItem(item.id, { contentCheck: ruleCheck(await readItem(item), item) }, { touch: false }); } catch { /* unreadable project */ } }
     if (ready) enqueue(item.id);

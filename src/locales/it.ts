@@ -1118,7 +1118,6 @@ const messages: Record<string, string> = {
   "self-harm": "autolesionismo",
   "asks for a password": "chiede una password",
   "opinion of the local AI": "parere dell’IA locale",
-  "Nothing unusual": "Niente di particolare",
   "May not be for children": "Forse non adatto ai bambini",
   "Marked as fine by you": "Segnato da te come adatto",
   "May be for adults only (18+)": "Forse solo per adulti (18+)",
@@ -1128,12 +1127,10 @@ const messages: Record<string, string> = {
   "Checked automatically on this device": "Controllato automaticamente su questo dispositivo",
   "Pictures are not checked, and the check can be wrong.": "Le immagini non vengono controllate e il controllo può sbagliare.",
   "Every project is already checked.": "Tutti i progetti sono già controllati.",
-  "Choose an AI that runs inside this website on your device. It reads every project you import and every shared link you open, explains what it is, adds hashtags and warns about content that may be for adults. You can also press “Scan this project” in the details. Your projects never leave the device.": "Scegli un’IA che gira dentro questo sito, sul tuo dispositivo. Legge ogni progetto che importi e ogni link condiviso che apri, spiega che cos’è, aggiunge hashtag e avvisa se il contenuto è forse per adulti. Puoi anche premere «Analizza questo progetto» nei dettagli. I tuoi progetti non lasciano mai il dispositivo.",
   "Scan every import automatically": "Analizza ogni importazione automaticamente",
   "Fills in what is missing and adds hashtags. What you wrote stays.": "Completa ciò che manca e aggiunge hashtag. Ciò che hai scritto resta.",
   "Reading project {0} of {1}…": "Leggo il progetto {0} di {1}…",
   "Check the whole library": "Controlla tutta la libreria",
-  "Without an AI, imports and shared links are still checked by rules for content that may be for adults.": "Anche senza IA, importazioni e link condivisi vengono controllati con regole per trovare contenuti forse per adulti.",
   "The local AI has described “{0}”.": "L’IA locale ha descritto «{0}».",
   "“{0}” may be for adults only (18+). Open it anyway?": "«{0}» è forse solo per adulti (18+). Aprirlo lo stesso?",
   "Waiting for another project…": "In attesa di un altro progetto…",
@@ -1144,6 +1141,9 @@ const messages: Record<string, string> = {
   "With a local AI (Settings) LocalDeck also explains what a shared project is.": "Con un’IA locale (Impostazioni) LocalDeck spiega anche che cos’è un progetto condiviso.",
   "Show projects with #{0}": "Mostra i progetti con #{0}",
   "This is fine": "Va bene così",
+  "Choose an AI that runs inside this website on your device. It reads every project you import and every shared link you open, explains what it is and adds hashtags. You can also press “Scan this project” in the details. Your projects never leave the device.": "Scegli un’IA che gira dentro questo sito, sul tuo dispositivo. Legge ogni progetto che importi e ogni link condiviso che apri, spiega che cos’è e aggiunge hashtag. Puoi anche premere «Analizza questo progetto» nei dettagli. I tuoi progetti non lasciano mai il dispositivo.",
+  "Show 16+ and 18+ marks": "Mostra 16+ e 18+",
+  "Marks projects that may not be for children and asks before an 18+ project is opened or imported. It is a hint from an automatic check on this device and can be wrong.": "Segnala i progetti forse non adatti ai bambini e chiede prima di aprire o importare un progetto 18+. È un’indicazione di un controllo automatico su questo dispositivo e può sbagliare.",
 };
 
 export default messages;

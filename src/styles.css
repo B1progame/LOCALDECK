@@ -1757,3 +1757,5 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 .local-ai-auto > span { display: flex; flex-direction: column; min-width: 0; }
 .local-ai-auto b { font-size: 14px; font-weight: 600; }
 .local-ai-auto small { color: var(--muted); font-size: 12.5px; }
+.tag.tag-16 { border-color: color-mix(in srgb, var(--warning) 55%, transparent); color: var(--warning); }
+.tag.tag-18 { border-color: color-mix(in srgb, var(--error) 60%, transparent); color: var(--error); }

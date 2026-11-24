@@ -42,6 +42,7 @@ import {
   Activity, ArrowDownToLine, BookOpen, Check, ChevronRight, Code2, Copy, FileText, FolderPlus, Gamepad2, Heart, Image, Info, Library,
   MoreHorizontal, PackageOpen, Pencil, Play, RefreshCw, Share2, Trash2, type LucideIcon,
 } from 'lucide-react';
+import { tagsWithMark } from './contentMarks';
 import { RatingBadge } from './contentNote';
 import type { ContentType, LibraryItem } from './types';
 import { rovingKeys, useReturnFocus } from './a11y';
@@ -171,7 +172,7 @@ export function useItemActions(): ItemActions {
 /** "#word" finds hashtags, anything else looks at all details. */
 export function matchesQuery(item: LibraryItem, query: string): boolean {
   const q = query.trim().toLocaleLowerCase();
-  if (q.startsWith('#')) { const tag = q.slice(1).trim(); return item.tags.some(entry => entry.toLocaleLowerCase().startsWith(tag)); }
+  if (q.startsWith('#')) { const tag = q.slice(1).trim(); return tagsWithMark(item.tags, item.contentCheck).some(entry => entry.toLocaleLowerCase().startsWith(tag)); }
   return [item.title, item.description, item.type, item.subject, item.topic, item.genre, ...item.tags].join(' ').toLocaleLowerCase().includes(q);
 }
 

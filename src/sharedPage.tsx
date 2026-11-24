@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowDownToLine, Info, LoaderCircle, Plus, RefreshCw } from 'lucide-react';
 import { analyzeFiles } from './services/importer';
 import { aiIsReady, askAbout, readProjectText, ruleCheck, scanImported, useAutoScan, withAi } from './autoScan';
+import { tagsWithMark, useContentMarks } from './contentMarks';
 import { ContentNote } from './contentNote';
 import { stopGenerating, useLocalAi } from './localAi/engine';
 import { withOpinion, type ContentCheck } from './services/contentCheck';
@@ -53,7 +54,7 @@ function useExplanation(preview: ImportPreview | null): Explained {
       setState(current => ({ ...current, scanning: true }));
       try {
         const result = await withAi(`shared:${preview.id}`, async () => { owns = true; try { return await askAbout(project, preview.sourceName, { cancelled: () => !active, background: true }); } finally { owns = false; } });
-        if (active) setState({ check: withOpinion(check, result.age, result.suggestion.description), scanning: false, summary: result.suggestion.description, tags: mergeTags(preview.tags, result.suggestion.tags), subject: result.suggestion.subject, topic: result.suggestion.topic });
+        if (active) setState({ check: withOpinion(check, result.found, result.suggestion.description), scanning: false, summary: result.suggestion.description, tags: mergeTags(preview.tags, result.suggestion.tags), subject: result.suggestion.subject, topic: result.suggestion.topic });
       } catch { if (active) setState(current => ({ ...current, scanning: false })); }
     })().catch(() => undefined);
     return () => { active = false; if (owns) stopGenerating(); };
@@ -109,7 +110,9 @@ export function SharedPage({ hash, notify }: { hash: string; notify: (message: s
   const { engine } = useLocalAi();
   const [allowed, setAllowed] = useState(false);
   useEffect(() => setAllowed(false), [preview]);
-  const locked = explained.check?.rating === '18' && !allowed;
+  const { on: marks } = useContentMarks();
+  const tags = tagsWithMark(explained.tags, explained.check, marks);
+  const locked = marks && explained.check?.rating === '18' && !allowed;
 
   const importShared = async (preview: ImportPreview) => {
     try {
@@ -142,7 +145,7 @@ export function SharedPage({ hash, notify }: { hash: string; notify: (message: s
         <h2>{state.preview.title}</h2>
         <p>{state.preview.description || t('A project shared with you.')}</p>
         <small>{t('Link expires {0}', state.expires)}</small>
-        {explained.tags.length > 0 && <div className="tag-list">{explained.tags.map(tag => <span key={tag} className="tag">#{tag}</span>)}</div>}
+        {tags.length > 0 && <div className="tag-list">{tags.map(tag => <span key={tag} className={`tag ${tag === '18+' ? 'tag-18' : tag === '16+' ? 'tag-16' : ''}`}>#{tag}</span>)}</div>}
       </div>
       <div className="shared-actions">
         {locked && <button className="button" onClick={() => setAllowed(true)}>{t('I am old enough, continue')}</button>}
@@ -150,7 +153,7 @@ export function SharedPage({ hash, notify }: { hash: string; notify: (message: s
         <button className="button" disabled={locked} onClick={() => void downloadShared(state.preview)}><ArrowDownToLine size={15}/> {t('Download copy')}</button>
       </div>
     </div>}
-    {state.kind === 'ready' && <section className="panel shared-about" aria-live="polite">
+    {state.kind === 'ready' && (explained.summary || explained.scanning || (marks && explained.check) || engine === 'none') && <section className="panel shared-about" aria-live="polite">
       <h2>{t('What is this?')}</h2>
       {explained.summary && <p>{explained.summary}</p>}
       {explained.scanning && <p className="local-ai-line"><LoaderCircle size={16} className="spin"/> {t('The local AI is reading this project…')}</p>}
