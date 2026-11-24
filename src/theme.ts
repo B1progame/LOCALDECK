@@ -38,18 +38,42 @@ function hexToRgb(hex: string): [number, number, number] {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-/** Applies the theme to <html>. The same logic runs inline in index.html to avoid a flash. */
+type Rgb = [number, number, number];
+function relativeLuminance([r, g, b]: Rgb): number {
+  const channel = (value: number) => { const c = value / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+export function contrastRatio(a: Rgb, b: Rgb): number {
+  const [x, y] = [relativeLuminance(a), relativeLuminance(b)];
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/** The picked color, darkened in the light theme or lightened in dark ones until it is readable as text. */
+export function readableAccent(hex: string, light: boolean): { accent: Rgb; onAccent: string } {
+  const picked = hexToRgb(hex);
+  // Accent text sits on plain surfaces and on a 14% tint of itself, so check both.
+  const surfaces: Rgb[] = light ? [[255, 255, 255], [236, 235, 243]] : [[23, 24, 33], [37, 48, 73], [51, 42, 49], [43, 44, 59]];
+  const toward = light ? 0 : 255;
+  let accent = picked;
+  for (let step = 0; step <= 100; step++) {
+    accent = picked.map(value => Math.round(value + (toward - value) * step / 100)) as Rgb;
+    const tinted = surfaces.map(surface => surface.map((value, i) => value + (accent[i]! - value) * 0.14) as Rgb);
+    if ([...surfaces, ...tinted].every(surface => contrastRatio(accent, surface) >= 4.5)) break;
+  }
+  return { accent, onAccent: contrastRatio(accent, [255, 255, 255]) >= contrastRatio(accent, [20, 17, 31]) ? '#FFFFFF' : '#14111F' };
+}
+
+/** Applies the theme to <html>. index.html sets the theme before first paint; the accent follows here. */
 export function applyAppearance(value: Appearance): void {
   const root = document.documentElement;
   const resolved = resolve(value.theme);
   root.dataset.theme = resolved;
   root.style.colorScheme = resolved === 'pearl' ? 'light' : 'dark';
   if (value.accent) {
-    const [r, g, b] = hexToRgb(value.accent);
-    root.style.setProperty('--accent', value.accent);
-    root.style.setProperty('--accent-rgb', `${r} ${g} ${b}`);
-    const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-    root.style.setProperty('--on-accent', luminance > 0.55 ? '#14111F' : '#FFFFFF');
+    const { accent, onAccent } = readableAccent(value.accent, resolved === 'pearl');
+    root.style.setProperty('--accent', `rgb(${accent.join(' ')})`);
+    root.style.setProperty('--accent-rgb', accent.join(' '));
+    root.style.setProperty('--on-accent', onAccent);
   } else {
     root.style.removeProperty('--accent');
     root.style.removeProperty('--accent-rgb');

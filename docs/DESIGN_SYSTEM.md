@@ -12,16 +12,17 @@ All styling lives in `src/styles.css`. Theme logic lives in `src/theme.ts`, and 
 | Midnight | dark | `#090E1A` | `#121A2B` | `#7AA2F7` |
 | Forest | dark | `#090F0D` | `#121C18` | `#5DD5A2` |
 | Rose | dark | `#100C0F` | `#1C161A` | `#F08FB4` |
-| Pearl | light | `#F4F3F8` | `#FFFFFF` | `#6E4FE0` |
+| Pearl | light | `#F4F3F8` | `#FFFFFF` | `#6546D6` |
 | System | follows `prefers-color-scheme` | Pearl or Obsidian | | |
 
-A custom accent (Settings → Appearance) overrides `--accent`, `--accent-rgb` and `--on-accent` inline on `<html>`. `--on-accent` is chosen by luminance so button text stays readable. The top-bar sun/moon button switches between Pearl and Obsidian. Preferences are stored in `localStorage` under `localdeck-appearance`.
+A custom accent (Settings → Appearance) overrides `--accent`, `--accent-rgb` and `--on-accent` inline on `<html>`. `readableAccent` in `src/theme.ts` darkens the picked color in Pearl, or lightens it in the dark themes, until it reaches 4.5:1 as text on every surface and on its own 14% tint. `--on-accent` is whichever of white or near-black has more contrast. The top-bar sun/moon button switches between Pearl and Obsidian. Preferences are stored in `localStorage` under `localdeck-appearance`.
 
 ### Semantic tokens
 
 - Surfaces: `--bg`, `--sidebar`, `--surface` (cards, panels), `--elevated` (menus, dialogs, buttons), `--interactive` (hover fills, tracks), `--code-bg`, `--player-bg`, `--glass` (translucent bars), `--scrim`
-- Text: `--text`, `--text-2` (secondary), `--muted` (tertiary, metadata)
-- Lines: `--line`, `--line-strong`
+- Text: `--text`, `--text-2` (secondary), `--muted` (tertiary, metadata). All three reach 4.5:1 on every surface.
+- Lines: `--line`, `--line-strong` (decorative), `--field` (edges of inputs, chips and switches, at least 3:1)
+- Create-account green: `--go`
 - Accent: `--accent`, `--accent-2`, `--on-accent`, `--accent-soft` (14% tint), `--accent-softer` (8%), `--accent-line` (32%)
 - Status: `--success`, `--warning`, `--error`
 - Elevation: `--shadow-1` (resting), `--shadow-2` (hover/hero), `--shadow-3` (menus, dialogs)
@@ -69,4 +70,7 @@ A project without its own cover gets deterministic SVG artwork (`generatedCoverI
 - Cards lift 2px on hover, the art zooms 4.5%, and the play button fades in. On touch devices the play button is always visible.
 - Menus and dialogs use a short pop (140–180ms, `--ease`). Route changes fade and slide 8px through Motion.
 - Focus: a 2px accent outline on `:focus-visible` everywhere.
+- Keyboard: menus, tabs, chips and view switches use `rovingKeys` from `src/a11y.tsx` (arrow keys, Home, End). Overlays call `useReturnFocus`, and the page behind the player and quick search is `inert`. Escape closes them.
+- Pause: `MotionToggle` (top bar, and bottom right on the sign-in pages) sets `.ambient-paused` on `<html>` and stops every endless loop. Scripted motion must check `useStillMotion()`.
+- Touch: under `@media (pointer: coarse)` every control is at least 44px high.
 - Reduced motion: honours `prefers-reduced-motion`, and the Settings toggle adds `.reduce-motion` to `<html>`. Higher contrast: `prefers-contrast: more` strengthens lines and secondary text.

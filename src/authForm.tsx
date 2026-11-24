@@ -3,6 +3,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, Clock3, Eye, EyeOff, KeyRound, LoaderCircle, Mail, ShieldCheck, Sparkles, UserRound, WandSparkles } from 'lucide-react';
 import { firebaseAuthRequest } from './services/firebaseAuth';
+import { rovingKeys } from './a11y';
 import { useProfile } from './profile';
 import { PASSWORD_RULES, passwordProblem } from './services/passwordPolicy';
 import { ShareArt } from './shareArt';
@@ -78,7 +79,7 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
     try {
       await firebaseAuthRequest(apiKey, 'sendOobCode', { requestType: 'EMAIL_SIGNIN', email: email.trim(), continueUrl: `${location.origin}${import.meta.env.BASE_URL}`, canHandleCodeInApp: true });
       try { localStorage.setItem(EMAIL_FOR_LINK_KEY, email.trim()); } catch { /* the link page will ask for the email */ }
-      setMessage(`Sign-in link sent to ${email.trim()}. Open it on this device and you’re in — no password needed.`);
+      setMessage(`Sign-in link sent to ${email.trim()}. Open it on this device and you’re signed in, no password needed.`);
     } catch (reason) {
       const text = reason instanceof Error ? reason.message : '';
       setFormError(/not enabled/i.test(text) ? 'Email-link sign-in isn’t switched on yet. In Firebase → Authentication → Email/Password, enable “Email link (passwordless sign-in)”.' : text || 'The sign-in link could not be sent.');
@@ -101,14 +102,14 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
     </div>
     <div className="share-login-content auth-content">
       <a className="login-back-link" href={backHref}><ArrowLeft size={15}/> Back to shared links</a>
-      <div className="auth-switch" role="tablist" aria-label="Account">
-        {(['signin', 'signup'] as const).map(value => <button key={value} type="button" role="tab" aria-selected={mode === value} className={mode === value ? 'active' : ''} onClick={() => switchMode(value)}>
+      <div className="auth-switch" role="tablist" aria-label="Account" onKeyDown={event => rovingKeys(event, '[role="tab"]', true)}>
+        {(['signin', 'signup'] as const).map(value => <button key={value} id={`auth-tab-${value}`} type="button" role="tab" aria-selected={mode === value} aria-controls="auth-panel" tabIndex={mode === value ? 0 : -1} className={mode === value ? 'active' : ''} onClick={() => switchMode(value)}>
           {mode === value && <motion.span layoutId="auth-pill" className="auth-pill" transition={{ type: 'spring', bounce: .25, visualDuration: .35 }}/>}
           {value === 'signin' ? <><KeyRound size={15}/> Sign in</> : <><Sparkles size={15}/> Create account</>}
         </button>)}
       </div>
       <motion.div className="auth-stage" animate={{ height }} transition={{ type: 'spring', bounce: 0, visualDuration: .45 }}>
-      <div ref={inner} className="auth-stage-inner">
+      <div ref={inner} className="auth-stage-inner" id="auth-panel" role="tabpanel" aria-labelledby={`auth-tab-${mode}`}>
       <AnimatePresence mode="popLayout" initial={false} custom={signup}>
         <motion.div key={mode} className="auth-body" custom={signup}
           variants={{ enter: (toSignup: boolean) => ({ opacity: 0, x: toSignup ? 40 : -40 }), center: { opacity: 1, x: 0 }, exit: (toSignup: boolean) => ({ opacity: 0, x: toSignup ? -40 : 40 }) }}

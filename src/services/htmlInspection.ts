@@ -40,7 +40,7 @@ function nodeLabel(element: Element): string {
   const attributes = [role && `role=${JSON.stringify(role)}`, type && `type=${JSON.stringify(type)}`, name && `name=${JSON.stringify(name)}`].filter(Boolean);
   const attrText = attributes.length ? ` {${attributes.join(' ')}}` : '';
   const text = /^(h[1-6]|button|label|legend|summary)$/i.test(tag) ? short(element.textContent, 72) : '';
-  return `${tag}${id}${classes}${attrText}${text ? ` — ${JSON.stringify(text)}` : ''}`;
+  return `${tag}${id}${classes}${attrText}${text ? `: ${JSON.stringify(text)}` : ''}`;
 }
 
 export function inspectHtml(fileName: string, source: string): HtmlInspection {

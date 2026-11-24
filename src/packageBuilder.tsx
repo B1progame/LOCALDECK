@@ -245,7 +245,7 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
           <h3>{step(1, Boolean(html))} Project code</h3>
           {!pasteMode ? <button type="button" className={`pb-drop ${html ? 'filled' : ''}`} onClick={() => htmlInput.current?.click()} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) void readHtml(f); }}>
             {html ? <><FileCode2 size={20}/><b>{htmlName || 'Pasted code'}</b><small>{bytes(new Blob([html]).size)} · becomes index.html · click to replace</small></> : <><Upload size={20}/><b>Drop the HTML file here</b><small>or click to choose it</small></>}
-          </button> : <textarea className="pb-paste" value={html} onChange={e => { setHtml(e.target.value); setHtmlName('Pasted code'); }} onBlur={() => { if (!html.trim()) return; const doc = new DOMParser().parseFromString(html, 'text/html'); setMeta(m => ({ ...m, title: m.title || doc.title.trim(), description: m.description || doc.querySelector('meta[name="description"]')?.getAttribute('content') || '', language: m.language || doc.documentElement.lang || '' })); }} placeholder="<!doctype html>…" spellCheck={false}/>}
+          </button> : <textarea className="pb-paste" aria-label="HTML code of the project" value={html} onChange={e => { setHtml(e.target.value); setHtmlName('Pasted code'); }} onBlur={() => { if (!html.trim()) return; const doc = new DOMParser().parseFromString(html, 'text/html'); setMeta(m => ({ ...m, title: m.title || doc.title.trim(), description: m.description || doc.querySelector('meta[name="description"]')?.getAttribute('content') || '', language: m.language || doc.documentElement.lang || '' })); }} placeholder="<!doctype html>…" spellCheck={false}/>}
           <input ref={htmlInput} type="file" accept=".html,.htm,text/html" className="visually-hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void readHtml(f); }}/>
           <button type="button" className="text-button" onClick={() => setPasteMode(v => !v)}>{pasteMode ? 'Choose a file instead' : 'Paste code instead'}</button>
         </div>
@@ -265,7 +265,7 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
           <h3>{step(3, extras.length > 0)} Extra files <span className="muted-text">optional</span></h3>
           <div className="pb-cover-row">
             <button type="button" className="button" onClick={() => extraInput.current?.click()}><Paperclip size={15}/> Add files</button>
-            <span className="muted-text">Images, sounds, scripts, styles, data — keep the names your HTML uses.</span>
+            <span className="muted-text">Images, sounds, scripts, styles or data. Keep the names your HTML uses.</span>
           </div>
           <input ref={extraInput} type="file" multiple className="visually-hidden" onChange={e => { addExtras(e.target.files); e.target.value = ''; }}/>
           {extras.length > 0 && <div className="file-list pb-files">{extras.map(e => <div key={e.path} className="file-row">{e.url ? <img src={e.url} alt="" className="pb-thumb"/> : <FileText size={15}/>}<span>{e.path}</span><small>{bytes(e.file.size)}</small><button type="button" className="icon-button" aria-label={`Remove ${e.path}`} onClick={() => setExtras(list => list.filter(x => x.path !== e.path))}><Trash2 size={14}/></button></div>)}</div>}

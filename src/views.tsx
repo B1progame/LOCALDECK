@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { db } from './services/database';
 import { useProfile } from './profile';
+import { rovingKeys, useStillMotion } from './a11y';
 import { getAssets, type ItemSort } from './services/library';
 import type { Collection, ContentType, LibraryAsset, LibraryItem } from './types';
 import {
@@ -50,6 +51,7 @@ export function HomePage({ items, collections, add, tryDemos }: { items: Library
   const greeting = `${hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}${name ? `, ${name}` : ''}.`;
   const art = featured ? coverBackground(featured) : '';
   const FeaturedIcon = featured ? TYPE_ICON[featured.type] : Sparkles;
+  const still = useStillMotion();
   const { scrollY } = useScroll();
   const heroCopyY = useTransform(scrollY, [0, 420], [0, -36]);
   const heroCopyFade = useTransform(scrollY, [0, 380], [1, .35]);
@@ -64,10 +66,10 @@ export function HomePage({ items, collections, add, tryDemos }: { items: Library
     <section className={`hero-banner beam spotlight ${featured ? 'has-art' : ''}`}>
       {!featured && <span className="aurora" aria-hidden="true"><i/><i/><i/></span>}
       {featured && <span className="hero-backdrop" style={{ backgroundImage: art }} aria-hidden="true" />}
-      <motion.div className="hero-copy" style={{ y: heroCopyY, opacity: heroCopyFade }}>
+      <motion.div className="hero-copy" style={still ? { y: 0, opacity: 1 } : { y: heroCopyY, opacity: heroCopyFade }}>
         <div className="hero-kicker"><i /> {featured ? (featured.lastOpenedAt ? 'Continue where you left off' : featured.favorite ? 'One of your favorites' : 'Recently added') : 'Private by design'}</div>
         <h2>{featured ? featured.title : 'Your world, all in one place.'}</h2>
-        <p>{featured ? (featured.description || `${TYPE_LABEL[featured.type]}${featured.subject ? ` for ${featured.subject}` : ''}, ready to open offline.`) : 'Bring together learning sheets, games, tools and ideas. Nothing is uploaded — your library lives in this browser.'}</p>
+        <p>{featured ? (featured.description || `${TYPE_LABEL[featured.type]}${featured.subject ? ` for ${featured.subject}` : ''}, ready to open offline.`) : 'Bring together learning sheets, games, tools and ideas. Nothing is uploaded: your library lives in this browser.'}</p>
         {featured && <div className="hero-meta"><span><FeaturedIcon size={13}/> {TYPE_LABEL[featured.type]}</span>{featured.subject && <span>{featured.subject}</span>}<span>{featured.lastOpenedAt ? `Opened ${friendlyDate(featured.lastOpenedAt)}` : bytes(featured.storageSize)}</span></div>}
         <div className="hero-actions">
           <button className="button hero-button" onClick={() => featured ? a.open(featured) : add()}>{featured ? <><Play size={15} fill="currentColor"/> {OPEN_VERB[featured.type]}</> : <><Upload size={16}/> Import your first project</>}</button>
@@ -78,7 +80,7 @@ export function HomePage({ items, collections, add, tryDemos }: { items: Library
         </div>
       </motion.div>
       {featured
-        ? <div className="hero-art" aria-hidden="true"><motion.div className="hero-cover-card" style={{ backgroundImage: art, y: heroCardY, rotate: -3 }} whileHover={{ rotate: -1, scale: 1.04 }} transition={{ type: 'spring', bounce: .3 }} /></div>
+        ? <div className="hero-art" aria-hidden="true"><motion.div className="hero-cover-card" style={{ backgroundImage: art, y: still ? 0 : heroCardY, rotate: -3 }} whileHover={{ rotate: -1, scale: 1.04 }} transition={{ type: 'spring', bounce: .3 }} /></div>
         : <div className="hero-art" aria-hidden="true"><div className="hero-orbit orbit-one"/><div className="hero-orbit orbit-two"/><div className="hero-core"><img src={`${base}icon-512.png`} alt="" /></div><span className="hero-spark">✦</span></div>}
     </section>
 
@@ -86,7 +88,7 @@ export function HomePage({ items, collections, add, tryDemos }: { items: Library
       <button className="start-item" onClick={add}><span className="start-icon violet"><Upload size={18}/></span><span><b>Bring in a project</b><small>HTML, ZIP, PDF or a whole folder</small></span><ArrowRight size={16}/></button>
       <button className="start-item" onClick={() => go('learning')}><span className="start-icon mint"><BookOpen size={18}/></span><span><b>Make a learning space</b><small>Keep study material together by subject</small></span><ArrowRight size={16}/></button>
       <button className="start-item" onClick={() => go('studio')}><span className="start-icon peach"><Sparkles size={18}/></span><span><b>Prepare with AI studio</b><small>Turn HTML or a PDF into a ready project</small></span><ArrowRight size={16}/></button>
-      {tryDemos && <button className="start-item" onClick={tryDemos}><span className="start-icon blue"><Gamepad2 size={18}/></span><span><b>Try the demo projects</b><small>8 working examples to explore — remove them any time in Settings</small></span><ArrowRight size={16}/></button>}
+      {tryDemos && <button className="start-item" onClick={tryDemos}><span className="start-icon blue"><Gamepad2 size={18}/></span><span><b>Try the demo projects</b><small>8 working examples. Remove them any time in Settings.</small></span><ArrowRight size={16}/></button>}
     </div></section>}
 
     <Shelf title="Continue where you left off" detail="Recently opened on this device" items={recent.slice(1)} limit={4} seeAll={{ onClick: () => go('recent') }} />
@@ -117,7 +119,7 @@ const PAGE_META: Record<string, { title: string; description: string; icon: Luci
   library: { title: 'All items', description: 'Every project saved in this browser.', icon: Library, empty: ['Your library is ready for its first project', 'Import an HTML project, ZIP, PDF or folder. Everything stays on this device.'] },
   favorites: { title: 'Favorites', description: 'The projects you want to find quickly.', icon: Heart, empty: ['Nothing saved as a favorite yet', 'Tap the heart on any project to keep it here.'] },
   recent: { title: 'Recently opened', description: 'Pick up from the last thing you opened.', icon: Clock3, empty: ['Your recent projects will appear here', 'Open something from your library and it will be waiting for you.'] },
-  learning: { title: 'Learning hub', description: 'Study sheets, interactive lessons, quizzes, PDFs and presentations — organized by subject.', icon: BookOpen, empty: ['Start your learning space', 'Import Lernzettel, quizzes or PDFs and give them a subject to see them here.'] },
+  learning: { title: 'Learning hub', description: 'Study sheets, interactive lessons, quizzes, PDFs and presentations, organized by subject.', icon: BookOpen, empty: ['Start your learning space', 'Import Lernzettel, quizzes or PDFs and give them a subject to see them here.'] },
   games: { title: 'Games & apps', description: 'Games, tools, simulations and small applications.', icon: Gamepad2, empty: ['Nothing to play yet', 'Import an HTML game, app or simulation to see it here.'] },
 };
 
@@ -164,9 +166,9 @@ export function LibraryView({ page, items, query, setQuery, sort, setSort }: { p
         <span className="subject-initial">{name.slice(0, 1).toUpperCase()}</span><span><b>{name}</b><small>{count} item{count === 1 ? '' : 's'}</small></span></button>; })}
     </section>}
     {scope.length > 0 && <div className="library-toolbar">
-      <label className="field-search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder={`Search ${meta.title.toLowerCase()}…`} aria-label={`Search ${meta.title}`}/>{query && <button aria-label="Clear search" onClick={() => setQuery('')}><X size={15}/></button>}</label>
+      <label className="field-search"><Search size={16} aria-hidden="true"/><span className="field-label">Search</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Title, subject or tag"/>{query && <button aria-label="Clear search" onClick={() => setQuery('')}><X size={15}/></button>}</label>
       {page !== 'recent' && <label className="select-wrap"><ListFilter size={15}/><select aria-label="Sort projects" value={sort} onChange={e => setSort(e.target.value as ItemSort)}><option value="imported">Recently added</option><option value="opened">Last opened</option><option value="name">Name</option><option value="size">File size</option><option value="modified">Recently modified</option></select></label>}
-      {page !== 'recent' && <div className="segmented" role="radiogroup" aria-label="Layout"><button role="radio" aria-checked={view === 'grid'} className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="Grid view"><LayoutGrid size={16}/></button><button role="radio" aria-checked={view === 'list'} className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="List view"><List size={16}/></button></div>}
+      {page !== 'recent' && <div className="segmented" role="radiogroup" aria-label="Layout" onKeyDown={event => rovingKeys(event, '[role="radio"]', true)}><button role="radio" aria-checked={view === 'grid'} tabIndex={view === 'grid' ? 0 : -1} className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="Grid view"><LayoutGrid size={16}/></button><button role="radio" aria-checked={view === 'list'} tabIndex={view === 'list' ? 0 : -1} className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="List view"><List size={16}/></button></div>}
     </div>}
     {scope.length > 0 && typeOptions.length > 2 && <Chips label="Filter by type" options={typeOptions} value={type} onChange={setType} />}
 

@@ -8,9 +8,9 @@
     <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
     <link rel="icon" href="%BASE_URL%favicon-64.png" sizes="64x64" type="image/png" />
     <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png" />
-    <title>LocalDeck — Your library, all yours</title>
+    <title>LocalDeck: your offline library</title>
     <script>
-      // Apply the saved theme before first paint (mirrors applyAppearance in src/theme.ts).
+      // Set the saved theme before first paint. src/main.tsx applies the accent before React renders.
       (function () {
         try {
           var v = JSON.parse(localStorage.getItem('localdeck-appearance') || 'null') || {};
@@ -19,12 +19,6 @@
           var r = document.documentElement;
           r.dataset.theme = t;
           r.style.colorScheme = t === 'pearl' ? 'light' : 'dark';
-          if (/^#[0-9a-f]{6}$/i.test(v.accent || '')) {
-            var n = parseInt(v.accent.slice(1), 16), R = (n >> 16) & 255, G = (n >> 8) & 255, B = n & 255;
-            r.style.setProperty('--accent', v.accent);
-            r.style.setProperty('--accent-rgb', R + ' ' + G + ' ' + B);
-            r.style.setProperty('--on-accent', (0.2126 * R + 0.7152 * G + 0.0722 * B) / 255 > 0.55 ? '#14111F' : '#FFFFFF');
-          }
         } catch (e) {}
       })();
     </script>

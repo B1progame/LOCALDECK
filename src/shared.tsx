@@ -41,6 +41,7 @@ import {
   MoreHorizontal, PackageOpen, Pencil, Play, RefreshCw, Share2, Trash2, type LucideIcon,
 } from 'lucide-react';
 import type { ContentType, LibraryItem } from './types';
+import { rovingKeys, useReturnFocus } from './a11y';
 
 export type Page = 'item' | 'home' | 'library' | 'favorites' | 'recent' | 'learning' | 'games' | 'collections' | 'import' | 'studio' | 'storage' | 'sharing' | 'login' | 'settings';
 
@@ -165,7 +166,14 @@ export function itemSubtitle(item: LibraryItem): string { return [TYPE_LABEL[ite
 export function ItemMenu({ item, onClose }: { item: LibraryItem; onClose: () => void }) {
   const a = useItemActions();
   const run = (fn: () => void) => () => { onClose(); fn(); };
-  return <><button className="menu-dismiss" aria-label="Close project menu" onClick={onClose} /><div className="item-menu" role="menu">
+  const menu = useRef<HTMLDivElement>(null);
+  useReturnFocus();
+  React.useEffect(() => { menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus(); }, []);
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
+    rovingKeys(event, '[role="menuitem"]');
+  };
+  return <><button className="menu-dismiss" tabIndex={-1} aria-hidden="true" onClick={onClose} /><div ref={menu} className="item-menu" role="menu" aria-label={`Actions for ${item.title}`} onKeyDown={onKeyDown}>
     <button role="menuitem" onClick={run(() => a.details(item))}><Info size={15}/> View details</button>
     <button role="menuitem" onClick={run(() => a.edit(item))}><Pencil size={15}/> Edit details</button>
     {isHtmlItem(item) && <button role="menuitem" onClick={run(() => a.editCode(item))}><Code2 size={15}/> Edit HTML code</button>}
@@ -242,7 +250,7 @@ export function Shelf({ title, detail, items, limit = 8, seeAll }: { title: stri
 
 /** Single-choice filter chips with optional counts. */
 export function Chips<T extends string>({ options, value, onChange, label }: { options: Array<{ value: T; label: string; count?: number; icon?: LucideIcon }>; value: T; onChange: (value: T) => void; label: string }) {
-  return <div className="chips" role="radiogroup" aria-label={label}>{options.map(option => { const Icon = option.icon; return <button key={option.value} type="button" role="radio" aria-checked={value === option.value} className={`chip ${value === option.value ? 'active' : ''}`} onClick={() => onChange(option.value)}>{Icon && <Icon size={14}/>}{option.label}{option.count !== undefined && <small>{option.count}</small>}</button>; })}</div>;
+  return <div className="chips" role="radiogroup" aria-label={label} onKeyDown={event => rovingKeys(event, '[role="radio"]', true)}>{options.map(option => { const Icon = option.icon; return <button key={option.value} type="button" role="radio" aria-checked={value === option.value} tabIndex={value === option.value ? 0 : -1} className={`chip ${value === option.value ? 'active' : ''}`} onClick={() => onChange(option.value)}>{Icon && <Icon size={14}/>}{option.label}{option.count !== undefined && <small>{option.count}</small>}</button>; })}</div>;
 }
 
 /** Stable color for a free-text subject or genre name. */

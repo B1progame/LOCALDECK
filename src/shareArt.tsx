@@ -1,15 +1,14 @@
 /* Animated illustration for the sign-in / sharing screens.
    It tells the sharing story: your project → encrypted in the browser → a friend opens the link. */
 import { useEffect, useRef } from 'react';
+import { useStillMotion } from './a11y';
 
 const HEX = ['7f3a', 'c91e', '04bd', 'e27a', '9f10', '5ac3', 'b86d', '31f4', 'd0a9', '6e2c'];
 
 export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   const svg = useRef<SVGSVGElement>(null);
-  useEffect(() => {
-    const reduce = document.documentElement.classList.contains('reduce-motion') || matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduce) svg.current?.pauseAnimations();
-  }, []);
+  const still = useStillMotion();
+  useEffect(() => { if (still) svg.current?.pauseAnimations(); else svg.current?.unpauseAnimations(); }, [still]);
   return <div className={`share-art share-art-${mode}`} aria-hidden="true">
     <svg ref={svg} viewBox="10 96 400 300" className="share-art-svg">
       <defs>
