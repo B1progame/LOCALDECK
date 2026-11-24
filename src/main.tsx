@@ -36,7 +36,8 @@ import { BUNDLE_FORMAT } from './services/aiBundle';
 import { SharedPage, downloadBlob } from './sharedPage';
 import { ShareLinkField, ShareList, type ShareRecord } from './shareList';
 import { forgetShare, saveShare, shareUrl } from './services/savedShares';
-import { AdminPanel } from './adminPanel';
+import { AdminPage } from './adminPage';
+import { DEFAULT_ACCOUNT, getAccount, uploadShare, type ShareAccount } from './services/shareService';
 import { sendVerificationMail } from './services/verificationMail';
 import { rovingKeys, useBackgroundMotion, useConnection, useReturnFocus } from './a11y';
 import { isPdfPath } from './services/frameSource';
@@ -44,7 +45,7 @@ import { useProjectFrame } from './useProjectFrame';
 import { LanguagePicker, LanguageSettings } from './languageSettings';
 
 type AppRoute = { page: Page | 'shared'; sharedHash?: string; collectionId?: string; itemId?: string };
-type ModalState = { kind: 'edit' | 'collect' | 'collection' | 'subject' | 'entry' | 'restore' | 'share'; item?: LibraryItem; preview?: ImportPreview; conflicts?: number; shareUrl?: string; shareArchive?: Blob };
+type ModalState = { kind: 'edit' | 'collect' | 'collection' | 'subject' | 'entry' | 'restore' | 'share'; item?: LibraryItem; preview?: ImportPreview; conflicts?: number; shareUrl?: string; shareArchive?: Blob; shareAccount?: ShareAccount };
 type ShareSession = { token:string; exp:number; email:string; name:string; picture:string; admin?:boolean };
 type GoogleIdentity = { accounts:{ id:{ initialize:(options:{client_id:string;callback:(response:{credential:string})=>void;auto_select:boolean})=>void; renderButton:(target:HTMLElement,options:Record<string,string|number|boolean>)=>void } } };
 type LocalLanguageModel = { prompt:(input:string)=>Promise<string>; destroy?:()=>void };
@@ -73,7 +74,7 @@ function routeFromHash(): AppRoute {
   const [path, query = ''] = raw.split('?');
   if (path.startsWith('shared/')) return { page: 'shared', sharedHash: raw };
   if (path.startsWith('item/')) { try { return { page: 'item', itemId: decodeURIComponent(path.slice(5)) }; } catch { return { page: 'library' }; } }
-  const valid = new Set<Page>(['home','library','favorites','recent','learning','games','collections','import','studio','storage','sharing','login','settings']);
+  const valid = new Set<Page>(['home','library','favorites','recent','learning','games','collections','import','studio','storage','sharing','admin','login','settings']);
   return { page: valid.has(path as Page) ? path as Page : 'home', ...(path === 'collections' && new URLSearchParams(query).has('collection') ? { collectionId: new URLSearchParams(query).get('collection') ?? undefined } : {}) };
 }
 
@@ -93,6 +94,7 @@ function App() {
   const [sort, setSort] = useState<ItemSort>('imported');
   const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [shareProgress, setShareProgress] = useState(0);
   const [mobileNav, setMobileNav] = useState(false);
   const nextScroll = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -212,7 +214,7 @@ function App() {
     return result;
   }, [items, currentPage, query, route.collectionId, sort]);
 
-  const pageTitle = currentPage === 'item' ? items.find(x => x.id === route.itemId)?.title ?? t('Project') : currentPage === 'collections' && route.collectionId ? collections.find(x => x.id === route.collectionId)?.name ?? t('Collection') : ({ home:t('Home'), library:t('All items'), favorites:t('Favorites'), recent:t('Recently opened'), learning:t('Learning hub'), games:t('Games & apps'), collections:t('Collections'), import:t('Import center'), studio:t('AI studio'), storage:t('Storage & backups'), sharing:t('Shared links'), login:t('Sign in'), settings:t('Settings'), shared:t('Shared project') } as Record<string,string>)[currentPage];
+  const pageTitle = currentPage === 'item' ? items.find(x => x.id === route.itemId)?.title ?? t('Project') : currentPage === 'collections' && route.collectionId ? collections.find(x => x.id === route.collectionId)?.name ?? t('Collection') : ({ home:t('Home'), library:t('All items'), favorites:t('Favorites'), recent:t('Recently opened'), learning:t('Learning hub'), games:t('Games & apps'), collections:t('Collections'), import:t('Import center'), studio:t('AI studio'), storage:t('Storage & backups'), sharing:t('Shared links'), admin:t('Admin'), login:t('Sign in'), settings:t('Settings'), shared:t('Shared project') } as Record<string,string>)[currentPage];
 
   const openProject = (item: LibraryItem) => setPlaying(item);
   useEffect(() => { void demosEnabled().then(async on => { setDemosOn(on); if (on) { await syncDemos(); await refresh(); } }).catch(() => undefined); }, [refresh]);
@@ -283,7 +285,10 @@ function App() {
       notify(t('Sign in first. Your link is prepared right after.')); go('login'); return;
     }
     setBusy(true);
-    try { const shareArchive = await exportItem(item.id); setModal({ kind:'share', item, shareArchive }); }
+    try {
+      const [shareArchive, shareAccount] = await Promise.all([exportItem(item.id), getAccount((import.meta.env.VITE_SHARE_API_BASE??'').replace(/\/$/,''), getShareSession()!.token)]);
+      setModal({ kind:'share', item, shareArchive, shareAccount });
+    }
     catch (error) { notify(t('Share package could not be prepared: {0}', safeError(error)), true); }
     finally { setBusy(false); }
   };
@@ -299,13 +304,11 @@ function App() {
     if (item) void continueShare.current(item);
   }, [route.page, items]);
 
-  const createEncryptedShare = async (archive: Blob) => {
+  const createEncryptedShare = async (archive: Blob, limitMiB: number) => {
     const session=getShareSession(); const apiValue=(import.meta.env.VITE_SHARE_API_BASE??'').replace(/\/$/,'');
     if (!apiValue || !session) throw new Error(t('Sign in with Google from Shared links before creating a share.'));
-    const { payload, fragmentKey } = await encryptSharePackage(archive);
-    const response = await fetch(`${apiValue}/api/v1/shares`, { method:'POST', headers:{ Authorization:`Bearer ${session.token}`, 'content-type':'application/octet-stream' }, body:payload });
-    if (!response.ok) throw new Error(response.status === 401 ? t('Your sign-in expired. Sign in again and retry.') : response.status===429?t('The free account limit or upload rate limit was reached. Wait for an existing link to expire or delete one, then try again.') : t('Share upload failed ({0}).', response.status));
-    const data = await response.json() as { id:string; expiresAt:string };
+    const { payload, fragmentKey } = await encryptSharePackage(archive, limitMiB);
+    const data = await uploadShare(apiValue, session.token, payload, setShareProgress);
     return { id:data.id, url:shareUrl(data.id,fragmentKey), key:fragmentKey, expiresAt:data.expiresAt };
   };
 
@@ -346,11 +349,11 @@ function App() {
         setBusy(true);
         try {
           if (!modal.shareArchive) throw new Error(t('The local share package is no longer available. Close this dialog and prepare the link again.'));
-          const result = await createEncryptedShare(modal.shareArchive);
+          const result = await createEncryptedShare(modal.shareArchive, (modal.shareAccount??DEFAULT_ACCOUNT).limits.linkMiB);
           await saveShare(result.id,{ title:modal.item.title, type:modal.item.type, key:result.key, expiresAt:result.expiresAt }).catch(()=>undefined);
           setModal({ ...modal, shareUrl:result.url });
           notify(t('Encrypted share link created. Anyone with the full link can open this project until it expires.'));
-        } finally { setBusy(false); }
+        } finally { setBusy(false); setShareProgress(0); }
         return;
       } else if (modal?.kind === 'entry' && modal.preview) {
         setImportPreviews(list => list.map(preview => preview.id === modal.preview!.id ? modal.preview! : preview));
@@ -396,6 +399,7 @@ function App() {
         <NavItem page="studio" active={currentPage === 'studio'} label={t('AI studio')} icon={Sparkles} onNavigate={() => setMobileNav(false)} />
         <NavItem page="storage" active={currentPage === 'storage'} label={t('Storage & backups')} icon={Archive} onNavigate={() => setMobileNav(false)} />
         <NavItem page="sharing" active={currentPage === 'sharing'} label={t('Shared links')} icon={Cloud} onNavigate={() => setMobileNav(false)} />
+        {(currentPage === 'admin' || getShareSession()?.admin) && <NavItem page="admin" active={currentPage === 'admin'} label={t('Admin')} icon={ShieldCheck} onNavigate={() => setMobileNav(false)} />}
       </nav>
       <div className="sidebar-spacer" />
       <StorageMini storage={storage} items={items} />
@@ -420,6 +424,7 @@ function App() {
           {currentPage === 'studio' && <StudioPage items={items} notify={notify} onAdded={refresh} />}
           {currentPage === 'storage' && <StoragePage items={items} storage={storage} integrity={integrity} busy={busy} backup={performBackup} restore={() => restoreInput.current?.click()} requestPersistent={requestPersistentStorage} checkIntegrity={checkIntegrity} repair={runRepair} />}
           {currentPage === 'sharing' && <SharingPage notify={notify} />}
+          {currentPage === 'admin' && <AdminPage api={(import.meta.env.VITE_SHARE_API_BASE??'').replace(/\/$/,'')} session={getShareSession()} notify={notify} />}
           {currentPage === 'login' && <SharingPage notify={notify} loginOnly />}
           {currentPage === 'settings' && <SettingsPage notify={notify} appearance={appearance} setAppearance={setAppearance} demosOn={demosOn} busy={busy} onDemos={value => void toggleDemos(value)} reducedMotion={reducedMotion} onMotion={async value => { setReducedMotion(value); await db.settings.put({ id:'reduced-motion', value, updatedAt:Date.now() }); }} />}
           </>}
@@ -430,7 +435,7 @@ function App() {
     {!isLoginPage && <nav inert={behindSheet} className="tabbar" aria-label={t('Quick navigation')}>{([['home',t('Home'),Home],['library',t('Library'),Library],['learning',t('Learn'),BookOpen],['import',t('Import'),Upload]] as const).map(([page,label,Icon]) => <a key={page} href={`#/${page}`} className={currentPage === page ? 'active' : ''} aria-current={currentPage === page ? 'page' : undefined}>{currentPage === page && <motion.span layoutId="tab-pill" className="tab-pill" transition={{ type: 'spring', bounce: .25, visualDuration: .4 }}/>}<Icon size={21} strokeWidth={currentPage === page ? 2.2 : 1.8}/>{label}</a>)}<button type="button" onClick={() => setMobileNav(true)} aria-label={t('More destinations')}><Menu size={21} strokeWidth={1.8}/>{t('More')}</button></nav>}
     <AnimatePresence>{toast && <motion.div className={`toast ${toast.error ? 'toast-error' : ''}`} role={toast.error ? 'alert' : 'status'} initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:6 }}><span className="toast-icon">{toast.error ? '!' : '✓'}</span>{toast.message}</motion.div>}</AnimatePresence>
     <SearchOverlay open={searchOpen && !playing} onClose={() => { setSearchOpen(false); setGlobalQuery(''); }} value={globalQuery} onChange={setGlobalQuery} items={items} onOpen={item => { setSearchOpen(false); setGlobalQuery(''); go('item', `/${encodeURIComponent(item.id)}`); }} />
-    <AnimatePresence>{modal && <Modal modal={modal} collections={collections} busy={busy} onClose={() => { setModal(null); setDialogError(''); }} onEditCode={item=>setCodeEditorItem(item)} onSubmit={saveModal} error={dialogError} onPreviewChange={(update) => setModal(current => current?.preview ? { ...current, preview: { ...current.preview, ...update } } : current)} />}</AnimatePresence>
+    <AnimatePresence>{modal && <Modal modal={modal} progress={shareProgress} collections={collections} busy={busy} onClose={() => { setModal(null); setDialogError(''); }} onEditCode={item=>setCodeEditorItem(item)} onSubmit={saveModal} error={dialogError} onPreviewChange={(update) => setModal(current => current?.preview ? { ...current, preview: { ...current.preview, ...update } } : current)} />}</AnimatePresence>
     <AnimatePresence>{codeEditorItem && <HtmlCodeEditor item={codeEditorItem} onClose={()=>setCodeEditorItem(null)} onSaved={refresh} notify={notify} />}</AnimatePresence>
     <AnimatePresence>{playing && <Player key={playing.id} item={playing} close={closePlayer} onOpened={playerOpened} />}</AnimatePresence>
   </div></MotionConfig>;
@@ -622,17 +627,17 @@ function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boo
   const firebaseGithubEnabled=import.meta.env.VITE_FIREBASE_GITHUB_ENABLED==='true';
   const firebaseFacebookEnabled=import.meta.env.VITE_FIREBASE_FACEBOOK_ENABLED==='true';
   const [session,setSession]=useState<ShareSession|null>(()=>getShareSession());
-  const [shares,setShares]=useState<ShareRecord[]>([]); const [loading,setLoading]=useState(false); const [loaded,setLoaded]=useState(false); const [error,setError]=useState('');
+  const [shares,setShares]=useState<ShareRecord[]>([]); const [loading,setLoading]=useState(false); const [loaded,setLoaded]=useState(false); const [error,setError]=useState(''); const [account,setAccount]=useState<ShareAccount>(DEFAULT_ACCOUNT);
   const signIn=useCallback(async(credential:string,provider:'google'|'firebase'='google')=>{
     if(!api){setError(t('Sharing is not connected to a Cloudflare Worker yet.'));return;}
     setError('');setLoading(true);
-    try{let response:Response;try{response=await fetch(`${api}/api/v1/shares/auth/${provider}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credential})});}catch{throw new Error(t('Could not reach the LocalDeck sharing service. It may be offline, or this site’s address is not allowed by the Worker.'));}if(response.status===503)throw new Error(t('The sharing service is not finished setting up (its database tables are missing). Run the D1 schema step in docs/SHARING.md.'));if(!response.ok)throw new Error(response.status===429?t('Too many sign-in attempts. Please wait and try again.'):provider==='google'?t('Google could not verify this account for sharing.'):t('The sharing service could not verify this account.'));const profile=await response.json() as {email:string;name:string;picture:string;admin?:boolean};const next=saveShareSession(credential,profile);setSession(next);notify(t('Signed in as {0}.', profile.email));}
+    try{let response:Response;try{response=await fetch(`${api}/api/v1/shares/auth/${provider}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credential})});}catch{throw new Error(t('Could not reach the LocalDeck sharing service. It may be offline, or this site’s address is not allowed by the Worker.'));}if(response.status===503)throw new Error(t('The sharing service is not finished setting up (its database tables are missing). Run the D1 schema step in docs/SHARING.md.'));if(!response.ok)throw new Error(response.status===403?t('This account is blocked. Contact the operator of this service.'):response.status===429?t('Too many sign-in attempts. Please wait and try again.'):provider==='google'?t('Google could not verify this account for sharing.'):t('The sharing service could not verify this account.'));const profile=await response.json() as {email:string;name:string;picture:string;admin?:boolean};const next=saveShareSession(credential,profile);setSession(next);notify(t('Signed in as {0}.', profile.email));}
     catch(err){setError(safeError(err));}
     finally{setLoading(false);}
   },[api,notify,loginOnly]);
   const load=useCallback(async(current:ShareSession)=>{
     setLoading(true);
-    try{const response=await fetch(`${api}/api/v1/shares/owner/shares`,{headers:{Authorization:`Bearer ${current.token}`}});if(!response.ok){if(response.status===401){sessionStorage.removeItem(SHARE_SESSION_KEY);setSession(null);}throw new Error(response.status===429?t('Sharing requests are temporarily rate limited.'):t('Your sign-in expired. Please sign in again.'));}setShares(await response.json() as ShareRecord[]);setLoaded(true);}
+    try{const response=await fetch(`${api}/api/v1/shares/owner/shares`,{headers:{Authorization:`Bearer ${current.token}`}});if(!response.ok){if(response.status===401){sessionStorage.removeItem(SHARE_SESSION_KEY);setSession(null);}throw new Error(response.status===429?t('Sharing requests are temporarily rate limited.'):t('Your sign-in expired. Please sign in again.'));}setShares(await response.json() as ShareRecord[]);setLoaded(true);setAccount(await getAccount(api,current.token));}
     catch(err){setError(safeError(err));}
     finally{setLoading(false);}
   },[api]);
@@ -659,14 +664,14 @@ function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boo
       {loginOnly&&!firebaseApiKey&&<div className="share-config-note email-auth-config"><Mail size={16}/><span><b>{t('Email sign-up needs Firebase')}</b><small>{t('Connect the Firebase Web API key in GitHub Actions to enable email and password login.')}</small></span></div>}
       {!api&&<p className="share-setup-hint">{t('The Cloudflare sharing Worker URL is not configured in this build.')}</p>}
       {error&&<p className="dialog-error" role="alert">{error}</p>}
-      <div className="share-login-foot"><span><ShieldCheck size={14}/> {t('Encrypted before upload')}</span><span><Clock3 size={14}/> {t('Auto-deletes in 3 days')}</span></div>
+      <div className="share-login-foot"><span><ShieldCheck size={14}/> {t('Encrypted before upload')}</span><span><Clock3 size={14}/> {t('Links expire by themselves')}</span></div>
     </div>
   </section>;
   if(loginOnly&&firebaseConfigured&&api)return <div className="login-page-wrap"><a className="login-brand" href="#/home"><img src={`${base}icon-192.png`} alt=""/> LocalDeck</a><LanguagePicker/><LoginExperience apiKey={firebaseApiKey} backHref="#/sharing" error={error} onCredential={credential=>signIn(credential,'firebase')} social={mode=><FirebaseSocialButtons bare verb={mode==='signup'?'signup':'continue'} config={{apiKey:firebaseApiKey,projectId:firebaseProjectId,appId:firebaseAppId}} githubEnabled={firebaseGithubEnabled} facebookEnabled={firebaseFacebookEnabled} onCredential={credential=>signIn(credential,'firebase')}/>}/></div>;
   if(loginOnly)return <div className="login-page-wrap"><a className="login-brand" href="#/home"><img src={`${base}icon-192.png`} alt=""/> LocalDeck</a>{loginCard}</div>;
   return <><PageHeading eyebrow={t('Private sharing')} title={t('Shared links')} description={t('Sign in to create and manage your encrypted links. Anyone with a link can open it without an account.')}/>
-    {session&&<AccountProfileOffer account={session} notify={notify}/>}{!session?loginCard:<section className="share-manager panel"><div className="share-manager-heading"><span className="share-manager-icon"><Cloud size={19}/></span><div><h2>{t('Your encrypted links')}</h2><p>{session.admin&&<span className="admin-badge"><ShieldCheck size={12}/> {t('Admin')}</span>}{t('Signed in as {0}. Link data is encrypted before upload.', session.email)}</p></div><div className="share-session-actions"><button className="button" disabled={loading} onClick={()=>void load(session)}>{loading?<LoaderCircle size={15} className="spin"/>:<Activity size={15}/>} {t('Refresh')}</button><button className="button subtle" onClick={signOut}>{t('Sign out')}</button></div></div><div className="share-quota-note"><ShieldCheck size={16}/><span>{t('Per account: 48 MiB active storage · 24 MiB per link · 5 uploads/hour, 15/day · links expire in 3 days.')}</span></div>{error&&<p className="dialog-error" role="alert">{error}</p>}{loaded&&<ShareList shares={shares} onDelete={id=>void remove(id)}/>}{!loaded&&!loading&&<p className="share-setup-hint">{t('Your share list will load after sign-in. You can sign out at any time.')}</p>}</section>}
-    {session?.admin&&<AdminPanel api={api} token={session.token} notify={notify} onDeleted={()=>void load(session)}/>}
+    {session&&<AccountProfileOffer account={session} notify={notify}/>}{!session?loginCard:<section className="share-manager panel"><div className="share-manager-heading"><span className="share-manager-icon"><Cloud size={19}/></span><div><h2>{t('Your encrypted links')}</h2><p>{session.admin&&<span className="admin-badge"><ShieldCheck size={12}/> {t('Admin')}</span>}{t('Signed in as {0}. Link data is encrypted before upload.', session.email)}</p></div><div className="share-session-actions"><button className="button" disabled={loading} onClick={()=>void load(session)}>{loading?<LoaderCircle size={15} className="spin"/>:<Activity size={15}/>} {t('Refresh')}</button><button className="button subtle" onClick={signOut}>{t('Sign out')}</button></div></div><div className="share-quota-note"><ShieldCheck size={16}/><span>{t('Your limits: {0} MiB storage · {1} MiB per link · {2} uploads per hour, {3} per day · links stay online for {4} days.', account.limits.storageMiB, account.limits.linkMiB, account.limits.perHour, account.limits.perDay, account.limits.days)}</span></div>{error&&<p className="dialog-error" role="alert">{error}</p>}{loaded&&<ShareList shares={shares} onDelete={id=>void remove(id)}/>}{!loaded&&!loading&&<p className="share-setup-hint">{t('Your share list will load after sign-in. You can sign out at any time.')}</p>}</section>}
+    {session?.admin&&<a className="panel admin-link" href="#/admin"><span className="share-manager-icon"><ShieldCheck size={19}/></span><span><b>{t('Admin page')}</b><small>{t('Statistics, limits, accounts and all links')}</small></span><ArrowRight size={17}/></a>}
   </>;
 }
 
@@ -800,9 +805,11 @@ function SearchPanel({onClose,value,onChange,items,onOpen}:SearchProps) {
   return <motion.div className="search-overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}><motion.div className="search-panel" role="dialog" aria-modal="true" aria-label={t('Search your library')} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp')rovingKeys(event,'.search-panel-input input, .search-panel-results button');}} initial={{opacity:0,y:-10,scale:.99}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:-6}} transition={{duration:.16}}><div className="search-panel-input"><Search size={19} aria-hidden="true"/><label className="field-label" htmlFor="quick-search">{t('Search')}</label><input id="quick-search" ref={input} value={value} onChange={event=>onChange(event.target.value)} placeholder={t('Title, subject, topic or tag')}/><kbd>ESC</kbd><button className="icon-button" onClick={onClose} aria-label={t('Close search')}><X size={18}/></button></div>{value.trim()&&<div className="search-panel-results">{results.length?results.map(item=><button key={item.id} onClick={()=>onOpen(item)}><span className="search-result-icon"><PreviewIcon type={item.type}/></span><span><b>{item.title}</b><small>{item.subject||TYPE_LABEL[item.type]}</small></span><ArrowRight size={15}/></button>):<p>{t('No matches found. Try another title, subject, or tag.')}</p>}</div>}<div className="search-footer">{t('Search titles, subjects, topics, descriptions, and tags')}</div></motion.div></motion.div>;
 }
 
-function Modal({modal,collections,busy,onClose,onEditCode,onSubmit,error,onPreviewChange}:{modal:ModalState;collections:Collection[];busy:boolean;onClose:()=>void;onEditCode:(item:LibraryItem)=>void;onSubmit:(event:React.FormEvent<HTMLFormElement>)=>void;error:string;onPreviewChange:(update:Partial<ImportPreview>)=>void}) {
+function Modal({modal,progress,collections,busy,onClose,onEditCode,onSubmit,error,onPreviewChange}:{modal:ModalState;progress:number;collections:Collection[];busy:boolean;onClose:()=>void;onEditCode:(item:LibraryItem)=>void;onSubmit:(event:React.FormEvent<HTMLFormElement>)=>void;error:string;onPreviewChange:(update:Partial<ImportPreview>)=>void}) {
   const dialogRef=useRef<HTMLDialogElement>(null);
   useEffect(()=>{const dialog=dialogRef.current;if(!dialog)return;dialog.showModal();return()=>{if(dialog.open)dialog.close();};},[]);
+  const shareLimits=(modal.shareAccount??DEFAULT_ACCOUNT).limits;
+  const tooLarge=(modal.shareArchive?.size??0)+28>shareLimits.linkMiB*1024*1024;
   const title=modal.kind==='edit'?t('Edit project details'):modal.kind==='collect'?t('Add to collections'):modal.kind==='collection'?t('New collection'):modal.kind==='subject'?t('Add a subject'):modal.kind==='restore'?t('Restore a backup'):modal.kind==='share'?t('Create a private link'):t('Import details');
   return <motion.div className="modal-scrim" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}><motion.dialog ref={dialogRef} className="form-dialog" aria-labelledby="form-dialog-title" onCancel={event=>{event.preventDefault();onClose();}} initial={{opacity:0,y:10,scale:.985}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8,scale:.99}} transition={{duration:.18}}><form onSubmit={onSubmit}><button type="button" className="dialog-close icon-button" aria-label={t('Close')} onClick={onClose}><X size={18}/></button><div className="eyebrow">LocalDeck</div><h2 id="form-dialog-title">{title}</h2><p className="dialog-description">{modal.kind==='edit'?t('Adjust the details used to organize and search this project.'):modal.kind==='collection'?t('Create a space for a class, topic, or group of projects.'):modal.kind==='subject'?t('Add a subject that you can use across your learning materials.'):modal.kind==='restore'?t('Choose a LocalDeck ZIP backup. Existing project IDs will be kept as separate copies.'):modal.kind==='share'?t('Send this project as an encrypted link.'):t('Check the entry page and details for {0}.', modal.preview?.sourceName ?? t('this project'))}</p>
       {modal.kind==='edit'&&modal.item&&<><label className="form-field"><span>{t('Name')}</span><input name="title" defaultValue={modal.item.title} required maxLength={120}/></label><label className="form-field"><span>{t('Type')}</span><select name="type" defaultValue={modal.item.type}>{Object.entries(TYPE_LABEL).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label><label className="form-field"><span>{t('Subject or category')}</span><input name="subject" defaultValue={modal.item.subject}/></label><label className="form-field"><span>{t('Topic')}</span><input name="topic" defaultValue={modal.item.topic}/></label><label className="form-field"><span>{t('Description')}</span><textarea name="description" rows={3} defaultValue={modal.item.description}/></label><label className="form-field"><span>{t('Tags, separated by commas')}</span><input name="tags" defaultValue={modal.item.tags.join(', ')}/></label>{/\.html?$/i.test(modal.item.entryFile)&&<button type="button" className="button code-editor-launch" onClick={()=>onEditCode(modal.item!)}><Code2 size={15}/> {t('Edit HTML code')}</button>}</>}
@@ -810,11 +817,12 @@ function Modal({modal,collections,busy,onClose,onEditCode,onSubmit,error,onPrevi
       {modal.kind==='collection'&&<><label className="form-field"><span>{t('Name')}</span><input name="name" placeholder={t('e.g. Biology exam prep')} required maxLength={80}/></label><label className="form-field"><span>{t('Description')}</span><input name="description" placeholder={t('Optional')} maxLength={160}/></label></>}
       {modal.kind==='subject'&&<><label className="form-field"><span>{t('Subject name')}</span><input name="name" placeholder={t('e.g. Biology')} required maxLength={80}/></label><label className="form-field"><span>{t('Description')}</span><input name="description" placeholder={t('Optional')}/></label></>}
       {modal.kind==='restore'&&<label className="form-field"><span>{t('Backup ZIP')}</span><input name="backup" type="file" accept=".zip,application/zip" required/></label>}
-      {modal.kind==='share'&&!modal.shareUrl&&<><div className="privacy-note"><ShieldCheck size={17}/><span><b>{t('Encrypted before upload')}</b><small>{t('The project ZIP is encrypted in your browser. The link key stays in the URL fragment and is never sent to the sharing server. Recipients can keep a copy after downloading.')}</small></span></div><div className="share-item-summary"><span className="preview-icon"><PreviewIcon type={modal.item!.type}/></span><span><b>{modal.item!.title}</b><small>{t('{0} · ZIP package {1} · 24 MiB max per link', TYPE_LABEL[modal.item!.type], bytes(modal.shareArchive?.size ?? 0))}</small></span></div>{(modal.shareArchive?.size ?? 0)>24*1024*1024&&<p className="warning-text">{t('This ZIP is too large for free encrypted sharing. Export the project and reduce its size before trying again.')}</p>}<p className="share-setup-hint">{t('Signed in as {0} · 48 MiB active storage per account · links expire in 3 days.', getShareSession()?.email||t('Google account'))}</p></>}
+      {modal.kind==='share'&&!modal.shareUrl&&<><div className="privacy-note"><ShieldCheck size={17}/><span><b>{t('Encrypted before upload')}</b><small>{t('The project ZIP is encrypted in your browser. The link key stays in the URL fragment and is never sent to the sharing server. Recipients can keep a copy after downloading.')}</small></span></div><div className="share-item-summary"><span className="preview-icon"><PreviewIcon type={modal.item!.type}/></span><span><b>{modal.item!.title}</b><small>{t('{0} · ZIP package {1} · up to {2} MiB per link', TYPE_LABEL[modal.item!.type], bytes(modal.shareArchive?.size ?? 0), shareLimits.linkMiB)}</small></span></div>{tooLarge&&<p className="warning-text">{t('This ZIP is too large for free encrypted sharing. Export the project and reduce its size before trying again.')}</p>}<p className="share-setup-hint">{t('Signed in as {0} · {1} MiB storage · the link stays online for {2} days.', getShareSession()?.email||t('Google account'), shareLimits.storageMiB, shareLimits.days)}</p></>}
       {modal.kind==='share'&&modal.shareUrl&&<div className="share-created"><span className="share-created-icon"><Check size={20}/></span><h3>{t('Your encrypted link is ready')}</h3><p>{t('Anyone with this complete link can import “{0}” until it expires. Delete it anytime from Shared links.', modal.item?.title)}</p><ShareLinkField url={modal.shareUrl}/><p className="share-detail-note">{t('You find this link again under Shared links in this browser.')}</p></div>}
       {modal.kind==='entry'&&modal.preview&&<><label className="form-field"><span>{t('Project name')}</span><input value={modal.preview.title} onChange={event=>onPreviewChange({title:event.target.value})} required maxLength={120}/></label><label className="form-field"><span>{t('Type')}</span><select value={modal.preview.type} onChange={event=>onPreviewChange({type:event.target.value as ContentType})}>{Object.entries(TYPE_LABEL).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label><label className="form-field"><span>{t('Subject or category')}</span><input value={modal.preview.subject} onChange={event=>onPreviewChange({subject:event.target.value})}/></label><label className="form-field"><span>{t('Topic')}</span><input value={modal.preview.topic} onChange={event=>onPreviewChange({topic:event.target.value})}/></label><label className="form-field"><span>{t('Description')}</span><textarea rows={3} value={modal.preview.description} onChange={event=>onPreviewChange({description:event.target.value})}/></label><label className="form-field"><span>{t('Tags, separated by commas')}</span><input value={modal.preview.tags.join(', ')} onChange={event=>onPreviewChange({tags:event.target.value.split(',').map(x=>x.trim()).filter(Boolean)})}/></label>{modal.preview.entryCandidates.length>1&&<label className="form-field"><span>{t('Entry page')}</span><select value={modal.preview.selectedEntry} onChange={event=>onPreviewChange({selectedEntry:event.target.value})}>{modal.preview.entryCandidates.map(x=><option key={x} value={x}>{x}</option>)}</select></label>}<div className="compatibility-box"><ShieldCheck size={17}/><span><b>{modal.preview.report.score==='likely'?t('Likely to work offline'):t('Review compatibility notes')}</b><small>{modal.preview.report.findings.map(tm).join(' ')}</small></span></div><div className="dialog-footer"><button type="button" className="button" onClick={onClose}>{t('Cancel')}</button><button type="submit" className="button primary">{t('Use these details')}</button></div></>}
+      {modal.kind==='share'&&busy&&<div className={`progress-bar ${progress?'determinate':'indeterminate'}`} role="progressbar" aria-label={t('Uploading')} aria-valuenow={progress?Math.round(progress*100):undefined}><i style={progress?{width:`${Math.round(progress*100)}%`}:undefined}/></div>}
       {error&&<div className="dialog-error" role="alert">{error}</div>}
-      {modal.kind!=='entry'&&<div className="dialog-footer"><button type="button" className="button" onClick={onClose}>{modal.kind==='share'&&modal.shareUrl?t('Done'):t('Cancel')}</button>{modal.kind!=='share'||!modal.shareUrl?<button className="button primary" type="submit" disabled={busy||(modal.kind==='share'&&(modal.shareArchive?.size??0)>24*1024*1024)}>{modal.kind==='edit'?t('Save details'):modal.kind==='collect'?t('Save collections'):modal.kind==='collection'?t('Create collection'):modal.kind==='subject'?t('Save subject'):modal.kind==='share'?t('Encrypt & create link'):t('Restore backup')}</button>:null}</div>}
+      {modal.kind!=='entry'&&<div className="dialog-footer"><button type="button" className="button" onClick={onClose}>{modal.kind==='share'&&modal.shareUrl?t('Done'):t('Cancel')}</button>{modal.kind!=='share'||!modal.shareUrl?<button className="button primary" type="submit" disabled={busy||(modal.kind==='share'&&tooLarge)}>{modal.kind==='edit'?t('Save details'):modal.kind==='collect'?t('Save collections'):modal.kind==='collection'?t('Create collection'):modal.kind==='subject'?t('Save subject'):modal.kind==='share'?t('Encrypt & create link'):t('Restore backup')}</button>:null}</div>}
     </form></motion.dialog></motion.div>;
 }
 

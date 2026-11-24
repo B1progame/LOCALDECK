@@ -45,7 +45,7 @@ import {
 import type { ContentType, LibraryItem } from './types';
 import { rovingKeys, useReturnFocus } from './a11y';
 
-export type Page = 'item' | 'home' | 'library' | 'favorites' | 'recent' | 'learning' | 'games' | 'collections' | 'import' | 'studio' | 'storage' | 'sharing' | 'login' | 'settings';
+export type Page = 'item' | 'home' | 'library' | 'favorites' | 'recent' | 'learning' | 'games' | 'collections' | 'import' | 'studio' | 'storage' | 'sharing' | 'admin' | 'login' | 'settings';
 
 export const TYPE_LABEL: Record<ContentType, string> = { game: t('Game'), learning: t('Learning'), app: t('App'), tool: t('Tool'), simulation: t('Simulation'), presentation: t('Presentation'), document: 'PDF', quiz: t('Quiz'), other: t('Project') };
 

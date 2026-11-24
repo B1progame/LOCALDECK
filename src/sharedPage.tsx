@@ -5,6 +5,7 @@ import { ArrowDownToLine, Info, LoaderCircle, Plus, RefreshCw } from 'lucide-rea
 import { analyzeFiles } from './services/importer';
 import { createItem } from './services/library';
 import { fetchShare, parseSharedRoute, shareProblem, type ShareProblem } from './services/shareLink';
+import { downloadShare } from './services/shareService';
 import { rememberKey } from './services/savedShares';
 import { decryptSharePackage } from './services/sharing';
 import { createStoredZip } from './services/zip';
@@ -53,17 +54,16 @@ export function SharedPage({ hash, notify }: { hash: string; notify: (message: s
       const meta = await fetchShare(url);
       if (!active) return;
       if (!meta.response?.ok) { fail(shareProblem(meta.status)); return; }
-      const { expiresAt } = await meta.response.json() as { expiresAt: string };
+      const { expiresAt, parts = 1 } = await meta.response.json() as { expiresAt: string; parts?: number };
       show({ kind: 'loading', message: t('Downloading the encrypted project…') });
-      const blob = await fetchShare(`${url}/blob`, undefined, 1500, true);
+      const download = await downloadShare(url, parts, value => { if (parts > 1) show({ kind: 'loading', message: t('Downloading the encrypted project: {0}%', Math.round(value * 100)) }); });
       if (!active) return;
-      if (!blob.response?.ok) {
-        fail(blob.status === 404 ? { title: t('The project is still on its way'), message: t('A new share can take up to a minute to reach every location. Try again shortly.'), retry: true } : shareProblem(blob.status));
+      if ('failed' in download) {
+        fail(download.failed.status === 404 ? { title: t('The project is still on its way'), message: t('A new share can take up to a minute to reach every location. Try again shortly.'), retry: true } : shareProblem(download.failed.status));
         return;
       }
-      const encrypted = await blob.response.arrayBuffer();
       show({ kind: 'loading', message: t('Decrypting it on this device…') });
-      const clear = await decryptSharePackage(encrypted, key);
+      const clear = await decryptSharePackage(download.data, key);
       const previews = await analyzeFiles([new File([clear], `shared-${id}.zip`, { type: 'application/zip' })]);
       if (previews.length !== 1) throw new Error(t('The shared archive does not contain a valid project.'));
       void rememberKey(id, key, expiresAt).catch(() => undefined);

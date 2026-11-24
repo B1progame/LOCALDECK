@@ -1585,3 +1585,98 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 @media (max-width: 640px) { .share-row-actions { width: 100%; } .share-row-actions .button, .share-detail-actions .button { flex: 1; } }
 .share-list { grid-template-columns: minmax(0, 1fr); }
 .share-link-field input { width: 0; }
+
+/* ---------- Admin page ---------- */
+.admin-link { display: flex; align-items: center; gap: 14px; margin-top: 18px; color: inherit; }
+.admin-link > span:nth-child(2) { display: flex; flex: 1; flex-direction: column; }
+.admin-link small { color: var(--text-2); font-size: 13px; }
+.auth-privacy { margin-top: 12px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.admin-tabs { display: flex; gap: 4px; margin-bottom: 18px; padding: 4px; overflow-x: auto; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); scrollbar-width: none; }
+.admin-tabs::-webkit-scrollbar { display: none; }
+.admin-tabs button { display: inline-flex; flex: 1 0 auto; align-items: center; justify-content: center; gap: 7px; min-height: 42px; padding: 0 16px; border: 0; border-radius: 11px; background: none; color: var(--text-2); font-size: 14px; font-weight: 600; transition: background-color .18s ease, color .18s ease; }
+.admin-tabs button:hover { color: var(--text); }
+.admin-tabs button.active { background: var(--accent-soft); color: var(--accent); }
+.admin-tabs small { min-width: 22px; padding: 1px 7px; border-radius: 99px; background: var(--interactive); color: var(--text-2); font-size: 12px; text-align: center; }
+.admin-stats { margin: 0 0 12px; }
+.admin-stats > div { background: var(--surface); }
+.admin-stats dd { font-size: 26px; }
+.admin-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 12px; }
+.admin-meter > div { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 4px; color: var(--text-2); font-size: 13.5px; }
+.admin-meter b { color: var(--text); font-weight: 600; }
+.admin-meter .storage-track { display: block; height: 8px; margin: 8px 0 0; }
+.admin-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.admin-chart { margin: 0; padding: 18px 20px 14px; }
+.admin-chart figcaption { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.admin-chart figcaption span { flex: 1; color: var(--text-2); font-size: 13.5px; font-weight: 550; }
+.admin-chart figcaption b { font-size: 19px; font-weight: 650; letter-spacing: -.02em; }
+.admin-chart figcaption small { color: var(--muted); font-size: 12.5px; }
+.admin-bars { display: flex; align-items: flex-end; height: 112px; border-bottom: 1px solid var(--line-strong); border-radius: 4px 4px 0 0; }
+.admin-bar { display: flex; flex: 1; align-items: flex-end; justify-content: center; height: 100%; padding: 0 1px; }
+.admin-bar i { display: block; width: 100%; max-width: 14px; border-radius: 4px 4px 0 0; background: var(--accent); opacity: .72; transition: opacity .12s ease; }
+.admin-bar.active { background: var(--accent-softer); }
+.admin-bar.active i { opacity: 1; }
+.admin-axis { display: flex; justify-content: space-between; margin-top: 7px; color: var(--muted); font-size: 12px; }
+.admin-table { margin-top: 12px; }
+.admin-table summary { font-weight: 600; cursor: pointer; }
+.admin-table-scroll { margin-top: 14px; overflow-x: auto; }
+.admin-table table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.admin-table th, .admin-table td { padding: 8px 12px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.admin-table th:first-child { text-align: left; }
+.admin-table thead th { color: var(--muted); font-weight: 550; }
+.admin-search { max-width: none; }
+.admin-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.admin-account { border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.admin-account.open { border-color: var(--accent-line); }
+.admin-account-head { display: flex; align-items: center; gap: 13px; width: 100%; min-height: 64px; padding: 10px 16px; border: 0; border-radius: 16px; background: none; color: inherit; text-align: left; }
+.admin-account-head:hover { background: var(--accent-softer); }
+.admin-account.open .share-chevron { transform: rotate(180deg); }
+.admin-initial { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.admin-account.blocked .admin-initial { background: rgb(240 128 145 / .14); color: var(--error); }
+.admin-account-name { display: flex; flex: 1; min-width: 0; flex-direction: column; }
+.admin-account-name b, .admin-account-name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-account-name small { color: var(--muted); font-size: 12.5px; }
+.admin-tags { display: flex; flex: none; gap: 6px; }
+.admin-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; }
+.admin-tag.bad { background: rgb(240 128 145 / .14); color: var(--error); }
+.admin-account-numbers { display: flex; flex: none; flex-direction: column; align-items: flex-end; color: var(--text-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.admin-account-body { padding: 4px 16px 18px; }
+.admin-account-body h3, .admin-limits legend { font-size: 15px; font-weight: 650; }
+.admin-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 12px; margin: 0 0 20px; padding: 14px 16px; border-radius: 13px; background: var(--bg); }
+.admin-facts dt { color: var(--muted); font-size: 12.5px; }
+.admin-facts dd { margin: 2px 0 0; font-weight: 600; }
+.admin-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 14px; margin-top: 12px; }
+.admin-field { display: flex; flex-direction: column; gap: 5px; }
+.admin-field label { color: var(--text-2); font-size: 13px; font-weight: 550; }
+.admin-field small { color: var(--muted); font-size: 12px; }
+.admin-number { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 12px; border: 1px solid var(--field); border-radius: var(--r-md); background: var(--bg); }
+.admin-number:focus-within { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 1px; }
+.admin-number:has(input:invalid) { border-color: var(--error); }
+.admin-number input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none; color: var(--text); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.admin-number span { color: var(--muted); font-size: 13px; }
+.admin-limits fieldset { min-width: 0; margin: 22px 0 0; padding: 0; border: 0; }
+.admin-limits fieldset p { margin-top: 2px; }
+.admin-open { padding: 0 0 18px; border-bottom: 1px solid var(--line); }
+.admin-save { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 20px; }
+.admin-save small { color: var(--warning); font-size: 13px; }
+.admin-danger { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+.admin-log { display: grid; margin: 0; padding: 6px 20px; list-style: none; }
+.admin-log li { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.admin-log li:last-child { border-bottom: 0; }
+.admin-log li > span { display: flex; min-width: 0; flex-direction: column; }
+.admin-log b { font-weight: 600; }
+.admin-log small { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.admin-log li > small { flex: none; text-align: right; }
+@media (max-width: 860px) { .admin-charts { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .admin-tabs { margin-inline: -16px; border-inline: 0; border-radius: 0; padding-inline: 16px; }
+  .admin-tabs button { min-height: 44px; }
+  .admin-meters { grid-template-columns: 1fr; gap: 16px; }
+  .admin-account-head { flex-wrap: wrap; row-gap: 6px; }
+  .admin-account-name { flex-basis: calc(100% - 90px); }
+  .admin-tags { order: 5; }
+  .admin-account-numbers { flex: 1; flex-direction: row; justify-content: flex-end; gap: 10px; order: 6; }
+  .admin-fields { grid-template-columns: 1fr 1fr; }
+  .admin-save .button, .admin-danger .button { flex: 1 1 auto; }
+  .admin-log li { flex-direction: column; gap: 4px; }
+  .admin-log li > small { text-align: left; }
+}

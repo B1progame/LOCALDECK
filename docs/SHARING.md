@@ -4,14 +4,12 @@ Sharing is optional and stays off until you configure the app and Worker. Creati
 
 ## Limits and privacy
 
-- Maximum 24 MiB per encrypted upload.
-- Maximum 48 MiB of active shares per account and 512 MiB across the whole service.
-- Maximum 3 uploads in progress globally and 3 per account.
-- Maximum 5 upload attempts per account per hour, 15 per account per UTC day, and 100 upload attempts globally per UTC day.
-- Maximum 50 active links shown per account. Links expire after 3 days and owners can delete them sooner.
-- A client IP is limited to 40 authentication attempts and 120 share reads per hour. IP addresses are hashed before rate-limit records are stored.
+- Default limits: 24 MiB per link, 48 MiB per account, 512 MiB for the whole service, 5 uploads per hour and 15 per day for each account, 100 per day for the service, 3 days online. The admin can change them ([`ADMIN.md`](ADMIN.md)).
+- Links over 24 MiB are uploaded in parts of 20 MiB and open only when every part has arrived.
+- Maximum 50 active links shown per account. Owners can delete links at any time.
+- A client IP is limited to 240 authentication attempts and 200 share reads per hour. IP addresses are hashed before rate-limit records are stored.
 
-The browser encrypts each ZIP with AES-GCM before upload. Cloudflare stores ciphertext, an opaque random ID, owner ID, byte count, and timestamps; it never receives project names, plaintext project files, or the decryption key. The key stays after `#` in the link. The browser that created a link also keeps it locally (IndexedDB, never in backups) so the owner can show it again under **Shared links**; the record is removed when the link expires or is deleted. On another device the link cannot be shown, because the server does not know the key. Deleting a share immediately removes its D1 record and requests deletion of its KV object, so future downloads stop; recipients may keep a copy they downloaded earlier.
+The browser encrypts each ZIP with AES-GCM before upload. Cloudflare stores ciphertext, an opaque random ID, owner ID, byte count, download count, and timestamps. For each account that signs in it also stores name, email address, sign-in method, times and counters, which the admin can see. It never receives project names, plaintext project files, or the decryption key. The key stays after `#` in the link. The browser that created a link also keeps it locally (IndexedDB, never in backups) so the owner can show it again under **Shared links**; the record is removed when the link expires or is deleted. On another device the link cannot be shown, because the server does not know the key. Deleting a share immediately removes its D1 record and requests deletion of its KV object, so future downloads stop; recipients may keep a copy they downloaded earlier.
 
 Google sign-in uses only the standard identity scopes (email, profile, openid). The Google web client ID is public configuration and is embedded in the app build by design. There is no Google API key or OAuth client secret in the app. The Worker independently verifies the ID token signature, issuer, audience, expiry, and verified email against Google's rotating public keys before every owner action. The token is held in this tab's session storage and expires with Google's one-hour credential. No owner password or shared bearer token is stored in the repository.
 

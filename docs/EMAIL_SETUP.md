@@ -94,7 +94,7 @@ After changing `Code.gs`: **Deploy → Manage deployments → ✏️ → New ver
 
 # Admin account
 
-The admin sees all active links under **Shared links**, can delete any of them, and has no hourly or daily upload limit. Project contents stay encrypted, also for the admin. The address is stored only in Cloudflare.
+The admin gets an **Admin** page with statistics, limits, accounts and all links: [`ADMIN.md`](ADMIN.md). Project contents stay encrypted, also for the admin. The address is stored only in Cloudflare.
 
 ```powershell
 npx wrangler secret put ADMIN_EMAILS
@@ -106,4 +106,4 @@ Type the exact address of the Google account (several: separated by commas), the
 npx wrangler deploy
 ```
 
-Sign out in LocalDeck and choose **Continue with Google** again. An **Admin** label appears under **Shared links**. Only a Google sign-in counts; an email and password account with the same address is not an admin.
+Sign out in LocalDeck and choose **Continue with Google** again. An **Admin** entry appears in the menu. Only a Google sign-in counts; an email and password account with the same address is not an admin.

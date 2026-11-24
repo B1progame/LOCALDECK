@@ -17,6 +17,11 @@ function d1() {
   } };
 }
 
+function kv() {
+  const store = new Map();
+  return { store, async put(key, value, options) { store.set(key, { value, ttl: options.expirationTtl }); }, async delete(key) { store.delete(key); }, async get(key) { return store.get(key)?.value ?? null; } };
+}
+
 const b64 = value => Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64url');
 const pair = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
 const jwk = { ...await crypto.subtle.exportKey('jwk', pair.publicKey), kid: 'test-key' };
@@ -44,7 +49,7 @@ const SHARES = 'https://share.example/api/v1/shares';
 const SHARES_DB = d1();
 const env = {
   ALLOWED_ORIGIN: 'https://example.pages.dev', FIREBASE_PROJECT_ID: 'demo', ADMIN_EMAILS: 'Admin@Example.com', SHARES_DB,
-  SHARES_KV: { async put() {}, async delete() {}, async get() { return new ArrayBuffer(64); } },
+  SHARES_KV: kv(),
 };
 const mailEnv = { ...env, APP_URL: 'https://app.example/', MAIL_RELAY_URL: 'https://relay.example/exec', MAIL_RELAY_SECRET: 'relay-secret', FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'mail@demo.iam', private_key: pkcs8, project_id: 'demo' }) };
 const call = (path, credential, init = {}) => worker.fetch(new Request(SHARES + path, { ...init, headers: { ...(credential ? { Authorization: `Bearer ${credential}` } : {}), ...init.headers } }), env);
@@ -67,22 +72,24 @@ test('the overview is closed to everyone but the admin', async () => {
   assert.equal((await call('/admin/overview', person)).status, 403);
 });
 
-test('the admin sees all links without addresses and can delete any of them', async () => {
+test('the admin sees accounts and links, and can delete any link', async () => {
   const { id } = await (await upload(person)).json();
   const mine = await (await upload(admin)).json();
   const response = await call('/admin/overview', admin);
   assert.equal(response.status, 200);
-  const text = await response.text();
-  assert.doesNotMatch(text, /@/);
-  const data = JSON.parse(text);
+  const data = await response.json();
   assert.deepEqual([data.totals.links, data.totals.owners, data.totals.bytes, data.totals.uploadsToday], [2, 2, 128, 2]);
+  const account = data.accounts.find(entry => entry.email === 'person@example.com');
+  assert.deepEqual([account.uploads, account.links, account.bytes, account.uploadedBytes, account.provider, account.blocked], [1, 1, 64, 64, 'google.com', false]);
+  assert.deepEqual([data.days.length, data.days[0].uploads, data.days[0].bytes], [1, 2, 128]);
+  assert.equal(data.shares.find(share => share.id === id).owner, 'person@example.com');
   assert.equal(data.shares.find(share => share.id === id).mine, false);
   assert.equal(data.shares.find(share => share.id === mine.id).mine, true);
   assert.equal((await call(`/${mine.id}`, person, { method: 'DELETE' })).status, 404);
   assert.equal((await call(`/${id}`, admin, { method: 'DELETE' })).status, 200);
   assert.equal((await call(`/${id}`)).status, 410);
-  const freed = await SHARES_DB.prepare('SELECT active_bytes FROM user_storage WHERE owner_id = ?').bind('firebase:person-uid').first();
-  assert.equal(freed.active_bytes, 0);
+  assert.equal(env.SHARES_KV.store.has(id), false);
+  assert.equal((await (await call('/me', person)).json()).usage.bytes, 0);
 });
 
 test('the hourly upload limit applies to people but not to the admin', async () => {
@@ -149,6 +156,120 @@ test('the first sign-in after Google replaced its keys works', async () => {
 
 test('too many requests is reported as such, not as an expired sign-in', async () => {
   let last = 0;
-  for (let i = 0; i < 122; i++) last = (await call('/owner/shares', 'a.b.c', { headers: { 'CF-Connecting-IP': '198.51.100.7' } })).status;
+  for (let i = 0; i < 242; i++) last = (await call('/owner/shares', 'a.b.c', { headers: { 'CF-Connecting-IP': '198.51.100.7' } })).status;
   assert.equal(last, 429);
+});
+
+const asAdmin = (path, method, body) => call(path, admin, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+const overview = async () => (await call('/admin/overview', admin)).json();
+
+test('downloads are counted per link, per account and per day', async () => {
+  const { id } = await (await upload(admin)).json();
+  const before = (await overview()).days[0].downloads;
+  assert.equal((await call(`/${id}/blob`)).status, 200);
+  assert.equal((await call(`/${id}/blob`)).status, 200);
+  const data = await overview();
+  assert.equal(data.shares.find(share => share.id === id).downloads, 2);
+  assert.equal(data.days[0].downloads - before, 2);
+  assert.ok(data.accounts.find(account => account.mine).downloads >= 2);
+});
+
+test('limits can be changed by the admin only, and stay within what the service can carry', async () => {
+  assert.equal((await call('/admin/limits', person, { method: 'PUT', body: '{}' })).status, 403);
+  const changed = await (await asAdmin('/admin/limits', 'PUT', { users: { linkMiB: 10, storageMiB: 99999, perHour: 50, perDay: 2.5, days: 30 }, service: { totalMiB: 900, open: true } })).json();
+  assert.deepEqual(changed.users, { linkMiB: 10, storageMiB: 48, perHour: 50, perDay: 15, days: 30 });
+  assert.equal(changed.service.totalMiB, 900);
+  assert.equal(changed.admins.linkMiB, 80);
+  const guest = await token({ sub: 'limits-uid', email: 'limits@example.com' });
+  const me = await (await call('/me', guest)).json();
+  assert.deepEqual([me.admin, me.limits.linkMiB, me.limits.days], [false, 10, 30]);
+  const share = await (await upload(guest)).json();
+  assert.ok(Date.parse(share.expiresAt) - Date.now() > 29 * 86_400_000);
+  assert.equal(env.SHARES_KV.store.get(share.id).ttl, 30 * 86_400);
+  const large = new Uint8Array(11 * 1024 * 1024);
+  assert.equal((await call('', guest, { method: 'POST', body: large, headers: { 'content-length': String(large.length) } })).status, 413);
+});
+
+test('uploads can be paused for everyone but the admin', async () => {
+  const guest = await token({ sub: 'paused-uid', email: 'paused@example.com' });
+  await asAdmin('/admin/limits', 'PUT', { service: { open: false } });
+  const refused = await upload(guest);
+  assert.deepEqual([refused.status, (await refused.json()).error], [503, 'uploads_paused']);
+  assert.equal((await upload(admin)).status, 201);
+  await asAdmin('/admin/limits', 'PUT', { service: { open: true } });
+  assert.equal((await upload(guest)).status, 201);
+});
+
+test('one account can get its own limits', async () => {
+  const guest = await token({ sub: 'own-uid', email: 'own@example.com' });
+  await signIn(guest);
+  const path = `/admin/accounts/${encodeURIComponent('firebase:own-uid')}`;
+  assert.equal((await asAdmin(path, 'PUT', { limits: { linkMiB: 60, storageMiB: 200, perHour: 30, perDay: 60, days: 14 } })).status, 200);
+  assert.deepEqual((await (await call('/me', guest)).json()).limits, { linkMiB: 60, storageMiB: 200, perHour: 30, perDay: 60, days: 14 });
+  assert.equal((await asAdmin(path, 'PUT', { limits: null })).status, 200);
+  assert.equal((await (await call('/me', guest)).json()).limits.linkMiB, 10);
+  assert.equal((await asAdmin('/admin/accounts/firebase%3Anobody', 'PUT', { blocked: true })).status, 409);
+});
+
+test('a blocked account cannot sign in or upload, and an admin cannot block their own account', async () => {
+  const guest = await token({ sub: 'blocked-uid', email: 'blocked@example.com' });
+  await signIn(guest);
+  const path = `/admin/accounts/${encodeURIComponent('firebase:blocked-uid')}`;
+  assert.equal((await asAdmin(path, 'PUT', { blocked: true })).status, 200);
+  assert.equal((await signIn(guest)).error, 'blocked');
+  assert.deepEqual([(await upload(guest)).status], [403]);
+  assert.equal((await asAdmin(path, 'PUT', { blocked: false })).status, 200);
+  assert.equal((await upload(guest)).status, 201);
+  assert.equal((await asAdmin(`/admin/accounts/${encodeURIComponent('firebase:admin-uid')}`, 'PUT', { blocked: true })).status, 409);
+  const removed = await (await asAdmin(path + '/shares', 'DELETE')).json();
+  assert.equal(removed.removed, 1);
+  const log = (await overview()).log.map(entry => entry.action);
+  assert.deepEqual(log.slice(0, 3), ['delete_links', 'unblock', 'block']);
+});
+
+test('a large project is uploaded in parts and only opens when complete', async () => {
+  const part = 20 * 1024 * 1024, total = part + 1000;
+  const send = (path, method, size, extra = {}) => call(path, admin, { method, body: new Uint8Array(size).fill(7), headers: { 'content-length': String(size), ...extra } });
+  const first = await send('', 'POST', part, { 'x-share-size': String(total), 'x-share-parts': '2' });
+  assert.equal(first.status, 201);
+  const { id, parts } = await first.json();
+  assert.equal(parts, 2);
+  assert.equal((await call(`/${id}`)).status, 410);
+  assert.equal((await send(`/${id}/parts/1`, 'PUT', 999)).status, 413);
+  assert.equal((await send(`/${id}/parts/2`, 'PUT', 1000)).status, 404);
+  assert.equal((await call(`/${id}/parts/1`, person, { method: 'PUT', body: new Uint8Array(1000), headers: { 'content-length': '1000' } })).status, 404);
+  assert.deepEqual(await (await send(`/${id}/parts/1`, 'PUT', 1000)).json(), { complete: true });
+  assert.deepEqual([(await (await call(`/${id}`)).json()).parts, (await (await call(`/${id}/blob?part=1`)).arrayBuffer()).byteLength, (await call(`/${id}/blob?part=2`)).status], [2, 1000, 404]);
+  assert.equal((await call(`/${id}`, admin, { method: 'DELETE' })).status, 200);
+  assert.deepEqual([env.SHARES_KV.store.has(id), env.SHARES_KV.store.has(`${id}.1`)], [false, false]);
+});
+
+test('wrong part counts and sizes are refused', async () => {
+  const send = (size, extra) => call('', admin, { method: 'POST', body: new Uint8Array(size), headers: { 'content-length': String(size), ...extra } });
+  assert.equal((await send(100, { 'x-share-size': String(81 * 1024 * 1024), 'x-share-parts': '5' })).status, 413);
+  assert.equal((await send(100, { 'x-share-size': '100', 'x-share-parts': '3' })).status, 413);
+  assert.equal((await send(100, { 'x-share-size': 'x' })).status, 413);
+});
+
+test('the storage limit of an account holds', async () => {
+  const guest = await token({ sub: 'full-uid', email: 'full@example.com' });
+  await signIn(guest);
+  await asAdmin(`/admin/accounts/${encodeURIComponent('firebase:full-uid')}`, 'PUT', { limits: { linkMiB: 1, storageMiB: 1, perHour: 50, perDay: 50, days: 3 } });
+  const body = () => ({ method: 'POST', body: new Uint8Array(600 * 1024), headers: { 'content-length': String(600 * 1024) } });
+  const both = await Promise.all([call('', guest, body()), call('', guest, body())]);
+  assert.deepEqual(both.map(response => response.status).sort(), [201, 429]);
+  const refused = await call('', guest, body());
+  assert.equal((await refused.json()).error, 'user_storage_limit');
+});
+
+test('the cleanup removes unfinished uploads and expired links', async () => {
+  const { id } = await (await upload(admin)).json();
+  await SHARES_DB.prepare("UPDATE shares SET status = 'revoked', created_at = ? WHERE id = ?").bind(new Date(Date.now() - 3_600_000).toISOString(), id).run();
+  const second = await (await upload(admin)).json();
+  await SHARES_DB.prepare('UPDATE shares SET expires_at = ? WHERE id = ?').bind(new Date(Date.now() - 1000).toISOString(), second.id).run();
+  let done;
+  await worker.scheduled({}, env, { waitUntil(promise) { done = promise; } });
+  await done;
+  assert.equal(env.SHARES_KV.store.has(id), false);
+  assert.equal(await SHARES_DB.prepare('SELECT id FROM shares WHERE id IN (?, ?)').bind(id, second.id).first(), null);
 });

@@ -1,4 +1,4 @@
-const MAX_ENCRYPTED_BYTES = 24 * 1024 * 1024;
+const DEFAULT_LIMIT_MIB = 24;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const KEY_BYTES = 32;
@@ -17,9 +17,9 @@ function fromBase64Url(value: string): Uint8Array {
   return bytes;
 }
 
-export async function encryptSharePackage(archive: Blob): Promise<{ payload: Blob; fragmentKey: string }> {
+export async function encryptSharePackage(archive: Blob, limitMiB = DEFAULT_LIMIT_MIB): Promise<{ payload: Blob; fragmentKey: string }> {
   if (archive.size < 1) throw new Error('The project archive is empty.');
-  if (archive.size + IV_BYTES + TAG_BYTES > MAX_ENCRYPTED_BYTES) throw new Error('This project is larger than the 24 MiB free sharing limit.');
+  if (archive.size + IV_BYTES + TAG_BYTES > limitMiB * 1024 * 1024) throw new Error(`This project is larger than your limit of ${limitMiB} MiB per link.`);
   if (!crypto.subtle) throw new Error('This browser does not support secure project encryption. Open LocalDeck over HTTPS or localhost.');
   const key = await crypto.subtle.generateKey({ name:'AES-GCM', length:256 }, true, ['encrypt']);
   const rawKey = new Uint8Array(await crypto.subtle.exportKey('raw', key));

@@ -15,7 +15,7 @@ export function parseSharedRoute(hash: string): SharedRoute {
 
 /** Status 0 means the sharing service could not be reached at all. */
 export function shareProblem(status: number): ShareProblem {
-  if (status === 410) return { title: 'This share has ended', message: 'The link expired after three days, or its owner deleted it. Ask for a new link.', retry: false };
+  if (status === 410) return { title: 'This share has ended', message: 'The link expired, or its owner deleted it. Ask for a new link.', retry: false };
   if (status === 404) return { title: 'This link does not match a share', message: 'Part of the link may have been lost when it was copied. Ask for the complete link again.', retry: false };
   if (status === 429) return { title: 'Too many requests', message: 'Your network opened a lot of shares in the last hour. Wait a little, then try again.', retry: true };
   if (status === 0) return { title: 'The sharing service did not answer', message: 'Check your internet connection, then try again. The link itself is still fine.', retry: true };

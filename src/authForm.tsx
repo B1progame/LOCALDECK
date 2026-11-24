@@ -120,7 +120,7 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
           <span className={`share-login-kicker ${signup ? 'kicker-new' : ''}`}>{signup ? <><Sparkles size={14}/> {t('FREE · NO CARD NEEDED')}</> : <><ShieldCheck size={14}/> {t('PRIVATE BY DESIGN')}</>}</span>
           <h2>{signup ? <>{t('Create your')}<br/><em>{t('free account.')}</em></> : <>{t('Welcome')}<br/><em>{t('back to LocalDeck.')}</em></>}</h2>
           <p>{signup ? t('Only needed for sharing links. Your library itself never leaves this device.') : t('Sign in to create and manage encrypted links. People you send a link to don’t need an account.')}</p>
-          {signup && <ul className="auth-perks"><li><Check size={14}/> {t('Encrypted share links')}</li><li><Check size={14}/> {t('48 MiB free storage')}</li><li><Check size={14}/> {t('No ads, no tracking')}</li></ul>}
+          {signup && <ul className="auth-perks"><li><Check size={14}/> {t('Encrypted share links')}</li><li><Check size={14}/> {t('Free storage included')}</li><li><Check size={14}/> {t('No ads, no tracking')}</li></ul>}
           {social(mode)}
           <div className="auth-divider"><span>{signup ? t('or sign up with email') : t('or with email')}</span></div>
           <form onSubmit={event => void submit(event)} className="auth-form">
@@ -145,7 +145,8 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
       </AnimatePresence>
       </div>
       </motion.div>
-      <div className="share-login-foot"><span><ShieldCheck size={14}/> {t('Encrypted before upload')}</span><span><Clock3 size={14}/> {t('Links expire after 3 days')}</span></div>
+      <div className="share-login-foot"><span><ShieldCheck size={14}/> {t('Encrypted before upload')}</span><span><Clock3 size={14}/> {t('Links expire by themselves')}</span></div>
+      <p className="auth-privacy">{t('The operator of this sharing service sees your name, email address and usage, but never your projects.')}</p>
     </div>
   </section>;
 }
