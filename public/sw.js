@@ -56,10 +56,13 @@ async function projectAsset(requestUrl) {
     'Access-Control-Allow-Origin': '*',
     'Cache-Control': 'no-store',
   });
-  if (/\.html?$/i.test(path)) {
+  if (headers.get('Content-Type') !== 'application/pdf') {
     // The iframe needs a same-origin request so Safari can route it through
     // this service worker. This response policy makes its document opaque
-    // again before any project script runs, keeping it isolated from LOCALDECK.
+    // again before any project script runs, keeping it isolated from LocalDeck.
+    // It covers every file, not only .html: SVG, XML or a mislabelled file can
+    // also run scripts when a frame navigates to it. Only PDFs are exempt,
+    // because browsers refuse to show a sandboxed PDF and it runs no page script.
     const origin = requestUrl.origin;
     headers.set('Content-Security-Policy', `sandbox allow-scripts allow-forms allow-pointer-lock allow-presentation allow-downloads; default-src ${origin} data: blob:; script-src ${origin} 'unsafe-inline' blob:; style-src ${origin} 'unsafe-inline' blob:; img-src ${origin} data: blob:; font-src ${origin} data: blob:; media-src ${origin} data: blob:; connect-src ${origin} blob:; object-src 'none'; frame-src ${origin} blob:; form-action 'none'; base-uri ${origin}`);
     headers.set('Referrer-Policy', 'no-referrer');
