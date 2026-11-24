@@ -130,3 +130,25 @@ test('a short database outage does not break an open link', async () => {
   const response = await worker.fetch(new Request(`${SHARES}/${id}`), { ...env, SHARES_DB: flaky });
   assert.equal(response.status, 200);
 });
+
+test('the first sign-in after Google replaced its keys works', async () => {
+  const previous = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async (input, init) => {
+    if (!String(input).includes('securetoken@system')) return previous(input, init);
+    requests++;
+    return Response.json({ keys: [{ ...jwk, kid: 'rotated-key' }] });
+  };
+  const now = Math.floor(Date.now() / 1000);
+  const unsigned = `${b64({ alg: 'RS256', kid: 'rotated-key' })}.${b64({ iss: 'https://securetoken.google.com/demo', aud: 'demo', iat: now, exp: now + 3000, sub: 'rotated', email: 'rotated@example.com', email_verified: true })}`;
+  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, new TextEncoder().encode(unsigned));
+  assert.equal((await signIn(`${unsigned}.${Buffer.from(signature).toString('base64url')}`)).email, 'rotated@example.com');
+  assert.equal(requests, 1);
+  globalThis.fetch = previous;
+});
+
+test('too many requests is reported as such, not as an expired sign-in', async () => {
+  let last = 0;
+  for (let i = 0; i < 122; i++) last = (await call('/owner/shares', 'a.b.c', { headers: { 'CF-Connecting-IP': '198.51.100.7' } })).status;
+  assert.equal(last, 429);
+});

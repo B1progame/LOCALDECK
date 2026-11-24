@@ -1,83 +1,69 @@
 import { initializeApp, getApps } from '@firebase/app';
 import {
+  browserPopupRedirectResolver,
   browserSessionPersistence,
   FacebookAuthProvider,
   getAuth,
-  getRedirectResult,
   GithubAuthProvider,
   GoogleAuthProvider,
+  initializeAuth,
   reload,
   sendEmailVerification,
-  setPersistence,
   signInWithPopup,
-  signInWithRedirect,
+  type Auth,
   type UserCredential,
 } from '@firebase/auth';
 import { requestBrandedMail } from './verificationMail';
 
 export type FirebaseSocialProvider = 'google' | 'github' | 'facebook';
 export type FirebaseSocialConfig = { apiKey: string; projectId: string; appId: string };
-export type FirebaseSocialProfile = { email: string; name: string; picture: string };
-let redirectResultCheck: Promise<{ token?: string; profile?: FirebaseSocialProfile; verificationSent?: boolean } | null> | null = null;
+export type SocialSignIn = { token?: string; verificationSent?: boolean };
 
-function getAuthClient(config: FirebaseSocialConfig) {
-  const appName = 'localdeck-sharing-auth';
-  const app = getApps().find(candidate => candidate.name === appName) ?? initializeApp({
-    apiKey: config.apiKey,
-    authDomain: `${config.projectId}.firebaseapp.com`,
-    projectId: config.projectId,
-    appId: config.appId,
-  }, appName);
-  return getAuth(app);
+const APP_NAME = 'localdeck-sharing-auth';
+let prepared: Promise<Auth> | null = null;
+
+function createAuth(config: FirebaseSocialConfig): Auth {
+  const existing = getApps().find(candidate => candidate.name === APP_NAME);
+  if (existing) return getAuth(existing);
+  const app = initializeApp({ apiKey: config.apiKey, authDomain: `${config.projectId}.firebaseapp.com`, projectId: config.projectId, appId: config.appId }, APP_NAME);
+  return initializeAuth(app, { persistence: browserSessionPersistence, popupRedirectResolver: browserPopupRedirectResolver });
 }
 
-function createProvider(providerName: FirebaseSocialProvider) {
-  const provider = providerName === 'google'
-    ? new GoogleAuthProvider()
-    : providerName === 'github' ? new GithubAuthProvider() : new FacebookAuthProvider();
-  provider.addScope(providerName === 'github' ? 'user:email' : 'email');
+/** Loads everything the sign-in window needs before the first click.
+    Firebase otherwise fetches its scripts during the click. Safari then no longer counts the window as
+    opened by the user and blocks it, so people had to sign in twice. */
+export function prepareSocialSignIn(config: FirebaseSocialConfig): Promise<Auth> {
+  prepared ??= (async () => {
+    const auth = createAuth(config);
+    await auth.authStateReady();
+    // Not part of Firebase's public types. Without it, only the preloading is lost.
+    const resolver = (auth as unknown as { _popupRedirectResolver?: { _initialize?: (auth: Auth) => Promise<unknown> } })._popupRedirectResolver;
+    await resolver?._initialize?.(auth);
+    return auth;
+  })().catch(error => { prepared = null; throw error; });
+  return prepared;
+}
+
+function createProvider(name: FirebaseSocialProvider) {
+  const provider = name === 'google' ? new GoogleAuthProvider() : name === 'github' ? new GithubAuthProvider() : new FacebookAuthProvider();
+  provider.addScope(name === 'github' ? 'user:email' : 'email');
   return provider;
 }
 
-async function finishSignIn(result: UserCredential): Promise<{ token?: string; profile?: FirebaseSocialProfile; verificationSent?: boolean }> {
-  const user = result.user;
+async function finishSignIn({ user }: UserCredential): Promise<SocialSignIn> {
   await reload(user);
-  if (!user.email) {
-    throw new Error('The provider did not share an email address. Add an email to that account and allow LocalDeck to use it.');
-  }
+  if (!user.email) throw new Error('The provider did not share an email address. Add an email to that account and allow LocalDeck to use it.');
   if (!user.emailVerified) {
     if (!await requestBrandedMail(await user.getIdToken())) await sendEmailVerification(user, { url: `${window.location.origin}${import.meta.env.BASE_URL}#/sharing` });
     return { verificationSent: true };
   }
-  return {
-    token: await user.getIdToken(true),
-    profile: { email: user.email, name: user.displayName || user.email, picture: user.photoURL || '' },
-  };
+  return { token: await user.getIdToken(true) };
 }
 
-/** Opens the provider in a popup. Resolves null when the browser forced a redirect instead. */
-export async function beginFirebaseSocialSignIn(providerName: FirebaseSocialProvider, config: FirebaseSocialConfig): Promise<{ token?: string; profile?: FirebaseSocialProfile; verificationSent?: boolean } | null> {
-  const auth = getAuthClient(config);
-  await setPersistence(auth, browserSessionPersistence);
+/** Must run directly inside the click: nothing may be awaited before the window opens.
+    There is no redirect fallback. Browsers keep github.io and firebaseapp.com apart, so the result of a
+    redirect never reaches this page. */
+export function openSocialSignIn(auth: Auth, name: FirebaseSocialProvider): Promise<SocialSignIn> {
   auth.useDeviceLanguage();
-  try {
-    return await finishSignIn(await signInWithPopup(auth, createProvider(providerName)));
-  } catch (error) {
-    const code = (error as { code?: string })?.code;
-    if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
-      await signInWithRedirect(auth, createProvider(providerName));
-      return null;
-    }
-    throw error;
-  }
-}
-
-export async function finishFirebaseSocialSignIn(config: FirebaseSocialConfig) {
-  if (!redirectResultCheck) redirectResultCheck = (async () => {
-    const auth = getAuthClient(config);
-    await setPersistence(auth, browserSessionPersistence);
-    const result = await getRedirectResult(auth);
-    return result ? finishSignIn(result) : null;
-  })();
-  return redirectResultCheck;
+  return signInWithPopup(auth, createProvider(name)).then(finishSignIn);
 }

@@ -25,7 +25,7 @@ const MAX_USER_UPLOADS_PER_HOUR = 5;
 const MAX_USER_UPLOADS_PER_DAY = 15;
 const MAX_GLOBAL_UPLOADS_PER_DAY = 100;
 const MAX_IP_READS_PER_HOUR = 120;
-const MAX_IP_AUTH_PER_HOUR = 40;
+const MAX_IP_AUTH_PER_HOUR = 120;
 const MAX_IP_MAILS_PER_HOUR = 8;
 const MAX_MAILS_PER_DAY = 90;
 const MAIL_WAIT_MS = 120_000;
@@ -94,9 +94,9 @@ async function rateLimitIp(env: Env, request: Request, table: 'auth_windows' | '
   return (row?.count ?? 0) <= limit;
 }
 
-async function getGoogleKeys(): Promise<GoogleJwk[]> {
-  if (googleKeys && googleKeys.expiresAt > Date.now()) return googleKeys.keys;
-  const result = await fetch('https://www.googleapis.com/oauth2/v3/certs', { cf: { cacheTtl: 3600, cacheEverything: true } });
+async function getGoogleKeys(fresh = false): Promise<GoogleJwk[]> {
+  if (!fresh && googleKeys && googleKeys.expiresAt > Date.now()) return googleKeys.keys;
+  const result = await fetch('https://www.googleapis.com/oauth2/v3/certs', fresh ? { cf: { cacheTtl: 0 } } : { cf: { cacheTtl: 3600, cacheEverything: true } });
   if (!result.ok) throw new Error('Google signing keys are temporarily unavailable.');
   const data = await result.json() as { keys: GoogleJwk[] };
   if (!Array.isArray(data.keys)) throw new Error('Google signing keys are invalid.');
@@ -118,8 +118,9 @@ async function verifyGoogleCredential(token: string, env: Env): Promise<Owner | 
     if (claims.aud !== env.GOOGLE_CLIENT_ID && !(Array.isArray(claims.aud) && claims.aud.includes(env.GOOGLE_CLIENT_ID) && claims.azp === env.GOOGLE_CLIENT_ID)) return null;
     const now = Math.floor(Date.now() / 1000);
     if (!Number.isFinite(claims.exp) || claims.exp <= now || !Number.isFinite(claims.iat) || claims.iat > now + 300 || claims.iat < now - 7200 || (claims.nbf !== undefined && claims.nbf > now + 300)) return null;
-    const jwk = (await getGoogleKeys()).find(key => key.kid === header.kid);
-    if (!jwk) { googleKeys = null; return null; }
+    // Google replaces its keys regularly. Look again before refusing, so the first sign-in after a change works.
+    const jwk = (await getGoogleKeys()).find(key => key.kid === header.kid) ?? (await getGoogleKeys(true)).find(key => key.kid === header.kid);
+    if (!jwk) return null;
     const publicKey = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
     const rawSignature = b64url(parts[2]);
     const signature = new Uint8Array(rawSignature.byteLength);
@@ -130,9 +131,9 @@ async function verifyGoogleCredential(token: string, env: Env): Promise<Owner | 
   } catch { return null; }
 }
 
-async function getFirebaseKeys(): Promise<GoogleJwk[]> {
-  if (firebaseKeys && firebaseKeys.expiresAt > Date.now()) return firebaseKeys.keys;
-  const result = await fetch('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com', { cf: { cacheTtl: 3600, cacheEverything: true } });
+async function getFirebaseKeys(fresh = false): Promise<GoogleJwk[]> {
+  if (!fresh && firebaseKeys && firebaseKeys.expiresAt > Date.now()) return firebaseKeys.keys;
+  const result = await fetch('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com', fresh ? { cf: { cacheTtl: 0 } } : { cf: { cacheTtl: 3600, cacheEverything: true } });
   if (!result.ok) throw new Error('Firebase signing keys are temporarily unavailable.');
   const data = await result.json() as { keys: GoogleJwk[] };
   if (!Array.isArray(data.keys)) throw new Error('Firebase signing keys are invalid.');
@@ -160,8 +161,8 @@ async function verifyFirebaseToken(token: string, env: Env): Promise<(FirebaseCl
     if (claims.iss !== `https://securetoken.google.com/${projectId}` || claims.aud !== projectId) return null;
     const now = Math.floor(Date.now() / 1000);
     if (!Number.isFinite(claims.exp) || claims.exp <= now || !Number.isFinite(claims.iat) || claims.iat > now + 300 || claims.iat < now - 3600 || (claims.auth_time !== undefined && (!Number.isFinite(claims.auth_time) || claims.auth_time > now + 300))) return null;
-    const jwk = (await getFirebaseKeys()).find(key => key.kid === header.kid);
-    if (!jwk) { firebaseKeys = null; return null; }
+    const jwk = (await getFirebaseKeys()).find(key => key.kid === header.kid) ?? (await getFirebaseKeys(true)).find(key => key.kid === header.kid);
+    if (!jwk) return null;
     const publicKey = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
     const rawSignature = b64url(parts[2]);
     const signature = new Uint8Array(rawSignature.byteLength); signature.set(rawSignature);
@@ -178,9 +179,13 @@ async function verifyFirebaseCredential(token: string, env: Env): Promise<Owner 
   return { id: `firebase:${claims.sub}`, email: claims.email.slice(0, 320), name: (claims.name || claims.email).slice(0, 120), picture: (claims.picture || '').slice(0, 1000), admin };
 }
 
+/** Kept apart from "not signed in", so the app does not ask people to sign in again when they only have to wait. */
+class RateLimited extends Error {}
+
 async function isAuthorized(request: Request, env: Env): Promise<Owner | null> {
   const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-  if (!token || token.length > 8192 || !await rateLimitIp(env, request, 'auth_windows', MAX_IP_AUTH_PER_HOUR)) return null;
+  if (!token || token.length > 8192) return null;
+  if (!await rateLimitIp(env, request, 'auth_windows', MAX_IP_AUTH_PER_HOUR)) throw new RateLimited();
   try {
     const claims = decodeJson<{ iss?: string }>(token.split('.')[1] ?? '');
     return claims.iss === `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}` ? verifyFirebaseCredential(token, env) : verifyGoogleCredential(token, env);
@@ -293,11 +298,13 @@ const worker = {
       if (request.method !== 'GET') return await worker.handle(request, env);
       try { return await worker.handle(request, env); }
       catch (error) {
+        if (error instanceof RateLimited) throw error;
         console.error('read_retry', error);
         await new Promise(resolve => setTimeout(resolve, 150));
         return await worker.handle(request, env);
       }
     } catch (error) {
+      if (error instanceof RateLimited) return json({ error: 'rate_limited' }, 429, cors(request, env));
       console.error('unhandled_request_error', error);
       return json({ error: 'service_unavailable' }, 503, cors(request, env));
     }

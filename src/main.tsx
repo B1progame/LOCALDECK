@@ -16,7 +16,7 @@ import { exportItem, exportLibrary, restoreLibrary } from './services/backups';
 import { buildHtmlHandoffPrompt, inspectHtml, type HtmlInspection } from './services/htmlInspection';
 import { buildLocalScanContext, LOCAL_SCAN_SYSTEM_PROMPT } from './services/localAi';
 import { firebaseAuthRequest } from './services/firebaseAuth';
-import { beginFirebaseSocialSignIn, finishFirebaseSocialSignIn, type FirebaseSocialProvider } from './services/firebaseSocialAuth';
+import { FirebaseSocialButtons } from './socialButtons';
 import {
   addToCollection, checkLibraryIntegrity, createCollection, createItem, deleteCollection, deleteItem, duplicateItem,
   finishOpenSession, getAllItems, getAssets, getCollections, replaceItemFiles, updateHtmlAsset,
@@ -55,6 +55,7 @@ const NAV: Array<{ page: Page; label: string; icon: React.ComponentType<{ size?:
   { page: 'collections', label: 'Collections', icon: Archive }, { page: 'sharing', label: 'Shared links', icon: Cloud },
 ];
 const SHARE_SESSION_KEY = 'localdeck-google-share-session';
+const PENDING_SHARE_KEY = 'localdeck-pending-share';
 function getShareSession():ShareSession|null {
   try { const value=JSON.parse(sessionStorage.getItem(SHARE_SESSION_KEY)||'null') as ShareSession|null; if(!value?.token||!value.exp||value.exp*1000<=Date.now()+15_000){sessionStorage.removeItem(SHARE_SESSION_KEY);return null;}return value; }
   catch { sessionStorage.removeItem(SHARE_SESSION_KEY);return null; }
@@ -275,12 +276,26 @@ function App() {
   };
 
   const prepareShare = async (item: LibraryItem) => {
-    if (!getShareSession()) { notify('Sign in with Google from Shared links before creating a share.'); go('sharing'); return; }
+    if (!getShareSession()) {
+      try { sessionStorage.setItem(PENDING_SHARE_KEY, item.id); } catch { /* storage unavailable */ }
+      notify('Sign in first. Your link is prepared right after.'); go('login'); return;
+    }
     setBusy(true);
     try { const shareArchive = await exportItem(item.id); setModal({ kind:'share', item, shareArchive }); }
     catch (error) { notify(`Share package could not be prepared: ${safeError(error)}`, true); }
     finally { setBusy(false); }
   };
+
+  // Continues a share that was started before signing in.
+  const continueShare = useRef(prepareShare);
+  continueShare.current = prepareShare;
+  useEffect(() => {
+    if (route.page !== 'sharing' || !items.length || !getShareSession()) return;
+    let id = '';
+    try { id = sessionStorage.getItem(PENDING_SHARE_KEY) ?? ''; sessionStorage.removeItem(PENDING_SHARE_KEY); } catch { /* storage unavailable */ }
+    const item = items.find(entry => entry.id === id);
+    if (item) void continueShare.current(item);
+  }, [route.page, items]);
 
   const createEncryptedShare = async (archive: Blob) => {
     const session=getShareSession(); const apiValue=(import.meta.env.VITE_SHARE_API_BASE??'').replace(/\/$/,'');
@@ -575,24 +590,6 @@ function GoogleIdentityButton({clientId,onCredential}:{clientId:string;onCredent
   return <div className="google-button-slot" ref={target} />;
 }
 
-function friendlySocialAuthError(error:unknown) {
-  const code=(error as {code?:string})?.code;
-  if(code==='auth/operation-not-allowed')return 'This sign-in option is not enabled in Firebase yet.';
-  if(code==='auth/unauthorized-domain')return 'Add b1progame.github.io to Firebase Authentication’s authorized domains.';
-  if(code==='auth/account-exists-with-different-credential')return 'This email is already registered with another sign-in method. Use that method instead.';
-  if(code==='auth/user-cancelled'||code==='auth/popup-closed-by-user'||code==='auth/cancelled-popup-request')return 'Sign-in was cancelled.';
-  if(code==='auth/network-request-failed')return 'Could not reach the sign-in service. Check your internet connection.';
-  return error instanceof Error?error.message:'Sign-in could not be completed. Try again.';
-}
-
-function FirebaseSocialButtons({apiKey,projectId,appId,githubEnabled,facebookEnabled,onCredential,verb='Continue',bare=false}:{apiKey:string;projectId:string;appId:string;githubEnabled:boolean;facebookEnabled:boolean;onCredential:(credential:string)=>Promise<void>;verb?:string;bare?:boolean}) {
-  const [busy,setBusy]=useState<FirebaseSocialProvider|null>(null);
-  const [message,setMessage]=useState('');
-  useEffect(()=>{let active=true;finishFirebaseSocialSignIn({apiKey,projectId,appId}).then(async result=>{if(!active||!result)return;if(result.verificationSent){setMessage('Check your email and confirm the address. Then return here and choose the same sign-in option again.');return;}if(result.token)await onCredential(result.token);}).catch(error=>{if(active)setMessage(friendlySocialAuthError(error));}).finally(()=>{if(active)setBusy(null);});return()=>{active=false;};},[apiKey,projectId,appId,onCredential]);
-  const connect=async(provider:FirebaseSocialProvider)=>{setBusy(provider);setMessage('Opening secure sign-in…');try{const result=await beginFirebaseSocialSignIn(provider,{apiKey,projectId,appId});if(!result)return;if(result.verificationSent){setMessage('Check your email and confirm the address. Then come back and choose the same sign-in option again.');setBusy(null);return;}if(result.token){setMessage('');await onCredential(result.token);}setBusy(null);}catch(error){setBusy(null);setMessage(friendlySocialAuthError(error));}};
-  return <div className="social-auth-panel">{!bare&&<div className="auth-divider"><span>continue with a free account</span></div>}<div className="social-auth-buttons"><button type="button" className="social-auth-button" disabled={busy!==null} onClick={()=>void connect('google')}>{busy==='google'?<LoaderCircle size={15} className="spin"/>:<svg className="google-logo" viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>} {verb} with Google</button>{githubEnabled&&<button type="button" className="social-auth-button" disabled={busy!==null} onClick={()=>void connect('github')}>{busy==='github'?<LoaderCircle size={15} className="spin"/>:<span className="social-provider-mark github-mark" aria-hidden="true">GH</span>} {verb} with GitHub</button>}{facebookEnabled&&<button type="button" className="social-auth-button" disabled={busy!==null} onClick={()=>void connect('facebook')}>{busy==='facebook'?<LoaderCircle size={15} className="spin"/>:<span className="social-provider-mark facebook-mark" aria-hidden="true">f</span>} {verb} with Facebook</button>}</div>{message&&<p className="email-auth-message" role="status">{message}</p>}{(githubEnabled||facebookEnabled)&&<p className="social-auth-help">GitHub and Facebook sign-ins must confirm the email address they share with Firebase.</p>}</div>;
-}
-
 function FirebaseEmailAuth({apiKey,onCredential}:{apiKey:string;onCredential:(credential:string)=>Promise<void>}) {
   const [mode,setMode]=useState<'signin'|'signup'>('signin'); const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [busy,setBusy]=useState(false); const [message,setMessage]=useState(''); const [error,setError]=useState('');
   const submit=async(event:React.FormEvent)=>{event.preventDefault();setError('');setMessage('');setBusy(true);try{
@@ -629,7 +626,7 @@ function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boo
   const signIn=useCallback(async(credential:string,provider:'google'|'firebase'='google')=>{
     if(!api){setError('Sharing is not connected to a Cloudflare Worker yet.');return;}
     setError('');setLoading(true);
-    try{let response:Response;try{response=await fetch(`${api}/api/v1/shares/auth/${provider}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credential})});}catch{throw new Error('Could not reach the LocalDeck sharing service. It may be offline, or this site’s address is not allowed by the Worker.');}if(response.status===503)throw new Error('The sharing service is not finished setting up (its database tables are missing). Run the D1 schema step in docs/SHARING.md.');if(!response.ok)throw new Error(response.status===429?'Too many sign-in attempts. Please wait and try again.':provider==='google'?'Google could not verify this account for sharing.':'The sharing service could not verify this account.');const profile=await response.json() as {email:string;name:string;picture:string;admin?:boolean};const next=saveShareSession(credential,profile);setSession(next);notify(`Signed in as ${profile.email}.`);if(loginOnly)go('sharing');}
+    try{let response:Response;try{response=await fetch(`${api}/api/v1/shares/auth/${provider}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credential})});}catch{throw new Error('Could not reach the LocalDeck sharing service. It may be offline, or this site’s address is not allowed by the Worker.');}if(response.status===503)throw new Error('The sharing service is not finished setting up (its database tables are missing). Run the D1 schema step in docs/SHARING.md.');if(!response.ok)throw new Error(response.status===429?'Too many sign-in attempts. Please wait and try again.':provider==='google'?'Google could not verify this account for sharing.':'The sharing service could not verify this account.');const profile=await response.json() as {email:string;name:string;picture:string;admin?:boolean};const next=saveShareSession(credential,profile);setSession(next);notify(`Signed in as ${profile.email}.`);}
     catch(err){setError(safeError(err));}
     finally{setLoading(false);}
   },[api,notify,loginOnly]);
@@ -639,7 +636,9 @@ function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boo
     catch(err){setError(safeError(err));}
     finally{setLoading(false);}
   },[api]);
-  useEffect(()=>{if(session&&api)void load(session);},[session?.token,api,load]);
+  useEffect(()=>{if(session&&api&&!loginOnly)void load(session);},[session?.token,api,load,loginOnly]);
+  // Someone who is already signed in must not be asked again.
+  useEffect(()=>{if(loginOnly&&session)go('sharing');},[loginOnly,session]);
   useEffect(()=>{let pending='';try{pending=sessionStorage.getItem('localdeck-pending-credential')||'';sessionStorage.removeItem('localdeck-pending-credential');}catch{/* ignore */}if(pending)void signIn(pending,'firebase');},[signIn]);
   const remove=async(id:string)=>{
     if(!session||!window.confirm('Delete this link now? Anyone using it will lose access.'))return;
@@ -654,7 +653,7 @@ function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boo
       <span className="share-login-kicker"><ShieldCheck size={14}/> PRIVATE BY DESIGN</span>
       <h2>{loginOnly?<>Welcome<br/><em>back to LocalDeck.</em></>:<>Your links,<br/><em>under your control.</em></>}</h2>
       <p>{loginOnly?'Sign in to create and manage encrypted links. People who receive your links can open them without an account.':'Create and manage encrypted links from a separate sign-in screen. Anyone you send a link to can open it without signing in.'}</p>
-      {loginOnly?(firebaseConfigured&&api?<FirebaseSocialButtons apiKey={firebaseApiKey} projectId={firebaseProjectId} appId={firebaseAppId} githubEnabled={firebaseGithubEnabled} facebookEnabled={firebaseFacebookEnabled} onCredential={credential=>signIn(credential,'firebase')}/>:clientId&&api?<GoogleIdentityButton clientId={clientId} onCredential={credential=>void signIn(credential)}/>:<div className="share-config-note"><Info size={16}/><span><b>Google sign-in is not connected yet</b><small>Set the Firebase web app values in GitHub Actions and deploy the Pages site. The Firebase project ID also belongs in the Cloudflare Worker settings.</small></span></div>):<a className="button primary share-login-cta" href="#/login"><ShieldCheck size={15}/> Continue to sign in</a>}
+      {loginOnly?(firebaseConfigured&&api?<FirebaseSocialButtons config={{apiKey:firebaseApiKey,projectId:firebaseProjectId,appId:firebaseAppId}} githubEnabled={firebaseGithubEnabled} facebookEnabled={firebaseFacebookEnabled} onCredential={credential=>signIn(credential,'firebase')}/>:clientId&&api?<GoogleIdentityButton clientId={clientId} onCredential={credential=>void signIn(credential)}/>:<div className="share-config-note"><Info size={16}/><span><b>Google sign-in is not connected yet</b><small>Set the Firebase web app values in GitHub Actions and deploy the Pages site. The Firebase project ID also belongs in the Cloudflare Worker settings.</small></span></div>):<a className="button primary share-login-cta" href="#/login"><ShieldCheck size={15}/> Continue to sign in</a>}
       {loginOnly&&firebaseApiKey&&api&&<FirebaseEmailAuth apiKey={firebaseApiKey} onCredential={credential=>signIn(credential,'firebase')}/>}
       {loginOnly&&firebaseApiKey&&api&&(!firebaseProjectId||!firebaseAppId)&&<div className="share-config-note email-auth-config"><Info size={16}/><span><b>Firebase setup incomplete</b><small>Add the web app Project ID and App ID to GitHub Actions variables.</small></span></div>}
       {loginOnly&&!firebaseApiKey&&<div className="share-config-note email-auth-config"><Mail size={16}/><span><b>Email sign-up needs Firebase</b><small>Connect the Firebase Web API key in GitHub Actions to enable email and password login.</small></span></div>}
@@ -663,7 +662,7 @@ function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boo
       <div className="share-login-foot"><span><ShieldCheck size={14}/> Encrypted before upload</span><span><Clock3 size={14}/> Auto-deletes in 3 days</span></div>
     </div>
   </section>;
-  if(loginOnly&&firebaseConfigured&&api)return <div className="login-page-wrap"><a className="login-brand" href="#/home"><img src={`${base}icon-192.png`} alt=""/> LocalDeck</a><LoginExperience apiKey={firebaseApiKey} backHref="#/sharing" error={error} onCredential={credential=>signIn(credential,'firebase')} social={mode=><FirebaseSocialButtons bare verb={mode==='signup'?'Sign up':'Continue'} apiKey={firebaseApiKey} projectId={firebaseProjectId} appId={firebaseAppId} githubEnabled={firebaseGithubEnabled} facebookEnabled={firebaseFacebookEnabled} onCredential={credential=>signIn(credential,'firebase')}/>}/></div>;
+  if(loginOnly&&firebaseConfigured&&api)return <div className="login-page-wrap"><a className="login-brand" href="#/home"><img src={`${base}icon-192.png`} alt=""/> LocalDeck</a><LoginExperience apiKey={firebaseApiKey} backHref="#/sharing" error={error} onCredential={credential=>signIn(credential,'firebase')} social={mode=><FirebaseSocialButtons bare verb={mode==='signup'?'signup':'continue'} config={{apiKey:firebaseApiKey,projectId:firebaseProjectId,appId:firebaseAppId}} githubEnabled={firebaseGithubEnabled} facebookEnabled={firebaseFacebookEnabled} onCredential={credential=>signIn(credential,'firebase')}/>}/></div>;
   if(loginOnly)return <div className="login-page-wrap"><a className="login-brand" href="#/home"><img src={`${base}icon-192.png`} alt=""/> LocalDeck</a>{loginCard}</div>;
   return <><PageHeading eyebrow="Private sharing" title="Shared links" description="Sign in to create and manage your encrypted links. Anyone with a link can open it without an account."/>
     {session&&<AccountProfileOffer account={session} notify={notify}/>}{!session?loginCard:<section className="share-manager panel"><div className="share-manager-heading"><span className="share-manager-icon"><Cloud size={19}/></span><div><h2>Your encrypted links</h2><p>{session.admin&&<span className="admin-badge"><ShieldCheck size={12}/> Admin</span>}Signed in as {session.email}. Link data is encrypted before upload.</p></div><div className="share-session-actions"><button className="button" disabled={loading} onClick={()=>void load(session)}>{loading?<LoaderCircle size={15} className="spin"/>:<Activity size={15}/>} Refresh</button><button className="button subtle" onClick={signOut}>Sign out</button></div></div><div className="share-quota-note"><ShieldCheck size={16}/><span>Per account: 48 MiB active storage · 24 MiB per link · 5 uploads/hour, 15/day · links expire in 3 days.</span></div>{error&&<p className="dialog-error" role="alert">{error}</p>}{loaded&&(shares.length?<div className="share-list">{shares.map(share=><div className="share-row" key={share.id}><span className="share-state active"/><span className="share-row-main"><b>{labels[share.id]||share.label}</b><small>{Date.parse(share.expiresAt)<=Date.now()?'Expired':`Expires ${friendlyDate(Date.parse(share.expiresAt))}`} · {bytes(share.sizeBytes)}</small></span><button className="button danger-button" onClick={()=>void remove(share.id)}><Trash2 size={14}/> Delete link</button></div>)}</div>:<EmptyState icon={Share2} title="No active links" detail="Create an encrypted link from a project’s actions menu."/>)}{!loaded&&!loading&&<p className="share-setup-hint">Your share list will load after sign-in. You can sign out at any time.</p>}</section>}
