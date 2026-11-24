@@ -29,6 +29,7 @@ Your library lives **in your browser**. Nothing is uploaded unless you create an
 | 🎮 **One home for every project** | Games, learning sheets, apps, simulations, slides and PDFs, each with its own look and an *Open / Play / Read* button that fits. |
 | 🎨 **Five themes + System** | Obsidian, Midnight, Forest, Rose and the light Pearl theme. Pick any accent color. |
 | 🌍 **Five languages** | English, German, French, Spanish and Italian. Follows your browser, or pick one in Settings. |
+| 🤖 **Connect an AI** | An AI that supports MCP builds projects, gives you a link and updates them later. |
 | 🖼️ **Generated cover art** | Projects without a cover get unique artwork based on their type and title: pixel grids for games, ruled sheets for notes, orbits for simulations. |
 | 📚 **Learning hub** | Subject tiles (Mathematik, Biologie, …), shelves for Lernzettel, quizzes, PDFs and presentations. |
 | 🔒 **Sandboxed player** | Imported code runs in an opaque, isolated frame. It can't read your library. Fullscreen and immersive modes included. |

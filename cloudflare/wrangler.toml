@@ -21,3 +21,8 @@ APP_URL = "https://b1progame.github.io/LOCALDECK/"
 
 [observability]
 enabled = true
+
+[observability.logs]
+enabled = true
+# The address of an AI connection contains its secret, so addresses must not be logged.
+invocation_logs = false

@@ -2,8 +2,8 @@
 
 export interface StoreEnv { SHARES_KV: KVNamespace; SHARES_DB: D1Database }
 export type Owner = { id: string; email: string; name: string; picture: string; provider: string; admin: boolean };
-export type Limits = { linkMiB: number; storageMiB: number; perHour: number; perDay: number; days: number };
-export type ServiceLimits = { totalMiB: number; perDay: number; open: boolean };
+export type Limits = { linkMiB: number; storageMiB: number; perHour: number; perDay: number; days: number; aiPerDay: number; aiDays: number };
+export type ServiceLimits = { totalMiB: number; perDay: number; open: boolean; ai: boolean };
 export type Settings = { users: Limits; admins: Limits; service: ServiceLimits };
 
 export const MIB = 1024 * 1024;
@@ -16,12 +16,12 @@ const MAX_PENDING_PER_OWNER = 3;
 const MAX_PENDING = 8;
 
 export const DEFAULTS: Settings = {
-  users: { linkMiB: 24, storageMiB: 48, perHour: 5, perDay: 15, days: 3 },
-  admins: { linkMiB: 80, storageMiB: 400, perHour: 100, perDay: 200, days: 7 },
-  service: { totalMiB: 512, perDay: 100, open: true },
+  users: { linkMiB: 24, storageMiB: 48, perHour: 5, perDay: 15, days: 3, aiPerDay: 40, aiDays: 30 },
+  admins: { linkMiB: 80, storageMiB: 400, perHour: 100, perDay: 200, days: 7, aiPerDay: 300, aiDays: 90 },
+  service: { totalMiB: 512, perDay: 100, open: true, ai: true },
 };
 /** What the free plans of Cloudflare and the app itself can carry. KV has 1 GB and 1,000 writes a day. */
-export const BOUNDS = { linkMiB: [1, 80], storageMiB: [1, 900], perHour: [1, 200], perDay: [1, 500], days: [1, 30], totalMiB: [50, 900], servicePerDay: [1, 800] } as const;
+export const BOUNDS = { linkMiB: [1, 80], storageMiB: [1, 900], perHour: [1, 200], perDay: [1, 500], days: [1, 30], aiPerDay: [0, 1000], aiDays: [1, 180], totalMiB: [50, 900], servicePerDay: [1, 800] } as const;
 
 /* The D1 schema (mirrors cloudflare/schema.sql). Every statement is idempotent. */
 export const SCHEMA = [
@@ -33,6 +33,10 @@ export const SCHEMA = [
   'CREATE TABLE IF NOT EXISTS daily_stats ( day INTEGER PRIMARY KEY, uploads INTEGER NOT NULL DEFAULT 0, bytes INTEGER NOT NULL DEFAULT 0, downloads INTEGER NOT NULL DEFAULT 0, sign_ins INTEGER NOT NULL DEFAULT 0, accounts INTEGER NOT NULL DEFAULT 0 )',
   'CREATE TABLE IF NOT EXISTS service_settings ( id TEXT PRIMARY KEY, value TEXT NOT NULL )',
   'CREATE TABLE IF NOT EXISTS admin_log ( id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, admin TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL )',
+  'CREATE TABLE IF NOT EXISTS ai_tokens ( id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL, created_at INTEGER NOT NULL, last_used INTEGER, calls INTEGER NOT NULL DEFAULT 0 )',
+  'CREATE TABLE IF NOT EXISTS ai_projects ( id TEXT PRIMARY KEY, token_id TEXT NOT NULL, sealed TEXT NOT NULL, data TEXT NOT NULL, version INTEGER NOT NULL, updated_at INTEGER NOT NULL )',
+  'CREATE INDEX IF NOT EXISTS ai_projects_token_idx ON ai_projects(token_id)',
+  'CREATE TABLE IF NOT EXISTS ai_daily ( day INTEGER PRIMARY KEY, created INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL DEFAULT 0 )',
   'CREATE TABLE IF NOT EXISTS upload_windows ( owner_id TEXT NOT NULL, window_start INTEGER NOT NULL, uploads INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (owner_id, window_start) )',
   'CREATE TABLE IF NOT EXISTS daily_upload_windows ( owner_id TEXT NOT NULL, window_start INTEGER NOT NULL, uploads INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (owner_id, window_start) )',
   'CREATE TABLE IF NOT EXISTS global_upload_windows ( window_start INTEGER PRIMARY KEY, uploads INTEGER NOT NULL DEFAULT 0 )',
@@ -53,7 +57,7 @@ function whole(value: unknown, fallback: number, [min, max]: readonly [number, n
 }
 export function cleanLimits(value: unknown, fallback: Limits): Limits {
   const input = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
-  return { linkMiB: whole(input.linkMiB, fallback.linkMiB, BOUNDS.linkMiB), storageMiB: whole(input.storageMiB, fallback.storageMiB, BOUNDS.storageMiB), perHour: whole(input.perHour, fallback.perHour, BOUNDS.perHour), perDay: whole(input.perDay, fallback.perDay, BOUNDS.perDay), days: whole(input.days, fallback.days, BOUNDS.days) };
+  return { linkMiB: whole(input.linkMiB, fallback.linkMiB, BOUNDS.linkMiB), storageMiB: whole(input.storageMiB, fallback.storageMiB, BOUNDS.storageMiB), perHour: whole(input.perHour, fallback.perHour, BOUNDS.perHour), perDay: whole(input.perDay, fallback.perDay, BOUNDS.perDay), days: whole(input.days, fallback.days, BOUNDS.days), aiPerDay: whole(input.aiPerDay, fallback.aiPerDay, BOUNDS.aiPerDay), aiDays: whole(input.aiDays, fallback.aiDays, BOUNDS.aiDays) };
 }
 export function cleanSettings(value: unknown, fallback: Settings = DEFAULTS): Settings {
   const input = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
@@ -61,7 +65,7 @@ export function cleanSettings(value: unknown, fallback: Settings = DEFAULTS): Se
   return {
     users: cleanLimits(input.users, fallback.users),
     admins: cleanLimits(input.admins, fallback.admins),
-    service: { totalMiB: whole(service.totalMiB, fallback.service.totalMiB, BOUNDS.totalMiB), perDay: whole(service.perDay, fallback.service.perDay, BOUNDS.servicePerDay), open: typeof service.open === 'boolean' ? service.open : fallback.service.open },
+    service: { totalMiB: whole(service.totalMiB, fallback.service.totalMiB, BOUNDS.totalMiB), perDay: whole(service.perDay, fallback.service.perDay, BOUNDS.servicePerDay), open: typeof service.open === 'boolean' ? service.open : fallback.service.open, ai: typeof service.ai === 'boolean' ? service.ai : fallback.service.ai },
   };
 }
 export async function readSettings(env: StoreEnv): Promise<Settings> {
@@ -182,8 +186,9 @@ export async function countDownload(env: StoreEnv, id: string, ownerId: string):
 export async function removeShare(env: StoreEnv, id: string, ownerId: string | null): Promise<boolean> {
   const row = await env.SHARES_DB.prepare("UPDATE shares SET status = 'revoked' WHERE id = ?1 AND (?2 IS NULL OR owner_id = ?2) RETURNING id").bind(id, ownerId).first<{ id: string }>();
   if (!row) return false;
-  const parts = (await env.SHARES_DB.prepare('SELECT parts FROM share_meta WHERE id = ?').bind(id).first<{ parts: number }>())?.parts ?? 1;
   try {
+    const ai = await env.SHARES_DB.prepare('DELETE FROM ai_projects WHERE id = ? RETURNING id').bind(id).first();
+    const parts = ai ? 0 : (await env.SHARES_DB.prepare('SELECT parts FROM share_meta WHERE id = ?').bind(id).first<{ parts: number }>())?.parts ?? 1;
     for (let part = 0; part < parts; part++) await env.SHARES_KV.delete(partKey(id, part));
     await env.SHARES_DB.prepare('DELETE FROM shares WHERE id = ?').bind(id).run();
     await env.SHARES_DB.prepare('DELETE FROM share_meta WHERE id = ?').bind(id).run();
@@ -195,8 +200,11 @@ export async function cleanup(env: StoreEnv): Promise<void> {
   const db = env.SHARES_DB;
   // KV drops the data of expired links by itself.
   await db.prepare('DELETE FROM shares WHERE expires_at <= ?').bind(nowIso()).run();
-  const stale = await db.prepare("SELECT id FROM shares WHERE status = 'revoked' AND created_at < ? LIMIT 4").bind(new Date(Date.now() - 3 * PENDING_MS).toISOString()).all<{ id: string }>();
+  const stale = await db.prepare("SELECT id FROM shares WHERE status = 'revoked' AND created_at < ? LIMIT 3").bind(new Date(Date.now() - 3 * PENDING_MS).toISOString()).all<{ id: string }>();
   for (const { id } of stale.results) await removeShare(env, id, null);
+  await db.prepare('DELETE FROM ai_projects WHERE NOT EXISTS (SELECT 1 FROM shares WHERE shares.id = ai_projects.id)').run();
+  await db.prepare('DELETE FROM ai_daily WHERE day < ?').bind(Date.now() - 400 * 86_400_000).run();
+  await db.prepare('DELETE FROM ai_tokens WHERE COALESCE(last_used, created_at) < ? OR NOT EXISTS (SELECT 1 FROM accounts WHERE accounts.owner_id = ai_tokens.owner_id)').bind(Date.now() - 180 * 86_400_000).run();
   await db.prepare('DELETE FROM share_meta WHERE NOT EXISTS (SELECT 1 FROM shares WHERE shares.id = share_meta.id)').run();
   const old = Date.now() - 48 * 3_600_000, week = Date.now() - 8 * 86_400_000;
   for (const table of ['upload_windows', 'auth_windows', 'read_windows']) await db.prepare(`DELETE FROM ${table} WHERE window_start < ?`).bind(old).run();
@@ -206,6 +214,15 @@ export async function cleanup(env: StoreEnv): Promise<void> {
   await db.prepare('DELETE FROM admin_log WHERE id <= (SELECT MAX(id) FROM admin_log) - 500').run();
   // Personal data of people who have not signed in for half a year is not kept. Blocked accounts stay blocked.
   await db.prepare('DELETE FROM accounts WHERE last_seen < ? AND blocked = 0 AND limits IS NULL AND NOT EXISTS (SELECT 1 FROM shares WHERE shares.owner_id = accounts.owner_id)').bind(Date.now() - 180 * 86_400_000).run();
+}
+
+/** Counts a change by an AI. A new project also counts as an upload of the account. */
+export async function recordAi(env: StoreEnv, connection: { id: string; owner: Owner }, createdBytes: number): Promise<void> {
+  const created = createdBytes > 0 ? 1 : 0;
+  await env.SHARES_DB.prepare('INSERT INTO ai_daily (day, created, updated) VALUES (?, ?, ?) ON CONFLICT(day) DO UPDATE SET created = created + excluded.created, updated = updated + excluded.updated').bind(dayStart(), created, 1 - created).run();
+  if (!created) return;
+  await env.SHARES_DB.prepare('UPDATE accounts SET uploads = uploads + 1, bytes = bytes + ? WHERE owner_id = ?').bind(createdBytes, connection.owner.id).run();
+  await count(env, { uploads: 1, bytes: createdBytes });
 }
 
 /* ---------- Admin ---------- */
@@ -227,15 +244,16 @@ export async function overview(env: StoreEnv, owner: Owner): Promise<unknown> {
       (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE shares.owner_id = ids.owner_id AND status = 'active' AND expires_at > ?1) as bytes
     FROM (SELECT owner_id FROM accounts UNION SELECT owner_id FROM shares WHERE expires_at > ?1) ids LEFT JOIN accounts ON accounts.owner_id = ids.owner_id
     ORDER BY accounts.last_seen DESC LIMIT 500`).bind(now).all<Record<string, unknown> & { id: string; limits: string | null; blocked: number }>();
-  const shares = await db.prepare(`SELECT shares.id, shares.owner_id as ownerId, accounts.email as owner, shares.created_at as createdAt, shares.expires_at as expiresAt, shares.size_bytes as sizeBytes, COALESCE(share_meta.downloads, 0) as downloads, share_meta.last_download as lastDownload
+  const shares = await db.prepare(`SELECT shares.id, shares.owner_id as ownerId, accounts.email as owner, shares.created_at as createdAt, shares.expires_at as expiresAt, shares.size_bytes as sizeBytes, COALESCE(share_meta.downloads, 0) as downloads, share_meta.last_download as lastDownload, EXISTS (SELECT 1 FROM ai_projects WHERE ai_projects.id = shares.id) as ai
     FROM shares LEFT JOIN accounts ON accounts.owner_id = shares.owner_id LEFT JOIN share_meta ON share_meta.id = shares.id
-    WHERE shares.status = 'active' AND shares.expires_at > ? ORDER BY shares.created_at DESC LIMIT 300`).bind(now).all<{ ownerId: string }>();
+    WHERE shares.status = 'active' AND shares.expires_at > ? ORDER BY shares.created_at DESC LIMIT 300`).bind(now).all<{ ownerId: string; ai: number }>();
+  const ai = await db.prepare('SELECT (SELECT COUNT(*) FROM ai_tokens) as connections, (SELECT COUNT(*) FROM ai_projects JOIN shares ON shares.id = ai_projects.id WHERE shares.expires_at > ?1) as projects, (SELECT COALESCE(SUM(size_bytes), 0) FROM shares JOIN ai_projects ON ai_projects.id = shares.id WHERE shares.expires_at > ?1) as bytes, (SELECT COALESCE(SUM(created + updated), 0) FROM ai_daily WHERE day > ?2) as changes').bind(now, today - 30 * 86_400_000).first();
   const entries = await db.prepare('SELECT at, admin, action, target FROM admin_log ORDER BY id DESC LIMIT 30').bind().all();
   return {
     totals: { links: totals?.links ?? 0, owners: new Set(shares.results.map(share => share.ownerId)).size, bytes: totals?.bytes ?? 0, limitBytes: settings.service.totalMiB * MIB, uploadsToday: uploads?.uploads ?? 0, uploadsLimit: settings.service.perDay, accounts: people?.accounts ?? 0, activeWeek: people?.week ?? 0, blocked: people?.blocked ?? 0 },
-    settings, defaults: DEFAULTS, bounds: BOUNDS, days: days.results,
+    ai, settings, defaults: DEFAULTS, bounds: BOUNDS, days: days.results,
     accounts: accounts.results.map(account => { let limits: unknown = null; try { limits = account.limits ? JSON.parse(account.limits) : null; } catch { /* broken override */ } return { ...account, limits, blocked: Boolean(account.blocked), mine: account.id === owner.id }; }),
-    shares: shares.results.map(share => ({ ...share, mine: share.ownerId === owner.id })),
+    shares: shares.results.map(share => ({ ...share, ai: Boolean(share.ai), mine: share.ownerId === owner.id })),
     log: entries.results,
   };
 }

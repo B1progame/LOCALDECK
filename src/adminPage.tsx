@@ -3,16 +3,18 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Ban, ChevronDown, LoaderCircle, RefreshCw, RotateCcw, Save, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { language, plural, t } from './i18n';
-import type { Limits } from './services/shareService';
+import type { Limits as ShareLimits } from './services/shareService';
 import { EmptyState, PageHeading, bytes, friendlyDate, go } from './shared';
 
-type Service = { totalMiB: number; perDay: number; open: boolean };
+type Limits = Required<ShareLimits>;
+type Service = { totalMiB: number; perDay: number; open: boolean; ai: boolean };
 type Settings = { users: Limits; admins: Limits; service: Service };
 type Day = { day: number; uploads: number; bytes: number; downloads: number; signIns: number; accounts: number };
 type Account = { id: string; email: string | null; name: string | null; provider: string | null; firstSeen: number | null; lastSeen: number | null; signIns: number; uploads: number; uploadedBytes: number; downloads: number; blocked: boolean; limits: Limits | null; links: number; bytes: number; mine: boolean };
-type Share = { id: string; ownerId: string; owner: string | null; createdAt: string; expiresAt: string; sizeBytes: number; downloads: number; lastDownload: number | null; mine: boolean };
+type Share = { id: string; ownerId: string; owner: string | null; createdAt: string; expiresAt: string; sizeBytes: number; downloads: number; lastDownload: number | null; ai: boolean; mine: boolean };
 type Overview = {
   totals: { links: number; bytes: number; limitBytes: number; uploadsToday: number; uploadsLimit: number; accounts: number; activeWeek: number; blocked: number };
+  ai: { connections: number; projects: number; bytes: number; changes: number };
   settings: Settings; defaults: Settings; bounds: Record<string, [number, number]>; days: Day[]; accounts: Account[]; shares: Share[]; log: Array<{ at: number; admin: string; action: string; target: string }>;
 };
 type Notify = (message: string, error?: boolean) => void;
@@ -67,6 +69,8 @@ const LIMIT_FIELDS: Array<{ key: keyof Limits; label: string; unit: string }> = 
   { key: 'perHour', label: t('Uploads per hour'), unit: '' },
   { key: 'perDay', label: t('Uploads per day'), unit: '' },
   { key: 'days', label: t('Links stay online'), unit: t('days') },
+  { key: 'aiPerDay', label: t('AI changes per day'), unit: '' },
+  { key: 'aiDays', label: t('AI projects stay online'), unit: t('days') },
 ];
 
 function NumberField({ label, unit, value, bounds, onChange }: { label: string; unit: string; value: number; bounds: [number, number]; onChange: (value: number) => void }) {
@@ -89,6 +93,7 @@ function LimitsEditor({ data, save }: { data: Overview; save: (settings: Setting
   const service = (next: Partial<Service>) => setDraft({ ...draft, service: { ...draft.service, ...next } });
   return <form className="panel admin-limits" onSubmit={event => void submit(event)}>
     <label className="setting-row admin-open"><span><b>{t('Allow new links')}</b><small>{t('Turn this off to pause uploads for everyone except admins. Existing links keep working.')}</small></span><input type="checkbox" checked={draft.service.open} onChange={event => service({ open: event.target.checked })}/></label>
+    <label className="setting-row admin-open"><span><b>{t('Allow AI connections')}</b><small>{t('Turn this off to stop all AI connections except yours. Existing AI projects keep working.')}</small></span><input type="checkbox" checked={draft.service.ai} onChange={event => service({ ai: event.target.checked })}/></label>
     <fieldset><legend>{t('Everyone')}</legend><p>{t('Applies to every account without its own limits.')}</p><LimitFields value={draft.users} bounds={data.bounds} onChange={users => setDraft({ ...draft, users })}/></fieldset>
     <fieldset><legend>{t('Admins')}</legend><p>{t('Applies to you. Links over 24 MiB are uploaded in parts.')}</p><LimitFields value={draft.admins} bounds={data.bounds} onChange={admins => setDraft({ ...draft, admins })}/></fieldset>
     <fieldset><legend>{t('Whole service')}</legend><p>{t('All accounts together. The free plan of Cloudflare ends at 1 GB and 1,000 writes a day.')}</p><div className="admin-fields">
@@ -175,7 +180,7 @@ function Links({ data, act }: { data: Overview; act: Actions }) {
     <div className="library-toolbar"><FilterBox value={query} onChange={setQuery} label={t('Email or link number')}/></div>
     {list.length ? <div className="share-list">{list.map(share => <div className="share-row" key={share.id}>
       <span className="share-state active"/>
-      <span className="share-row-main"><b>{share.mine ? t('Your link') : accountName({ email: share.owner, id: share.ownerId })}</b><small>{bytes(share.sizeBytes)} · {plural(share.downloads, '{0} download', '{0} downloads', number(share.downloads))} · {t('Expires {0}', friendlyDate(Date.parse(share.expiresAt)))} · {share.id.slice(0, 8)}</small></span>
+      <span className="share-row-main"><b>{share.mine ? t('Your link') : accountName({ email: share.owner, id: share.ownerId })}{share.ai && <span className="admin-tag">{t('AI')}</span>}</b><small>{bytes(share.sizeBytes)} · {plural(share.downloads, '{0} download', '{0} downloads', number(share.downloads))} · {t('Expires {0}', friendlyDate(Date.parse(share.expiresAt)))} · {share.id.slice(0, 8)}</small></span>
       <div className="share-row-actions"><button type="button" className="button danger-button" onClick={() => void act.removeLink(share)}><Trash2 size={14}/> {t('Delete')}</button></div>
     </div>)}</div> : <EmptyState icon={Search} title={t('No active links')} detail={data.shares.length ? t('Try another search.') : t('There are no active links right now.')}/>}
   </>;
@@ -212,7 +217,7 @@ export function AdminPage({ api, session, notify }: { api: string; session: { to
     try {
       const next = await (await call('/admin/overview')).json() as Partial<Overview>;
       if (current !== loading.current) return;
-      if (!next.settings || !next.accounts) throw new Error(t('The Worker does not know this yet. Deploy it once with “npx wrangler deploy”.'));
+      if (!next.settings || !next.accounts || !next.ai) throw new Error(t('The Worker does not know this yet. Deploy it once with “npx wrangler deploy”.'));
       setData(next as Overview);
     } catch (reason) { if (current === loading.current) setError((reason as Error).message); }
     finally { if (current === loading.current) setBusy(false); }
@@ -257,7 +262,11 @@ export function AdminPage({ api, session, notify }: { api: string; session: { to
           <dl className="admin-stats">
             <div><dt>{t('Accounts')}</dt><dd>{number(totals.accounts)} <small>{t('{0} this week', number(totals.activeWeek))}</small></dd></div>
             <div><dt>{t('Active links')}</dt><dd>{number(totals.links)}</dd></div>
+            <div><dt>{t('Uploads today')}</dt><dd>{number(totals.uploadsToday)}</dd></div>
             <div><dt>{t('Downloads')}</dt><dd>{number(data.days.reduce((sum, day) => sum + day.downloads, 0))} <small>{t('30 days')}</small></dd></div>
+            <div><dt>{t('AI projects')}</dt><dd>{number(data.ai.projects)} <small>{plural(data.ai.connections, '{0} connection', '{0} connections', number(data.ai.connections))}</small></dd></div>
+            <div><dt>{t('AI changes')}</dt><dd>{number(data.ai.changes)} <small>{t('30 days')}</small></dd></div>
+            <div><dt>{t('AI storage')}</dt><dd>{bytes(data.ai.bytes)}</dd></div>
             <div><dt>{t('Blocked')}</dt><dd>{number(totals.blocked)}</dd></div>
           </dl>
           <div className="panel admin-meters"><Meter label={t('Storage')} value={totals.bytes} max={totals.limitBytes} format={bytes}/><Meter label={t('Uploads today')} value={totals.uploadsToday} max={totals.uploadsLimit} format={number}/></div>

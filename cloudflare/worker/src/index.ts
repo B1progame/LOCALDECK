@@ -2,6 +2,8 @@ import {
   changeAccount, changeSettings, cleanup, countDownload, limitsFor, logShareRemoval, overview, partKey, partSize, pendingShare, readSettings,
   recordSignIn, removeAccountShares, removeShare, reserve, SCHEMA, SINGLE_BYTES, PART_BYTES, MIB, BOUNDS, storePart, usageFor, type Owner,
 } from './service.ts';
+import { createConnection, listConnections, projectBlob, removeConnection } from './ai.ts';
+import { handleMcp } from './mcp.ts';
 import { sendVerificationLink, type MailEnv } from './verificationMail.ts';
 
 interface Env extends MailEnv {
@@ -187,7 +189,7 @@ async function isAuthorized(request: Request, env: Env): Promise<Owner | null> {
   } catch { return null; }
 }
 
-const SCHEMA_VERSION = '3';
+const SCHEMA_VERSION = '4';
 let schemaReady = false;
 /** Only the finished result is shared between requests. A shared in-flight promise would belong to the
     request that started it, and Workers can fail every other request that waits on it.
@@ -234,6 +236,28 @@ async function admin(request: Request, env: Env, headers: Headers, parts: string
     try { id = decodeURIComponent(rawId); } catch { return json({ error: 'not_found' }, 404, headers); }
     if (parts.length === 2 && request.method === 'PUT') return await changeAccount(env, owner, id, body) ? json({ ok: true }, 200, headers) : json({ error: 'not_changed' }, 409, headers);
     if (parts.length === 3 && action === 'shares' && request.method === 'DELETE') return json({ removed: await removeAccountShares(env, owner, id) }, 200, headers);
+  }
+  return json({ error: 'not_found' }, 404, headers);
+}
+
+/** The AI connections of an account. */
+async function aiConnections(request: Request, env: Env, headers: Headers, parts: string[]): Promise<Response> {
+  const owner = await isAuthorized(request, env);
+  if (!owner) return json({ error: 'unauthorized' }, 401, headers);
+  const settings = await readSettings(env);
+  const { limits, blocked } = await limitsFor(env, owner, settings);
+  if (blocked) return json({ error: 'blocked' }, 403, headers);
+  const enabled = settings.service.ai || owner.admin;
+  if (parts.length === 0 && request.method === 'GET') return json({ enabled, limits, connections: await listConnections(env, owner) }, 200, headers);
+  if (parts.length === 1 && request.method === 'DELETE') return await removeConnection(env, owner, parts[0]!) ? json({ ok: true }, 200, headers) : json({ error: 'not_found' }, 404, headers);
+  if (parts.length === 0 && request.method === 'POST') {
+    if (!enabled) return json({ error: 'ai_disabled' }, 403, headers);
+    let name = '';
+    try { const body = await readJson(request); name = typeof body.name === 'string' ? body.name : ''; } catch { return json({ error: 'invalid_request' }, 400, headers); }
+    // The connection looks its account up later, so the account must be known.
+    await env.SHARES_DB.prepare('INSERT OR IGNORE INTO accounts (owner_id, email, name, provider, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?)').bind(owner.id, owner.email, owner.name, owner.provider, Date.now(), Date.now()).run();
+    const created = await createConnection(env, owner, name);
+    return created ? json({ id: created.id, url: `${new URL(request.url).origin}/mcp/${created.token}` }, 201, headers) : json({ error: 'too_many_connections' }, 409, headers);
   }
   return json({ error: 'not_found' }, 404, headers);
 }
@@ -327,6 +351,12 @@ const worker = {
   },
 
   async handle(request: Request, env: Env): Promise<Response> {
+    const path = new URL(request.url).pathname;
+    if (path === '/mcp' || path.startsWith('/mcp/')) {
+      // No CORS headers: AI services call this from their servers, and no cookie or browser login is involved.
+      const token = path.startsWith('/mcp/') ? path.slice('/mcp/'.length).replace(/\/$/, '') : request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+      return handleMcp(request, env, token, email => isAdminEmail(email, env), () => rateLimitIp(env, request, 'auth_windows', MAX_IP_AUTH_PER_HOUR, 'mcp:'));
+    }
     const headers = cors(request, env);
     const origin = request.headers.get('Origin');
     if (origin && !headers.has('access-control-allow-origin')) return json({ error: 'origin_not_allowed' }, 403, headers);
@@ -341,6 +371,8 @@ const worker = {
 
     if (parts[3] === 'admin' && parts.length > 4) return admin(request, env, headers, parts.slice(4));
 
+    if (parts[3] === 'ai' && parts.length <= 5) return aiConnections(request, env, headers, parts.slice(4));
+
     if (parts[3] === 'me' && parts.length === 4 && request.method === 'GET') {
       const owner = await isAuthorized(request, env);
       if (!owner) return json({ error: 'unauthorized' }, 401, headers);
@@ -351,8 +383,8 @@ const worker = {
     if (parts[3] === 'owner' && parts[4] === 'shares' && parts.length === 5 && request.method === 'GET') {
       const owner = await isAuthorized(request, env);
       if (!owner) return json({ error: 'unauthorized' }, 401, headers);
-      const result = await env.SHARES_DB.prepare("SELECT id, status, created_at as createdAt, expires_at as expiresAt, size_bytes as sizeBytes FROM shares WHERE owner_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 50").bind(owner.id).all<{ id: string; status: string; createdAt: string; expiresAt: string; sizeBytes: number }>();
-      return json(result.results.map(row => ({ ...row, label: 'Encrypted project' })), 200, headers);
+      const result = await env.SHARES_DB.prepare("SELECT id, status, created_at as createdAt, expires_at as expiresAt, size_bytes as sizeBytes, EXISTS (SELECT 1 FROM ai_projects WHERE ai_projects.id = shares.id) as ai FROM shares WHERE owner_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 50").bind(owner.id).all<{ id: string; status: string; createdAt: string; expiresAt: string; sizeBytes: number; ai: number }>();
+      return json(result.results.map(row => ({ ...row, ai: Boolean(row.ai), label: row.ai ? 'Project from your AI' : 'Encrypted project' })), 200, headers);
     }
 
     if (parts.length === 3 && request.method === 'POST') return upload(request, env, headers);
@@ -375,7 +407,7 @@ const worker = {
     if (blobRoute) {
       const part = Number(url.searchParams.get('part') ?? 0);
       if (!Number.isSafeInteger(part) || part < 0 || part >= row.parts) return json({ error: 'not_found' }, 404, headers);
-      const blob = await env.SHARES_KV.get(partKey(id, part), 'arrayBuffer');
+      const blob = (part === 0 ? await projectBlob(env, id) : null) ?? await env.SHARES_KV.get(partKey(id, part), 'arrayBuffer');
       if (!blob) return json({ error: 'share_blob_missing' }, 404, headers);
       if (part === 0) await countDownload(env, id, row.owner_id).catch(error => console.error('download_not_counted', error));
       return response(blob, 200, headers, { 'content-type': 'application/octet-stream', 'content-length': String(blob.byteLength), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });

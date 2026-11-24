@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createRoot } from 'react-dom/client';
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from 'motion/react';
 import {
-  Activity, Archive, ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, Clock3,
+  Activity, Archive, Bot, ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, Clock3,
   Cloud, Code2, Copy, Eye, FileText, Gamepad2, Heart, Home, Image, Info, Library,
   LoaderCircle, Mail, Menu, PackageOpen, Plus, Save, Search, Settings, ShieldCheck,
   Sparkles, Upload, X, Sun, Moon, Pipette,
@@ -37,6 +37,7 @@ import { SharedPage, downloadBlob } from './sharedPage';
 import { ShareLinkField, ShareList, type ShareRecord } from './shareList';
 import { forgetShare, saveShare, shareUrl } from './services/savedShares';
 import { AdminPage } from './adminPage';
+import { AiConnect } from './aiConnect';
 import { DEFAULT_ACCOUNT, getAccount, uploadShare, type ShareAccount } from './services/shareService';
 import { sendVerificationMail } from './services/verificationMail';
 import { rovingKeys, useBackgroundMotion, useConnection, useReturnFocus } from './a11y';
@@ -501,7 +502,8 @@ function StudioPage({items,notify,onAdded}:{items:LibraryItem[];notify:(message:
   const copy=async()=>{try{await navigator.clipboard.writeText(prompt);notify(t('Single-file prompt copied. Attach the original HTML file too.'));}catch{notify(t('Clipboard access is unavailable. Select and copy the prompt manually.'),true);}};
   const downloadSource=()=>{if(upload)downloadBlob(upload,upload.name);else if(source)downloadBlob(new Blob([source.text],{type:'text/html;charset=utf-8'}),source.name.split('/').pop()||'index.html');};
   const downloadImage=()=>{const image=imageAssets.find(asset=>asset.normalizedPath===imagePath);if(image)downloadBlob(image.blob,image.normalizedPath.split('/').pop()||'image');};
-  return <><PageHeading title={t('AI studio')} description={t('Turn what your AI made into a finished LocalDeck project, or prepare the prompt that makes it.')} />
+  const connectAi=()=>{go('settings');window.setTimeout(()=>document.getElementById('connect-ai')?.scrollIntoView({block:'start'}),450);};
+  return <><PageHeading title={t('AI studio')} description={t('Turn what your AI made into a finished LocalDeck project, or prepare the prompt that makes it.')} action={import.meta.env.VITE_SHARE_API_BASE ? <button className="button" onClick={connectAi}><Bot size={16}/> {t('Connect an AI')}</button> : undefined} />
     <div className="studio-tabs beam-tabs" role="tablist" aria-label={t('AI studio tools')} onKeyDown={event=>rovingKeys(event,'[role="tab"]',true)}><button id="studio-tab-package" role="tab" aria-controls="studio-panel" tabIndex={tab==='package'?0:-1} aria-selected={tab==='package'} className={tab==='package'?'active':''} onClick={()=>setTab('package')}><PackageOpen size={16}/> {t('Package builder')}<small>{t('HTML + images → ZIP')}</small></button><button id="studio-tab-pdf" role="tab" aria-controls="studio-panel" tabIndex={tab==='pdf'?0:-1} aria-selected={tab==='pdf'} className={tab==='pdf'?'active':''} onClick={()=>setTab('pdf')}><FileText size={16}/> {t('PDF to project')}<small>{t('Prompt for your AI')}</small></button><button id="studio-tab-inspect" role="tab" aria-controls="studio-panel" tabIndex={tab==='inspect'?0:-1} aria-selected={tab==='inspect'} className={tab==='inspect'?'active':''} onClick={()=>setTab('inspect')}><Code2 size={16}/> {t('Improve HTML')}<small>{t('Better page + cover + ZIP')}</small></button></div>
     <div id="studio-panel" role="tabpanel" aria-labelledby={`studio-tab-${tab}`}>
     {tab==='package'&&<PackageBuilder notify={notify} onAdded={onAdded}/>}
@@ -570,6 +572,7 @@ function SettingsPage({notify,appearance,setAppearance,demosOn,busy,onDemos,redu
     <section className="settings-section"><h2>{t('Library')}</h2><div className="settings-list">
       <label className="setting-row"><span><b>{t('Demo projects')}</b><small>{t('Adds 8 working examples: a game, a study sheet, a quiz, a simulation, a palette tool, a presentation, a focus timer and a sorting visualizer. Turning this off removes only the demos.')}</small></span><input type="checkbox" checked={demosOn} disabled={busy} onChange={event=>onDemos(event.target.checked)}/></label>
     </div></section>
+    {import.meta.env.VITE_SHARE_API_BASE && <section className="settings-section" id="connect-ai"><h2>{t('Connect an AI')}</h2><div className="settings-list"><AiConnect api={import.meta.env.VITE_SHARE_API_BASE.replace(/\/$/,'')} token={getShareSession()?.token ?? null} notify={notify}/></div></section>}
     <section className="settings-section"><h2>{t('Motion & accessibility')}</h2><div className="settings-list">
       <label className="setting-row"><span><b>{t('Background animations')}</b><small>{t('The moving light, glow and sign-in scene. Turn this off to pause them.')}</small></span><input type="checkbox" checked={backgroundMotion} onChange={event=>setBackgroundMotion(event.target.checked)}/></label>
       <label className="setting-row"><span><b>{t('Reduce motion')}</b><small>{t('Use simple fades instead of movement, even when your system allows animation.')}</small></span><input type="checkbox" checked={reducedMotion} onChange={event=>onMotion(event.target.checked)}/></label>

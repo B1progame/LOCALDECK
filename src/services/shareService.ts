@@ -6,7 +6,7 @@ const MIB = 1024 * 1024;
 export const PART_BYTES = 20 * MIB;
 export const SINGLE_BYTES = 24 * MIB;
 
-export type Limits = { linkMiB: number; storageMiB: number; perHour: number; perDay: number; days: number };
+export type Limits = { linkMiB: number; storageMiB: number; perHour: number; perDay: number; days: number; aiPerDay?: number; aiDays?: number };
 export type ShareAccount = { admin: boolean; limits: Limits; usage: { bytes: number; links: number; hour: number; day: number } | null; open: boolean; blocked: boolean };
 
 /** Used when the Worker is older than this app and does not know the request. */

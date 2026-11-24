@@ -166,8 +166,10 @@ export function createStoredZip(entries: Array<{ path: string; data: Uint8Array 
   return new Blob([...locals, ...central, end].map(toArrayBuffer), { type: 'application/zip' });
 }
 
+let crcTable: Uint32Array | null = null;
 function crc32(data: Uint8Array): number {
+  crcTable ??= Uint32Array.from({ length: 256 }, (_, value) => { let crc = value; for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); return crc >>> 0; });
   let crc = 0xffffffff;
-  for (const byte of data) { crc ^= byte; for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); }
+  for (let i = 0; i < data.length; i++) crc = (crc >>> 8) ^ crcTable[(crc ^ data[i]!) & 0xff]!;
   return (crc ^ 0xffffffff) >>> 0;
 }

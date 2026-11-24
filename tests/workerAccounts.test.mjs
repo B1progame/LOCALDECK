@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import worker from '../cloudflare/worker/src/index.ts';
+import { decryptSharePackage } from '../src/services/sharing.ts';
+import { readZip } from '../src/services/zip.ts';
 
 /** D1 on top of SQLite, so the real SQL runs. */
 function d1() {
@@ -177,7 +179,7 @@ test('downloads are counted per link, per account and per day', async () => {
 test('limits can be changed by the admin only, and stay within what the service can carry', async () => {
   assert.equal((await call('/admin/limits', person, { method: 'PUT', body: '{}' })).status, 403);
   const changed = await (await asAdmin('/admin/limits', 'PUT', { users: { linkMiB: 10, storageMiB: 99999, perHour: 50, perDay: 2.5, days: 30 }, service: { totalMiB: 900, open: true } })).json();
-  assert.deepEqual(changed.users, { linkMiB: 10, storageMiB: 48, perHour: 50, perDay: 15, days: 30 });
+  assert.deepEqual(changed.users, { linkMiB: 10, storageMiB: 48, perHour: 50, perDay: 15, days: 30, aiPerDay: 40, aiDays: 30 });
   assert.equal(changed.service.totalMiB, 900);
   assert.equal(changed.admins.linkMiB, 80);
   const guest = await token({ sub: 'limits-uid', email: 'limits@example.com' });
@@ -205,7 +207,7 @@ test('one account can get its own limits', async () => {
   await signIn(guest);
   const path = `/admin/accounts/${encodeURIComponent('firebase:own-uid')}`;
   assert.equal((await asAdmin(path, 'PUT', { limits: { linkMiB: 60, storageMiB: 200, perHour: 30, perDay: 60, days: 14 } })).status, 200);
-  assert.deepEqual((await (await call('/me', guest)).json()).limits, { linkMiB: 60, storageMiB: 200, perHour: 30, perDay: 60, days: 14 });
+  assert.deepEqual((await (await call('/me', guest)).json()).limits, { linkMiB: 60, storageMiB: 200, perHour: 30, perDay: 60, days: 14, aiPerDay: 40, aiDays: 30 });
   assert.equal((await asAdmin(path, 'PUT', { limits: null })).status, 200);
   assert.equal((await (await call('/me', guest)).json()).limits.linkMiB, 10);
   assert.equal((await asAdmin('/admin/accounts/firebase%3Anobody', 'PUT', { blocked: true })).status, 409);
@@ -272,4 +274,152 @@ test('the cleanup removes unfinished uploads and expired links', async () => {
   await done;
   assert.equal(env.SHARES_KV.store.has(id), false);
   assert.equal(await SHARES_DB.prepare('SELECT id FROM shares WHERE id IN (?, ?)').bind(id, second.id).first(), null);
+});
+
+/* ---------- AI connections over MCP ---------- */
+
+env.APP_URL = 'https://app.example/';
+const aiOwner = await token({ sub: 'ai-uid', email: 'ai@example.com' });
+const newConnection = async (credential = aiOwner, name = 'Claude') => (await call('/ai', credential, { method: 'POST', body: JSON.stringify({ name }) })).json();
+let rpcId = 0;
+async function rpc(url, method, params = {}, headers = {}) {
+  const response = await worker.fetch(new Request(url.replace('https://share.example', 'https://share.example'), { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }) }), env);
+  return { status: response.status, body: await response.json() };
+}
+const tool = async (url, name, args = {}) => { const { body } = await rpc(url, 'tools/call', { name, arguments: args }); return { text: body.result.content[0].text, isError: body.result.isError }; };
+const page = text => `<!doctype html><html lang="de"><title>Quiz</title><body><h1>${text}</h1></body></html>`;
+const idOf = text => text.match(/project_id: (\S+)/)[1];
+const linkOf = text => text.match(/person: (\S+)/)[1];
+async function open(link) {
+  const [, id, key] = link.match(/shared\/([0-9a-f-]+)\?k=(.+)$/);
+  const blob = await call(`/${id}/blob`);
+  if (blob.status !== 200) return { status: blob.status };
+  const entries = await readZip(new Blob([await decryptSharePackage(await blob.arrayBuffer(), key)]));
+  return { status: 200, files: Object.fromEntries(await Promise.all(entries.map(async entry => [entry.path, await entry.blob.text()]))) };
+}
+
+test('an AI connection is created once, listed without its secret, and can be revoked', async () => {
+  assert.equal((await call('/ai')).status, 401);
+  const { id, url } = await newConnection();
+  assert.match(url, /^https:\/\/share\.example\/mcp\/ld_[A-Za-z0-9_-]{43}$/);
+  const list = await (await call('/ai', aiOwner)).json();
+  assert.deepEqual([list.enabled, list.connections.length, list.connections[0].name, JSON.stringify(list).includes(url.split('/').pop())], [true, 1, 'Claude', false]);
+  assert.equal((await rpc(url, 'ping')).status, 200);
+  assert.equal((await call(`/ai/${id}`, person, { method: 'DELETE' })).status, 404);
+  assert.equal((await call(`/ai/${id}`, aiOwner, { method: 'DELETE' })).status, 200);
+  assert.equal((await rpc(url, 'ping')).status, 401);
+});
+
+test('older and newer MCP clients are both served', async () => {
+  const { url } = await newConnection();
+  const hello = await rpc(url, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'x', version: '1' } });
+  assert.deepEqual([hello.status, hello.body.result.protocolVersion, hello.body.result.serverInfo.name], [200, '2025-06-18', 'localdeck']);
+  assert.equal((await rpc(url, 'initialize', { protocolVersion: '1999-01-01' })).body.result.protocolVersion, '2025-11-25');
+  const note = await worker.fetch(new Request(url, { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) }), env);
+  assert.equal(note.status, 202);
+  assert.deepEqual((await rpc(url, 'tools/list')).body.result.tools.map(entry => entry.name), ['create_project', 'update_project', 'read_project', 'list_projects', 'delete_project']);
+  assert.equal((await worker.fetch(new Request(url), env)).status, 405);
+  const meta = { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {} } };
+  const headers = method => ({ 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': method });
+  const discover = await rpc(url, 'server/discover', meta, headers('server/discover'));
+  assert.deepEqual([discover.status, discover.body.result.resultType, discover.body.result.supportedVersions[0]], [200, 'complete', '2026-07-28']);
+  const list = await rpc(url, 'tools/list', meta, headers('tools/list'));
+  assert.deepEqual([list.body.result.resultType, list.body.result.cacheScope, list.body.result.ttlMs > 0], ['complete', 'private', true]);
+  assert.deepEqual([(await rpc(url, 'tools/list', meta, headers('tools/call'))).body.error.code, (await rpc(url, 'tools/call', { ...meta, name: 'list_projects' }, headers('tools/call'))).body.error.code], [-32020, -32020]);
+  const called = await rpc(url, 'tools/call', { ...meta, name: 'list_projects', arguments: {} }, { ...headers('tools/call'), 'Mcp-Name': 'list_projects' });
+  assert.deepEqual([called.status, called.body.result.resultType, called.body.result.isError], [200, 'complete', false]);
+  const unknown = await rpc(url, 'tools/list', { _meta: { 'io.modelcontextprotocol/protocolVersion': '2030-01-01' } }, {});
+  assert.deepEqual([unknown.status, unknown.body.error.code, unknown.body.error.data.supported[0]], [400, -32022, '2026-07-28']);
+  assert.equal((await rpc(url, 'resources/list', meta, headers('resources/list'))).status, 404);
+});
+
+test('an AI creates a project, the link opens it, and an update keeps the link', async () => {
+  const { url } = await newConnection();
+  const created = await tool(url, 'create_project', { title: 'Photosynthese-Quiz', type: 'quiz', subject: 'Biologie', tags: ['bio'], language: 'de', files: [{ path: 'index.html', content: page('Frage 1') }, { path: 'cover.svg', content: '<svg xmlns="http://www.w3.org/2000/svg"/>' }, { path: 'assets/a.png', content: 'iVBORw0KGgo=', encoding: 'base64' }] });
+  assert.equal(created.isError, false, created.text);
+  const id = idOf(created.text), link = linkOf(created.text);
+  assert.match(link, /^https:\/\/app\.example\/#\/shared\/[0-9a-f-]{36}\?k=[A-Za-z0-9_-]{43}$/);
+  const first = await open(link);
+  const manifest = JSON.parse(first.files['localdeck.json']);
+  assert.deepEqual([manifest.title, manifest.type, manifest.subject, manifest.entry, manifest.cover, manifest.schemaVersion], ['Photosynthese-Quiz', 'quiz', 'Biologie', 'index.html', 'cover.svg', 1]);
+  const updated = await tool(url, 'update_project', { project_id: id, edits: [{ path: 'index.html', find: 'Frage 1', replace: 'Frage 1 und $& 2' }], files: [{ path: 'extra.js', content: 'let a' }], remove: ['assets/a.png'], title: 'Neues Quiz' });
+  assert.equal(updated.isError, false, updated.text);
+  assert.equal(linkOf(updated.text), link);
+  const second = await open(link);
+  assert.match(second.files['index.html'], /Frage 1 und \$& 2/);
+  assert.deepEqual([Object.keys(second.files).sort(), JSON.parse(second.files['localdeck.json']).title, JSON.parse(second.files['localdeck.json']).subject], [['cover.svg', 'extra.js', 'index.html', 'localdeck.json'], 'Neues Quiz', 'Biologie']);
+  assert.match((await tool(url, 'read_project', { project_id: id, path: 'index.html' })).text, /Frage 1 und/);
+  const list = JSON.parse((await tool(url, 'list_projects')).text);
+  assert.deepEqual([list[0].title, list[0].link, list[0].version], ['Neues Quiz', link, 2]);
+  const own = (await (await call('/owner/shares', aiOwner)).json()).find(share => share.id === id);
+  assert.deepEqual([own.ai, own.label], [true, 'Project from your AI']);
+  assert.equal((await tool(url, 'delete_project', { project_id: id })).isError, false);
+  assert.equal((await open(link)).status, 410);
+  assert.equal(await SHARES_DB.prepare('SELECT id FROM ai_projects WHERE id = ?').bind(id).first(), null);
+});
+
+test('the database holds nothing readable about an AI project', async () => {
+  const { url } = await newConnection();
+  const created = await tool(url, 'create_project', { title: 'Geheimtitel', files: [{ path: 'index.html', content: page('Geheimtext') }] });
+  const key = linkOf(created.text).split('k=')[1];
+  const row = await SHARES_DB.prepare('SELECT * FROM ai_projects WHERE id = ?').bind(idOf(created.text)).first();
+  const everything = JSON.stringify(row) + atob(row.data) + atob(row.sealed) + JSON.stringify(await SHARES_DB.prepare('SELECT * FROM ai_tokens').bind().all());
+  for (const secret of ['Geheimtitel', 'Geheimtext', key, url.split('/').pop()]) assert.equal(everything.includes(secret), false, secret);
+});
+
+test('a connection only reaches its own projects', async () => {
+  const one = await newConnection(), two = await newConnection();
+  const id = idOf((await tool(one.url, 'create_project', { title: 'A', files: [{ path: 'index.html', content: page('A') }] })).text);
+  for (const [name, args] of [['read_project', {}], ['update_project', { title: 'B' }], ['delete_project', {}]]) assert.equal((await tool(two.url, name, { project_id: id, ...args })).isError, true, name);
+  const share = await (await upload(aiOwner)).json();
+  assert.equal((await tool(one.url, 'delete_project', { project_id: share.id })).isError, true);
+  assert.equal((await call(`/${share.id}`)).status, 200);
+});
+
+test('wrong input is explained to the AI', async () => {
+  const guest = await token({ sub: 'ai-input', email: 'ai-input@example.com' });
+  const { url } = await newConnection(guest);
+  const fails = async (args, expected) => { const result = await tool(url, 'create_project', args); assert.equal(result.isError, true); assert.match(result.text, expected); };
+  await fails({ title: 'A', files: [] }, /index\.html/);
+  await fails({ files: [{ path: 'index.html', content: 'x' }] }, /title/);
+  await fails({ title: 'A', files: [{ path: '../x', content: 'x' }] }, /Unsafe/);
+  await fails({ title: 'A', type: 'virus', files: [{ path: 'index.html', content: 'x' }] }, /type/);
+  await fails({ title: 'A', files: [{ path: 'index.html', content: 'x'.repeat(1100 * 1024) }] }, /1 MiB/);
+  await fails({ title: 'A', files: [{ path: 'index.html', content: 'x' }, { path: 'INDEX.html', content: 'x' }] }, /same name/);
+  const id = idOf((await tool(url, 'create_project', { title: 'A', files: [{ path: 'index.html', content: 'aa bb aa' }] })).text);
+  assert.match((await tool(url, 'update_project', { project_id: id, edits: [{ path: 'index.html', find: 'aa', replace: 'c' }] })).text, /2 times/);
+  assert.match((await tool(url, 'update_project', { project_id: id, edits: [{ path: 'index.html', find: 'zz', replace: 'c' }] })).text, /does not appear/);
+  assert.match((await tool(url, 'update_project', { project_id: id, remove: ['index.html'] })).text, /cannot be removed/);
+  assert.equal((await tool(url, 'nonsense')).isError, true);
+});
+
+test('limits, the admin switch and blocking apply to AI connections', async () => {
+  const guest = await token({ sub: 'ai-limits', email: 'ai-limits@example.com' });
+  const { url } = await newConnection(guest);
+  const path = `/admin/accounts/${encodeURIComponent('firebase:ai-limits')}`;
+  await asAdmin(path, 'PUT', { limits: { linkMiB: 10, storageMiB: 48, perHour: 5, perDay: 5, days: 3, aiPerDay: 1, aiDays: 5 } });
+  const make = () => tool(url, 'create_project', { title: 'A', files: [{ path: 'index.html', content: page('A') }] });
+  assert.equal((await make()).isError, false);
+  assert.match((await make()).text, /1 AI changes per day/);
+  await asAdmin('/admin/limits', 'PUT', { service: { ai: false } });
+  assert.equal((await rpc(url, 'tools/list')).status, 403);
+  assert.equal((await call('/ai', guest, { method: 'POST', body: '{}' })).status, 403);
+  await asAdmin('/admin/limits', 'PUT', { service: { ai: true } });
+  assert.equal((await rpc(url, 'tools/list')).status, 200);
+  await asAdmin(path, 'PUT', { blocked: true });
+  assert.equal((await rpc(url, 'tools/list')).status, 403);
+  const data = await overview();
+  assert.ok(data.ai.connections >= 5 && data.ai.projects >= 2 && data.ai.changes >= 3);
+});
+
+test('one account has at most five connections', async () => {
+  const guest = await token({ sub: 'ai-many', email: 'ai-many@example.com' });
+  for (let i = 0; i < 5; i++) assert.ok((await newConnection(guest)).url);
+  assert.equal((await newConnection(guest)).error, 'too_many_connections');
+});
+
+test('guessing connection addresses is limited', async () => {
+  let last = 0;
+  for (let i = 0; i < 242; i++) last = (await worker.fetch(new Request(`https://share.example/mcp/ld_${'A'.repeat(43)}`, { method: 'POST', headers: { 'CF-Connecting-IP': '203.0.113.9' }, body: '{}' }), env)).status;
+  assert.equal(last, 429);
 });

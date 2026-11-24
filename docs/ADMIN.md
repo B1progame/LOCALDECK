@@ -7,7 +7,7 @@
 | Overview | Accounts, active links, storage, uploads of today, and 30 days of uploads, downloads, sign-ins and data |
 | Accounts | First and last sign-in, uploads, downloads, storage. Own limits, block, delete all links |
 | Links | All active links with owner, size, downloads and expiry. Delete any link |
-| Limits | Size per link, storage, uploads per hour and day, and days online, for everyone and for admins. Total storage. Pause uploads |
+| Limits | Size per link, storage, uploads per hour and day, and days online, for everyone and for admins. Total storage. Pause uploads. Allow or stop AI connections ([`AI_CONNECTION.md`](AI_CONNECTION.md)) |
 | History | The last 30 changes made by admins |
 
 ## What limits can be
@@ -18,6 +18,8 @@
 | Storage, per account and total | up to 900 MiB | The free KV plan holds 1 GB |
 | Uploads of the whole service | up to 800 a day | The free KV plan allows 1,000 writes a day |
 | Days online | 1 to 30 | |
+| AI changes per day | 0 to 1,000 | 0 switches AI off for that account |
+| AI projects online | 1 to 180 days after the last change | Stored in D1, not in KV |
 
 A change applies to the next upload. Links that already exist keep their expiry.
 

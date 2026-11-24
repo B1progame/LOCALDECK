@@ -56,6 +56,33 @@ CREATE TABLE IF NOT EXISTS admin_log (
   target TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS ai_tokens (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  hash TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_used INTEGER,
+  calls INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS ai_projects (
+  id TEXT PRIMARY KEY,
+  token_id TEXT NOT NULL,
+  sealed TEXT NOT NULL,
+  data TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ai_projects_token_idx ON ai_projects(token_id);
+
+CREATE TABLE IF NOT EXISTS ai_daily (
+  day INTEGER PRIMARY KEY,
+  created INTEGER NOT NULL DEFAULT 0,
+  updated INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS upload_windows (
   owner_id TEXT NOT NULL,
   window_start INTEGER NOT NULL,

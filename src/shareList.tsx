@@ -5,10 +5,10 @@ import { plural, t } from './i18n';
 import { savedShares, shareUrl, type SavedShare } from './services/savedShares';
 import { EmptyState, bytes, friendlyDate } from './shared';
 
-export type ShareRecord = { id: string; status: string; createdAt: string; expiresAt: string; sizeBytes: number; label: string };
+export type ShareRecord = { id: string; status: string; createdAt: string; expiresAt: string; sizeBytes: number; label: string; ai?: boolean };
 
 /** A link with a copy button. Also used right after a link was created. */
-export function ShareLinkField({ url }: { url: string }) {
+export function ShareLinkField({ url, label }: { url: string; label?: string }) {
   const input = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   useEffect(() => { if (state !== 'copied') return; const timer = window.setTimeout(() => setState('idle'), 2200); return () => window.clearTimeout(timer); }, [state]);
@@ -18,7 +18,7 @@ export function ShareLinkField({ url }: { url: string }) {
   };
   return <>
     <div className="share-link-field">
-      <input ref={input} readOnly value={url} aria-label={t('Encrypted share link')} onFocus={event => event.currentTarget.select()}/>
+      <input ref={input} readOnly value={url} aria-label={label ?? t('Encrypted share link')} onFocus={event => event.currentTarget.select()}/>
       <button type="button" className="button primary" onClick={() => void copy()}>{state === 'copied' ? <Check size={15}/> : <Copy size={15}/>} {state === 'copied' ? t('Copied') : t('Copy')}</button>
     </div>
     <p className="share-link-status" role="status">{state === 'failed' ? t('Copying was blocked. The link is selected, so copy it yourself.') : ''}</p>
@@ -56,7 +56,7 @@ function ShareRow({ share, saved, onDelete }: { share: ShareRecord; saved: Saved
           {typeof navigator.share === 'function' && <button type="button" className="button" onClick={pass}><Share2 size={15}/> {t('Send link')}</button>}
         </div>
         <p className="share-detail-note">{t('Anyone with this link can open the project. It is kept only in this browser, not on the server.')}</p>
-      </> : <p className="share-detail-note"><Info size={15}/><span>{t('This link was created on another device, or before LocalDeck kept links. The server does not know its secret part, so it cannot be shown here. Open it on that device, or delete it and create a new one.')}</span></p>}
+      </> : share.ai ? <p className="share-detail-note"><Info size={15}/><span>{t('Your AI created this project. Ask it for the link: the server does not know its secret part.')}</span></p> : <p className="share-detail-note"><Info size={15}/><span>{t('This link was created on another device, or before LocalDeck kept links. The server does not know its secret part, so it cannot be shown here. Open it on that device, or delete it and create a new one.')}</span></p>}
     </div>}
   </div>;
 }
