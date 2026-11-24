@@ -203,6 +203,7 @@ Use a private browser window on <https://b1progame.github.io/LOCALDECK/> → **S
 | Google popup closes with “unauthorized domain” | Site missing from authorized domains | Part 3a |
 | Only you can sign in with Google | Consent screen in Testing | Part 7 step 6 |
 | “That password doesn't meet the account rules” | Firebase policy stricter than what was typed | Use 12+ characters with A–Z, a–z and a symbol |
+| Sign-in window is blocked | Pop-ups are blocked for the site | Allow pop-ups for b1progame.github.io |
 | “Could not reach the LocalDeck sharing service” | Worker not deployed or site address not allowed | Part 6 |
 | “The sharing service is not finished setting up” | Worker database problem | Redeploy the Worker (Part 6) |
 | Anything else | | Send me the exact red message |

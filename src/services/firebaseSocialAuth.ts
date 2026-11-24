@@ -13,6 +13,7 @@ import {
   type Auth,
   type UserCredential,
 } from '@firebase/auth';
+import { language } from '../i18n';
 import { requestBrandedMail } from './verificationMail';
 
 export type FirebaseSocialProvider = 'google' | 'github' | 'facebook';
@@ -64,6 +65,6 @@ async function finishSignIn({ user }: UserCredential): Promise<SocialSignIn> {
     There is no redirect fallback. Browsers keep github.io and firebaseapp.com apart, so the result of a
     redirect never reaches this page. */
 export function openSocialSignIn(auth: Auth, name: FirebaseSocialProvider): Promise<SocialSignIn> {
-  auth.useDeviceLanguage();
+  auth.languageCode = language();
   return signInWithPopup(auth, createProvider(name)).then(finishSignIn);
 }

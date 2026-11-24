@@ -1,6 +1,7 @@
 /* AI studio → Package builder.
    Turns the HTML an AI produced (plus images and other files) into a finished LocalDeck ZIP:
    index.html + localdeck.json + cover image + assets, checked for missing references. */
+import { plural, t, tm } from './i18n';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownToLine, Bot, Check, ClipboardPaste, Copy, FileArchive, FileCode2, FileText, Image as ImageIcon, LoaderCircle, PackageCheck, Paperclip, Plus, Sparkles, Trash2, Upload, Wand2, X,
@@ -71,11 +72,11 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
     if (manifestFile) { try { manifest = JSON.parse(await manifestFile.blob.text()) as Partial<ProjectManifest>; } catch { /* reported by the package check */ } }
     const entryPath = (manifest.entry && byPath.has(manifest.entry.toLowerCase()) ? manifest.entry : files.find(f => /^index\.html?$/i.test(f.path))?.path ?? files.find(f => /\.html?$/i.test(f.path))?.path) ?? '';
     const entry = byPath.get(entryPath.toLowerCase());
-    if (!entry) { notify(`No HTML page was found in the ${origin}.`, true); return; }
+    if (!entry) { notify(t('No HTML page was found in the {0}.', origin), true); return; }
     const text = await entry.blob.text();
     const coverPath = (manifest.cover && byPath.has(manifest.cover.replace(/^\.\//, '').toLowerCase()) ? manifest.cover.replace(/^\.\//, '') : files.find(f => /^cover\.(png|jpe?g|webp|svg|avif)$/i.test(f.path))?.path) ?? '';
     const coverFile = coverPath ? byPath.get(coverPath.toLowerCase()) : undefined;
-    setHtml(text); setHtmlName(`${entry.path} from ${origin}`); setPasteMode(false);
+    setHtml(text); setHtmlName(t('{0} from {1}', entry.path, origin)); setPasteMode(false);
     setCover(coverFile ? { blob: coverFile.blob, url: URL.createObjectURL(coverFile.blob), name: coverFile.path, generated: false } : null);
     setExtras(files.filter(f => f !== entry && f !== manifestFile && f !== coverFile).map(f => ({ path: f.path, file: f.blob, url: f.blob.type.startsWith('image/') ? URL.createObjectURL(f.blob) : undefined })));
     const doc = new DOMParser().parseFromString(text, 'text/html');
@@ -87,15 +88,15 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
       description: manifest.description ?? m.description, tags: manifest.tags?.join(', ') ?? m.tags, language: manifest.language ?? (doc.documentElement.lang || m.language),
       orientation: manifest.preferredOrientation ?? m.orientation,
     }));
-    if (entry.path !== 'index.html') setLoadNote(n => [...n, `${entry.path} will be saved as index.html. Links to it from other pages may need updating.`]);
-    notify(`Loaded ${files.length} file${files.length === 1 ? '' : 's'} from the ${origin}.`);
+    if (entry.path !== 'index.html') setLoadNote(n => [...n, t('{0} will be saved as index.html. Links to it from other pages may need updating.', entry.path)]);
+    notify(plural(files.length, 'Loaded {0} file from the {1}.', 'Loaded {0} files from the {1}.', files.length, origin));
   };
 
   const importAnswer = async () => {
     const { files, warnings } = parseBundle(answer);
     setLoadNote(warnings);
-    if (!files.length) { notify('No project files were found in that answer. Ask the AI to use the LocalDeck file format from the prompt.', true); return; }
-    await loadFiles(files, 'AI answer');
+    if (!files.length) { notify(t('No project files were found in that answer. Ask the AI to use the LocalDeck file format from the prompt.'), true); return; }
+    await loadFiles(files, t('AI answer'));
     setSource('');
   };
 
@@ -103,15 +104,15 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
     if (!file) return;
     setBusy('read'); setLoadNote([]);
     try { await loadFiles(await readZip(file), 'ZIP'); }
-    catch (error) { notify(error instanceof Error ? error.message : 'That ZIP could not be opened.', true); }
+    catch (error) { notify(error instanceof Error ? error.message : t('That ZIP could not be opened.'), true); }
     finally { setBusy(''); }
   };
 
   const aiPrompt = useMemo(() => buildProjectPrompt({ idea, kind: promptKind, title: meta.title, subject: meta.subject || meta.genre, language: meta.language }), [idea, promptKind, meta.title, meta.subject, meta.genre, meta.language]);
-  const copyPrompt = async () => { try { await navigator.clipboard.writeText(aiPrompt); notify('Prompt copied. Paste it into ChatGPT, Claude, Gemini or any AI chat.'); } catch { notify('Clipboard is unavailable. Select the prompt and copy it manually.', true); } };
+  const copyPrompt = async () => { try { await navigator.clipboard.writeText(aiPrompt); notify(t('Prompt copied. Paste it into ChatGPT, Claude, Gemini or any AI chat.')); } catch { notify(t('Clipboard is unavailable. Select the prompt and copy it manually.'), true); } };
 
   const readHtml = async (file: File) => {
-    if (!/\.html?$/i.test(file.name)) { notify('Choose an .html file for the project code.', true); return; }
+    if (!/\.html?$/i.test(file.name)) { notify(t('Choose an .html file for the project code.'), true); return; }
     const text = await file.text();
     setHtml(text); setHtmlName(file.name); setPasteMode(false);
     // Prefill from <title> or an embedded manifest so the user rarely has to type.
@@ -135,8 +136,8 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
     for (const file of Array.from(files)) {
       const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
       let path = relative ? relative.split('/').slice(1).join('/') : file.name;
-      try { path = normalizePackagePath(path); } catch { notify(`Skipped ${file.name}: unsafe file name.`, true); continue; }
-      if (/^index\.html?$/i.test(path) || path === 'localdeck.json') { notify(`${path} is created automatically and was skipped.`); continue; }
+      try { path = normalizePackagePath(path); } catch { notify(t('Skipped {0}: unsafe file name.', file.name), true); continue; }
+      if (/^index\.html?$/i.test(path) || path === 'localdeck.json') { notify(t('{0} is created automatically and was skipped.', path)); continue; }
       const index = next.findIndex(e => e.path.toLowerCase() === path.toLowerCase());
       const entry = { path, file, url: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined };
       if (index >= 0) next[index] = entry; else next.push(entry);
@@ -146,20 +147,20 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
 
   const chooseCover = (file?: File) => {
     if (!file) return;
-    if (!file.type.startsWith('image/')) { notify('Choose a PNG, JPG, WebP or SVG image for the cover.', true); return; }
+    if (!file.type.startsWith('image/')) { notify(t('Choose a PNG, JPG, WebP or SVG image for the cover.'), true); return; }
     const ext = (file.name.split('.').pop() || 'png').toLowerCase();
     setCover({ blob: file, url: URL.createObjectURL(file), name: `cover.${ext}`, generated: false });
   };
 
   const generateCover = async () => {
     setBusy('cover');
-    try { const blob = await renderCover(meta.title || 'Untitled project', meta.type, meta.subject || meta.genre); setCover({ blob, url: URL.createObjectURL(blob), name: 'cover.png', generated: true }); }
-    catch (error) { notify(error instanceof Error ? error.message : 'Cover could not be generated.', true); }
+    try { const blob = await renderCover(meta.title || t('Untitled project'), meta.type, meta.subject || meta.genre); setCover({ blob, url: URL.createObjectURL(blob), name: 'cover.png', generated: true }); }
+    catch (error) { notify(error instanceof Error ? error.message : t('Cover could not be generated.'), true); }
     finally { setBusy(''); }
   };
 
   const manifest: ProjectManifest = useMemo(() => ({
-    schemaVersion: 1, title: meta.title.trim() || 'Untitled project', type: meta.type, format: 'html', entry: 'index.html',
+    schemaVersion: 1, title: meta.title.trim() || t('Untitled project'), type: meta.type, format: 'html', entry: 'index.html',
     ...(meta.description.trim() ? { description: meta.description.trim() } : {}),
     ...(meta.subject.trim() ? { subject: meta.subject.trim() } : {}),
     ...(meta.topic.trim() ? { topic: meta.topic.trim() } : {}),
@@ -194,8 +195,8 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
     try {
       const zip = await buildZip();
       const a = document.createElement('a'); a.href = URL.createObjectURL(zip); a.download = `${slug(manifest.title)}.zip`; a.click(); window.setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
-      notify(`${manifest.title}.zip is ready · ${bytes(zip.size)}`);
-    } catch (error) { notify(error instanceof Error ? error.message : 'The ZIP could not be created.', true); }
+      notify(t('{0}.zip is ready · {1}', manifest.title, bytes(zip.size)));
+    } catch (error) { notify(error instanceof Error ? error.message : t('The ZIP could not be created.'), true); }
     finally { setBusy(''); }
   };
 
@@ -204,12 +205,12 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
     try {
       const zip = await buildZip();
       const [preview] = await analyzeFiles([new File([zip], `${slug(manifest.title)}.zip`, { type: 'application/zip' })]);
-      if (!preview) throw new Error('The package could not be read back.');
+      if (!preview) throw new Error(t('The package could not be read back.'));
       const item = await createItem(preview);
       await onAdded();
-      notify(`“${item.title}” was added to your library.`);
+      notify(t('“{0}” was added to your library.', item.title));
       go('item', `/${encodeURIComponent(item.id)}`);
-    } catch (error) { notify(error instanceof Error ? error.message : 'The project could not be added.', true); }
+    } catch (error) { notify(error instanceof Error ? error.message : t('The project could not be added.'), true); }
     finally { setBusy(''); }
   };
 
@@ -218,95 +219,95 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
   const step = (n: number, done: boolean) => <span className={`step-dot ${done ? 'done' : ''}`}>{done ? <Check size={13}/> : n}</span>;
 
   return <section className="panel package-builder" aria-labelledby="pb-title">
-    <div className="panel-heading"><span className="panel-icon violet"><PackageCheck size={18}/></span><div><h2 id="pb-title">Package builder</h2><p>Bring the HTML your AI made, add images and files, and get a finished LocalDeck ZIP with cover, manifest and every asset.</p></div></div>
-    <div className="pb-start" role="group" aria-label="Start from">
-      <button type="button" className={`pb-start-card ${source === 'ask' ? 'active' : ''}`} onClick={() => setSource(s => s === 'ask' ? '' : 'ask')}><Bot size={20}/><b>Ask an AI</b><small>Get a prompt that makes any AI return the whole project</small></button>
-      <button type="button" className={`pb-start-card ${source === 'paste' ? 'active' : ''}`} onClick={() => setSource(s => s === 'paste' ? '' : 'paste')}><ClipboardPaste size={20}/><b>Paste the AI’s answer</b><small>LocalDeck turns it into files, cover and manifest</small></button>
-      <button type="button" className="pb-start-card" onClick={() => zipInput.current?.click()} disabled={busy === 'read'}>{busy === 'read' ? <LoaderCircle size={20} className="spin"/> : <FileArchive size={20}/>}<b>Open a ZIP from the AI</b><small>Check it, fix details and export it again</small></button>
+    <div className="panel-heading"><span className="panel-icon violet"><PackageCheck size={18}/></span><div><h2 id="pb-title">{t('Package builder')}</h2><p>{t('Bring the HTML your AI made, add images and files, and get a finished LocalDeck ZIP with cover, manifest and every asset.')}</p></div></div>
+    <div className="pb-start" role="group" aria-label={t('Start from')}>
+      <button type="button" className={`pb-start-card ${source === 'ask' ? 'active' : ''}`} onClick={() => setSource(s => s === 'ask' ? '' : 'ask')}><Bot size={20}/><b>{t('Ask an AI')}</b><small>{t('Get a prompt that makes any AI return the whole project')}</small></button>
+      <button type="button" className={`pb-start-card ${source === 'paste' ? 'active' : ''}`} onClick={() => setSource(s => s === 'paste' ? '' : 'paste')}><ClipboardPaste size={20}/><b>{t('Paste the AI’s answer')}</b><small>{t('LocalDeck turns it into files, cover and manifest')}</small></button>
+      <button type="button" className="pb-start-card" onClick={() => zipInput.current?.click()} disabled={busy === 'read'}>{busy === 'read' ? <LoaderCircle size={20} className="spin"/> : <FileArchive size={20}/>}<b>{t('Open a ZIP from the AI')}</b><small>{t('Check it, fix details and export it again')}</small></button>
       <input ref={zipInput} type="file" accept=".zip,application/zip" className="visually-hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; void openZip(f); }}/>
     </div>
     {source === 'ask' && <div className="pb-source">
       <div className="pb-fields">
-        <label className="form-field pb-wide"><span>What should the AI build?</span><textarea rows={3} value={idea} onChange={e => setIdea(e.target.value)} placeholder="e.g. A Lernzettel about the Pythagorean theorem with an interactive triangle and 5 practice tasks"/></label>
-        <label className="form-field"><span>Kind of project</span><select value={promptKind} onChange={e => setPromptKind(e.target.value as PromptKind)}><option value="learning">Lernzettel</option><option value="quiz">Quiz</option><option value="game">Game</option><option value="simulation">Simulation</option><option value="presentation">Presentation</option><option value="app">App</option><option value="tool">Tool</option><option value="other">Other</option></select></label>
-        <div className="form-field"><span>Then</span><small className="muted-text">Paste the AI’s full answer back here with “Paste the AI’s answer”. Title, subject and language from the Details step are included.</small></div>
+        <label className="form-field pb-wide"><span>{t('What should the AI build?')}</span><textarea rows={3} value={idea} onChange={e => setIdea(e.target.value)} placeholder={t('e.g. A study sheet about the Pythagorean theorem with an interactive triangle and 5 practice tasks')}/></label>
+        <label className="form-field"><span>{t('Kind of project')}</span><select value={promptKind} onChange={e => setPromptKind(e.target.value as PromptKind)}><option value="learning">{t('Study sheet')}</option><option value="quiz">{t('Quiz')}</option><option value="game">{t('Game')}</option><option value="simulation">{t('Simulation')}</option><option value="presentation">{t('Presentation')}</option><option value="app">{t('App')}</option><option value="tool">{t('Tool')}</option><option value="other">{t('Other')}</option></select></label>
+        <div className="form-field"><span>{t('Then')}</span><small className="muted-text">{t('Paste the AI’s full answer back here with “Paste the AI’s answer”. Title, subject and language from the Details step are included.')}</small></div>
       </div>
-      <div className="output-heading"><b>Prompt for your AI</b><button type="button" className="text-button" onClick={() => void copyPrompt()}><Copy size={15}/> Copy prompt</button></div>
+      <div className="output-heading"><b>{t('Prompt for your AI')}</b><button type="button" className="text-button" onClick={() => void copyPrompt()}><Copy size={15}/> {t('Copy prompt')}</button></div>
       <pre className="prompt-output pb-prompt">{aiPrompt}</pre>
     </div>}
     {source === 'paste' && <div className="pb-source">
-      <label className="form-field"><span>The AI’s complete answer</span><textarea className="pb-paste" value={answer} onChange={e => setAnswer(e.target.value)} placeholder={'=== LOCALDECK FILE: index.html ===\n<!doctype html>…\n=== END FILE ==='} spellCheck={false}/></label>
-      <div className="pb-cover-row"><button type="button" className="button primary" disabled={!answer.trim()} onClick={() => void importAnswer()}><Sparkles size={15}/> Build files from answer</button><span className="muted-text">Works with the LocalDeck format, and with answers that list files as code blocks.</span></div>
+      <label className="form-field"><span>{t('The AI’s complete answer')}</span><textarea className="pb-paste" value={answer} onChange={e => setAnswer(e.target.value)} placeholder={t('=== LOCALDECK FILE: index.html ===\n<!doctype html>…\n=== END FILE ===')} spellCheck={false}/></label>
+      <div className="pb-cover-row"><button type="button" className="button primary" disabled={!answer.trim()} onClick={() => void importAnswer()}><Sparkles size={15}/> {t('Build files from answer')}</button><span className="muted-text">{t('Works with the LocalDeck format, and with answers that list files as code blocks.')}</span></div>
     </div>}
-    {loadNote.length > 0 && <ul className="finding-list pb-notes">{loadNote.map(n => <li key={n}>{n}</li>)}</ul>}
+    {loadNote.length > 0 && <ul className="finding-list pb-notes">{loadNote.map(n => <li key={n}>{tm(n)}</li>)}</ul>}
     <div className="pb-grid">
       <div className="pb-steps">
         <div className="pb-step">
-          <h3>{step(1, Boolean(html))} Project code</h3>
+          <h3>{step(1, Boolean(html))} {t('Project code')}</h3>
           {!pasteMode ? <button type="button" className={`pb-drop ${html ? 'filled' : ''}`} onClick={() => htmlInput.current?.click()} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) void readHtml(f); }}>
-            {html ? <><FileCode2 size={20}/><b>{htmlName || 'Pasted code'}</b><small>{bytes(new Blob([html]).size)} · becomes index.html · click to replace</small></> : <><Upload size={20}/><b>Drop the HTML file here</b><small>or click to choose it</small></>}
-          </button> : <textarea className="pb-paste" aria-label="HTML code of the project" value={html} onChange={e => { setHtml(e.target.value); setHtmlName('Pasted code'); }} onBlur={() => { if (!html.trim()) return; const doc = new DOMParser().parseFromString(html, 'text/html'); setMeta(m => ({ ...m, title: m.title || doc.title.trim(), description: m.description || doc.querySelector('meta[name="description"]')?.getAttribute('content') || '', language: m.language || doc.documentElement.lang || '' })); }} placeholder="<!doctype html>…" spellCheck={false}/>}
+            {html ? <><FileCode2 size={20}/><b>{htmlName || t('Pasted code')}</b><small>{t('{0} · becomes index.html · click to replace', bytes(new Blob([html]).size))}</small></> : <><Upload size={20}/><b>{t('Drop the HTML file here')}</b><small>{t('or click to choose it')}</small></>}
+          </button> : <textarea className="pb-paste" aria-label={t('HTML code of the project')} value={html} onChange={e => { setHtml(e.target.value); setHtmlName(t('Pasted code')); }} onBlur={() => { if (!html.trim()) return; const doc = new DOMParser().parseFromString(html, 'text/html'); setMeta(m => ({ ...m, title: m.title || doc.title.trim(), description: m.description || doc.querySelector('meta[name="description"]')?.getAttribute('content') || '', language: m.language || doc.documentElement.lang || '' })); }} placeholder="<!doctype html>…" spellCheck={false}/>}
           <input ref={htmlInput} type="file" accept=".html,.htm,text/html" className="visually-hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void readHtml(f); }}/>
-          <button type="button" className="text-button" onClick={() => setPasteMode(v => !v)}>{pasteMode ? 'Choose a file instead' : 'Paste code instead'}</button>
+          <button type="button" className="text-button" onClick={() => setPasteMode(v => !v)}>{pasteMode ? t('Choose a file instead') : t('Paste code instead')}</button>
         </div>
 
         <div className="pb-step">
-          <h3>{step(2, Boolean(cover))} Cover image</h3>
+          <h3>{step(2, Boolean(cover))} {t('Cover image')}</h3>
           <div className="pb-cover-row">
-            <button type="button" className="button" onClick={() => coverInput.current?.click()}><ImageIcon size={15}/> Choose image</button>
-            <button type="button" className="button subtle" onClick={() => void generateCover()} disabled={busy === 'cover'}>{busy === 'cover' ? <LoaderCircle size={15} className="spin"/> : <Wand2 size={15}/>} Generate cover</button>
-            {cover && <button type="button" className="icon-button" aria-label="Remove cover" onClick={() => setCover(null)}><X size={16}/></button>}
+            <button type="button" className="button" onClick={() => coverInput.current?.click()}><ImageIcon size={15}/> {t('Choose image')}</button>
+            <button type="button" className="button subtle" onClick={() => void generateCover()} disabled={busy === 'cover'}>{busy === 'cover' ? <LoaderCircle size={15} className="spin"/> : <Wand2 size={15}/>} {t('Generate cover')}</button>
+            {cover && <button type="button" className="icon-button" aria-label={t('Remove cover')} onClick={() => setCover(null)}><X size={16}/></button>}
           </div>
           <input ref={coverInput} type="file" accept="image/*" className="visually-hidden" onChange={e => { chooseCover(e.target.files?.[0]); e.target.value = ''; }}/>
-          <small className="muted-text">{cover ? `${cover.name} · ${bytes(cover.blob.size)}${cover.generated ? ' · generated from your title' : ''}` : 'Use the image your AI made, or generate one from the title.'}</small>
+          <small className="muted-text">{cover ? `${cover.name} · ${bytes(cover.blob.size)}${cover.generated ? t(' · generated from your title') : ''}` : t('Use the image your AI made, or generate one from the title.')}</small>
         </div>
 
         <div className="pb-step">
-          <h3>{step(3, extras.length > 0)} Extra files <span className="muted-text">optional</span></h3>
+          <h3>{step(3, extras.length > 0)} {t('Extra files')} <span className="muted-text">{t('optional')}</span></h3>
           <div className="pb-cover-row">
-            <button type="button" className="button" onClick={() => extraInput.current?.click()}><Paperclip size={15}/> Add files</button>
-            <span className="muted-text">Images, sounds, scripts, styles or data. Keep the names your HTML uses.</span>
+            <button type="button" className="button" onClick={() => extraInput.current?.click()}><Paperclip size={15}/> {t('Add files')}</button>
+            <span className="muted-text">{t('Images, sounds, scripts, styles or data. Keep the names your HTML uses.')}</span>
           </div>
           <input ref={extraInput} type="file" multiple className="visually-hidden" onChange={e => { addExtras(e.target.files); e.target.value = ''; }}/>
-          {extras.length > 0 && <div className="file-list pb-files">{extras.map(e => <div key={e.path} className="file-row">{e.url ? <img src={e.url} alt="" className="pb-thumb"/> : <FileText size={15}/>}<span>{e.path}</span><small>{bytes(e.file.size)}</small><button type="button" className="icon-button" aria-label={`Remove ${e.path}`} onClick={() => setExtras(list => list.filter(x => x.path !== e.path))}><Trash2 size={14}/></button></div>)}</div>}
+          {extras.length > 0 && <div className="file-list pb-files">{extras.map(e => <div key={e.path} className="file-row">{e.url ? <img src={e.url} alt="" className="pb-thumb"/> : <FileText size={15}/>}<span>{e.path}</span><small>{bytes(e.file.size)}</small><button type="button" className="icon-button" aria-label={t('Remove {0}', e.path)} onClick={() => setExtras(list => list.filter(x => x.path !== e.path))}><Trash2 size={14}/></button></div>)}</div>}
         </div>
 
         <div className="pb-step">
-          <h3>{step(4, Boolean(meta.title.trim()))} Details</h3>
+          <h3>{step(4, Boolean(meta.title.trim()))} {t('Details')}</h3>
           <div className="pb-fields">
-            <label className="form-field pb-wide"><span>Title</span><input value={meta.title} onChange={e => set('title', e.target.value)} maxLength={120} placeholder="e.g. Ableitungen verstehen"/></label>
-            <label className="form-field"><span>Type</span><select value={meta.type} onChange={e => set('type', e.target.value as ContentType)}>{CONTENT_TYPES.map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}</select></label>
-            <label className="form-field"><span>{meta.type === 'game' || meta.type === 'app' || meta.type === 'tool' ? 'Genre or category' : 'Subject'}</span>{meta.type === 'game' || meta.type === 'app' || meta.type === 'tool' ? <input value={meta.genre} onChange={e => set('genre', e.target.value)} placeholder="e.g. Arcade"/> : <input value={meta.subject} onChange={e => set('subject', e.target.value)} placeholder="e.g. Mathematik"/>}</label>
-            <label className="form-field"><span>Topic</span><input value={meta.topic} onChange={e => set('topic', e.target.value)} placeholder="optional"/></label>
-            <label className="form-field"><span>Language</span><input value={meta.language} onChange={e => set('language', e.target.value)} placeholder="e.g. de"/></label>
-            <label className="form-field pb-wide"><span>Description</span><textarea rows={2} value={meta.description} onChange={e => set('description', e.target.value)} placeholder="One or two sentences about what it does"/></label>
-            <label className="form-field"><span>Tags, comma separated</span><input value={meta.tags} onChange={e => set('tags', e.target.value)}/></label>
-            <label className="form-field"><span>Orientation</span><select value={meta.orientation} onChange={e => set('orientation', e.target.value as typeof meta.orientation)}><option value="any">Any</option><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select></label>
+            <label className="form-field pb-wide"><span>{t('Title')}</span><input value={meta.title} onChange={e => set('title', e.target.value)} maxLength={120} placeholder={t('e.g. Understanding derivatives')}/></label>
+            <label className="form-field"><span>{t('Type')}</span><select value={meta.type} onChange={e => set('type', e.target.value as ContentType)}>{CONTENT_TYPES.map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}</select></label>
+            <label className="form-field"><span>{meta.type === 'game' || meta.type === 'app' || meta.type === 'tool' ? t('Genre or category') : t('Subject')}</span>{meta.type === 'game' || meta.type === 'app' || meta.type === 'tool' ? <input value={meta.genre} onChange={e => set('genre', e.target.value)} placeholder={t('e.g. Arcade')}/> : <input value={meta.subject} onChange={e => set('subject', e.target.value)} placeholder={t('e.g. Mathematics')}/>}</label>
+            <label className="form-field"><span>{t('Topic')}</span><input value={meta.topic} onChange={e => set('topic', e.target.value)} placeholder={t('optional')}/></label>
+            <label className="form-field"><span>{t('Language')}</span><input value={meta.language} onChange={e => set('language', e.target.value)} placeholder="e.g. de"/></label>
+            <label className="form-field pb-wide"><span>{t('Description')}</span><textarea rows={2} value={meta.description} onChange={e => set('description', e.target.value)} placeholder={t('One or two sentences about what it does')}/></label>
+            <label className="form-field"><span>{t('Tags, comma separated')}</span><input value={meta.tags} onChange={e => set('tags', e.target.value)}/></label>
+            <label className="form-field"><span>{t('Orientation')}</span><select value={meta.orientation} onChange={e => set('orientation', e.target.value as typeof meta.orientation)}><option value="any">{t('Any')}</option><option value="landscape">{t('Landscape')}</option><option value="portrait">{t('Portrait')}</option></select></label>
           </div>
         </div>
       </div>
 
       <aside className="pb-preview">
         <div className="pb-card beam">
-          <div className="pb-card-cover" style={{ backgroundImage: cover ? `url("${cover.url}")` : generatedCoverImage({ title: meta.title || 'Untitled project', type: meta.type, subject: meta.subject || meta.genre } as LibraryItem) }}>
+          <div className="pb-card-cover" style={{ backgroundImage: cover ? `url("${cover.url}")` : generatedCoverImage({ title: meta.title || t('Untitled project'), type: meta.type, subject: meta.subject || meta.genre } as LibraryItem) }}>
             <span className="cover-type"><TypeIcon size={17}/></span>
-            {!cover && <span className="pb-card-title">{meta.title || 'Untitled project'}</span>}
+            {!cover && <span className="pb-card-title">{meta.title || t('Untitled project')}</span>}
           </div>
-          <div className="pb-card-info"><b>{meta.title || 'Untitled project'}</b><small>{[TYPE_LABEL[meta.type], meta.subject || meta.genre].filter(Boolean).join(' · ')}</small></div>
+          <div className="pb-card-info"><b>{meta.title || t('Untitled project')}</b><small>{[TYPE_LABEL[meta.type], meta.subject || meta.genre].filter(Boolean).join(' · ')}</small></div>
         </div>
         <div className="pb-check">
-          <h3>Package check</h3>
-          {!html ? <p className="muted-text">Add the HTML to see what’s inside and what’s missing.</p> : <>
-            <div className={`status-pill ${report?.score}`}><Sparkles size={14}/>{report?.score === 'likely' ? 'Ready to work offline' : 'Needs a look'}</div>
-            <ul className="finding-list">{report?.findings.map(f => <li key={f}>{f}</li>)}</ul>
+          <h3>{t('Package check')}</h3>
+          {!html ? <p className="muted-text">{t('Add the HTML to see what’s inside and what’s missing.')}</p> : <>
+            <div className={`status-pill ${report?.score}`}><Sparkles size={14}/>{report?.score === 'likely' ? t('Ready to work offline') : t('Needs a look')}</div>
+            <ul className="finding-list">{report?.findings.map(f => <li key={f}>{tm(f)}</li>)}</ul>
             <div className="pb-tree">{paths.map(p => <code key={p}>{p}</code>)}</div>
-            <small className="muted-text">{paths.length} files · about {bytes(totalSize)}</small>
+            <small className="muted-text">{t('{0} files · about {1}', paths.length, bytes(totalSize))}</small>
           </>}
         </div>
         {busy && busy !== 'cover' && <div className="progress-bar determinate"><i style={{ width: `${Math.round(progress * 100)}%` }}/></div>}
-        <button className="button primary pb-action" disabled={!ready || Boolean(busy)} onClick={() => void download()}>{busy === 'zip' ? <LoaderCircle size={16} className="spin"/> : <ArrowDownToLine size={16}/>} Download ZIP</button>
-        <button className="button pb-action" disabled={!ready || Boolean(busy)} onClick={() => void addToLibrary()}>{busy === 'library' ? <LoaderCircle size={16} className="spin"/> : <Plus size={16}/>} Add to my library</button>
-        {!ready && <small className="muted-text">Add the HTML and a title to export.</small>}
+        <button className="button primary pb-action" disabled={!ready || Boolean(busy)} onClick={() => void download()}>{busy === 'zip' ? <LoaderCircle size={16} className="spin"/> : <ArrowDownToLine size={16}/>} {t('Download ZIP')}</button>
+        <button className="button pb-action" disabled={!ready || Boolean(busy)} onClick={() => void addToLibrary()}>{busy === 'library' ? <LoaderCircle size={16} className="spin"/> : <Plus size={16}/>} {t('Add to my library')}</button>
+        {!ready && <small className="muted-text">{t('Add the HTML and a title to export.')}</small>}
       </aside>
     </div>
   </section>;

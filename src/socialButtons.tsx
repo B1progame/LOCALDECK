@@ -1,4 +1,5 @@
 /* "Continue with Google" and the other sign-in windows. */
+import { t, tm } from './i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import type { Auth } from '@firebase/auth';
@@ -15,13 +16,13 @@ function GoogleLogo() {
 
 function explain(error: unknown): string {
   switch ((error as { code?: string })?.code) {
-    case 'auth/popup-blocked': return 'Your browser blocked the sign-in window. Allow pop-ups for this site, then try again.';
-    case 'auth/operation-not-allowed': return 'This sign-in option is not switched on yet.';
-    case 'auth/unauthorized-domain': return 'Sign-in is not allowed on this address yet.';
-    case 'auth/account-exists-with-different-credential': return 'This email is already registered with another sign-in method. Use that method instead.';
-    case 'auth/user-cancelled': case 'auth/popup-closed-by-user': case 'auth/cancelled-popup-request': return 'Sign-in was cancelled.';
-    case 'auth/network-request-failed': case 'auth/internal-error': return 'Could not reach the sign-in service. Check your internet connection or content blocker.';
-    default: return error instanceof Error ? error.message : 'Sign-in could not be completed. Try again.';
+    case 'auth/popup-blocked': return t('Your browser blocked the sign-in window. Allow pop-ups for this site, then try again.');
+    case 'auth/operation-not-allowed': return t('This sign-in option is not switched on yet.');
+    case 'auth/unauthorized-domain': return t('Sign-in is not allowed on this address yet.');
+    case 'auth/account-exists-with-different-credential': return t('This email is already registered with another sign-in method. Use that method instead.');
+    case 'auth/user-cancelled': case 'auth/popup-closed-by-user': case 'auth/cancelled-popup-request': return t('Sign-in was cancelled.');
+    case 'auth/network-request-failed': case 'auth/internal-error': return t('Could not reach the sign-in service. Check your internet connection or content blocker.');
+    default: return error instanceof Error ? tm(error.message) : t('Sign-in could not be completed. Try again.');
   }
 }
 
@@ -46,7 +47,7 @@ export function FirebaseSocialButtons({ config, githubEnabled, facebookEnabled, 
 
   const connect = (provider: FirebaseSocialProvider) => {
     if (!auth.current) {
-      prepare().then(() => setMessage('Sign-in is ready now. Choose the button once more.'), error => setMessage(explain(error)));
+      prepare().then(() => setMessage(t('Sign-in is ready now. Choose the button once more.')), error => setMessage(explain(error)));
       return;
     }
     const opened = openSocialSignIn(auth.current, provider);
@@ -56,23 +57,23 @@ export function FirebaseSocialButtons({ config, githubEnabled, facebookEnabled, 
     opened.then(async result => {
       if (!latest()) return;
       setChecking(true);
-      if (result.verificationSent) setMessage('Check your email and confirm the address. Then come back and choose the same sign-in option again.');
+      if (result.verificationSent) setMessage(t('Check your email and confirm the address. Then come back and choose the same sign-in option again.'));
       else if (result.token) await onCredential(result.token);
     }).catch(error => { if (latest()) setMessage(explain(error)); }).finally(() => { if (latest()) { setBusy(null); setChecking(false); } });
   };
 
   const button = (provider: FirebaseSocialProvider, name: string, mark: React.ReactNode) => <button type="button" className="social-auth-button" disabled={checking || stage === 'preparing'} onClick={() => connect(provider)}>
-    {busy === provider || (stage === 'preparing' && provider === 'google') ? <LoaderCircle size={15} className="spin"/> : mark} {verb === 'signup' ? `Sign up with ${name}` : `Continue with ${name}`}
+    {busy === provider || (stage === 'preparing' && provider === 'google') ? <LoaderCircle size={15} className="spin"/> : mark} {verb === 'signup' ? t('Sign up with {0}', name) : t('Continue with {0}', name)}
   </button>;
 
   return <div className="social-auth-panel">
-    {!bare && <div className="auth-divider"><span>continue with a free account</span></div>}
+    {!bare && <div className="auth-divider"><span>{t('continue with a free account')}</span></div>}
     <div className="social-auth-buttons">
       {button('google', 'Google', <GoogleLogo/>)}
       {githubEnabled && button('github', 'GitHub', <span className="social-provider-mark github-mark" aria-hidden="true">GH</span>)}
       {facebookEnabled && button('facebook', 'Facebook', <span className="social-provider-mark facebook-mark" aria-hidden="true">f</span>)}
     </div>
     {message && <p className="email-auth-message" role="status">{message}</p>}
-    {(githubEnabled || facebookEnabled) && <p className="social-auth-help">GitHub and Facebook sign-ins must confirm the email address they share with Firebase.</p>}
+    {(githubEnabled || facebookEnabled) && <p className="social-auth-help">{t('GitHub and Facebook sign-ins must confirm the email address they share with Firebase.')}</p>}
   </div>;
 }

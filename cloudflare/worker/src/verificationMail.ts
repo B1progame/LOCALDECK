@@ -33,7 +33,7 @@ async function accessToken(account: ServiceAccount): Promise<string> {
   return (await response.json() as { access_token: string }).access_token;
 }
 
-export async function sendVerificationLink(env: MailEnv, email: string, name: string): Promise<void> {
+export async function sendVerificationLink(env: MailEnv, email: string, name: string, language: string): Promise<void> {
   const account = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT!) as ServiceAccount;
   const created = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(account.project_id)}/accounts:sendOobCode`, {
     method: 'POST',
@@ -45,7 +45,7 @@ export async function sendVerificationLink(env: MailEnv, email: string, name: st
   if (!code) throw new Error('link_without_code');
   const link = `${env.APP_URL}?mode=verifyEmail&oobCode=${encodeURIComponent(code)}`;
 
-  const sent = await fetch(env.MAIL_RELAY_URL!, { method: 'POST', headers: { 'content-type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ secret: env.MAIL_RELAY_SECRET, to: email, name: name.slice(0, 60), link }) });
+  const sent = await fetch(env.MAIL_RELAY_URL!, { method: 'POST', headers: { 'content-type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ secret: env.MAIL_RELAY_SECRET, to: email, name: name.slice(0, 60), link, language }) });
   if (!sent.ok) throw new Error(`relay_status_${sent.status}`);
   // Apps Script answers errors with status 200 and an HTML page, so only a clear yes counts.
   const result = await sent.json().catch(() => null) as { ok?: boolean; error?: string } | null;

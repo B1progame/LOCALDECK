@@ -1,10 +1,11 @@
 /* Shared building blocks used across LocalDeck screens. */
+import { language, plural, t } from './i18n';
 import { createPortal } from 'react-dom';
 import React, { createContext, useContext, useRef, useState } from 'react';
 import { animate, motion, useInView, useMotionTemplate, useMotionValue, useSpring, useTransform } from 'motion/react';
 
 /** Counts up to a number when it scrolls into view (Magic UI style number ticker). */
-export function CountUp({ value, format = (n: number) => Math.round(n).toLocaleString() }: { value: number; format?: (n: number) => string }) {
+export function CountUp({ value, format = (n: number) => Math.round(n).toLocaleString(language()) }: { value: number; format?: (n: number) => string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true });
   const from = useRef(0);
@@ -46,7 +47,9 @@ import { rovingKeys, useReturnFocus } from './a11y';
 
 export type Page = 'item' | 'home' | 'library' | 'favorites' | 'recent' | 'learning' | 'games' | 'collections' | 'import' | 'studio' | 'storage' | 'sharing' | 'login' | 'settings';
 
-export const TYPE_LABEL: Record<ContentType, string> = { game: 'Game', learning: 'Learning', app: 'App', tool: 'Tool', simulation: 'Simulation', presentation: 'Presentation', document: 'PDF', quiz: 'Quiz', other: 'Project' };
+export const TYPE_LABEL: Record<ContentType, string> = { game: t('Game'), learning: t('Learning'), app: t('App'), tool: t('Tool'), simulation: t('Simulation'), presentation: t('Presentation'), document: 'PDF', quiz: t('Quiz'), other: t('Project') };
+
+export const TYPE_PLURAL: Record<ContentType, string> = { game: t('Games'), learning: t('Learning'), app: t('Apps'), tool: t('Tools'), simulation: t('Simulations'), presentation: t('Presentations'), document: 'PDFs', quiz: t('Quizzes'), other: t('Projects') };
 
 export const TYPE_ICON: Record<ContentType, LucideIcon> = { game: Gamepad2, learning: BookOpen, app: Library, tool: Activity, simulation: Activity, presentation: Image, document: FileText, quiz: Check, other: PackageOpen };
 
@@ -57,12 +60,12 @@ export function go(page: Page, suffix = '') { location.hash = `/${page}${suffix}
 export function bytes(value: number): string {
   if (value < 1024) return `${value} B`;
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(0)} KB`;
-  if (value < 1024 ** 3) return `${(value / 1024 ** 2).toFixed(1)} MB`;
-  return `${(value / 1024 ** 3).toFixed(2)} GB`;
+  if (value < 1024 ** 3) return `${(value / 1024 ** 2).toLocaleString(language(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`;
+  return `${(value / 1024 ** 3).toLocaleString(language(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })} GB`;
 }
 
 export function friendlyDate(value?: number | null): string {
-  return value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(value) : 'Never opened';
+  return value ? new Intl.DateTimeFormat(language(), { dateStyle: 'medium' }).format(value) : t('Never opened');
 }
 
 export function formatRoutePath(id: string, path: string): string {
@@ -73,7 +76,7 @@ export function PageHeading({ eyebrow, title, description, action }: { eyebrow?:
   return <div className="page-heading"><div>{eyebrow && <div className="eyebrow">{eyebrow}</div>}<h1 aria-label={title}>{title.split(' ').map((word, i) => <span key={`${word}-${i}`} className="blur-word" style={{ '--i': i } as React.CSSProperties} aria-hidden="true">{word}{' '}</span>)}</h1>{description && <p>{description}</p>}</div>{action && <div className="heading-action">{action}</div>}</div>;
 }
 
-export const OPEN_VERB: Record<ContentType, string> = { game: 'Play', learning: 'Read', app: 'Open', tool: 'Open', simulation: 'Run simulation', presentation: 'Present', document: 'Read', quiz: 'Start quiz', other: 'Open' };
+export const OPEN_VERB: Record<ContentType, string> = { game: t('Play'), learning: t('Read'), app: t('Open'), tool: t('Open'), simulation: t('Run simulation'), presentation: t('Present'), document: t('Read'), quiz: t('Start quiz'), other: t('Open') };
 
 export const COVER_HUES: Record<ContentType, [number, number]> = { game: [262, 322], learning: [212, 252], app: [196, 232], tool: [24, 345], simulation: [166, 206], presentation: [36, 6], document: [222, 262], quiz: [148, 96], other: [250, 290] };
 
@@ -176,16 +179,16 @@ export function ItemMenu({ item, onClose }: { item: LibraryItem; onClose: () => 
   };
   // Phones get a sheet at the bottom of the screen. It leaves the card, because scrolling rows would cut it off.
   const [sheet] = useState(() => matchMedia('(max-width: 640px)').matches);
-  const content = <><button className={sheet ? 'menu-dismiss-sheet' : 'menu-dismiss'} tabIndex={-1} aria-hidden="true" onClick={onClose} /><div ref={menu} className={`item-menu ${sheet ? 'item-menu-sheet' : ''}`} role="menu" aria-label={`Actions for ${item.title}`} onKeyDown={onKeyDown}>
+  const content = <><button className={sheet ? 'menu-dismiss-sheet' : 'menu-dismiss'} tabIndex={-1} aria-hidden="true" onClick={onClose} /><div ref={menu} className={`item-menu ${sheet ? 'item-menu-sheet' : ''}`} role="menu" aria-label={t('Actions for {0}', item.title)} onKeyDown={onKeyDown}>
     {sheet && <div className="item-menu-title" role="presentation">{item.title}</div>}
-    <button role="menuitem" onClick={run(() => a.details(item))}><Info size={15}/> View details</button>
-    <button role="menuitem" onClick={run(() => a.edit(item))}><Pencil size={15}/> Edit details</button>
-    {isHtmlItem(item) && <button role="menuitem" onClick={run(() => a.editCode(item))}><Code2 size={15}/> Edit HTML code</button>}
-    <button role="menuitem" onClick={run(() => a.collect(item))}><FolderPlus size={15}/> Add to collection</button>
-    <button role="menuitem" onClick={run(() => a.share(item))}><Share2 size={15}/> Create encrypted link</button>
-    <button role="menuitem" onClick={run(() => a.duplicate(item))}><Copy size={15}/> Make a copy</button>
-    <button role="menuitem" onClick={run(() => a.exportOne(item))}><ArrowDownToLine size={15}/> Export project</button>
-    <button role="menuitem" className="danger-menu" onClick={run(() => a.remove(item))}><Trash2 size={15}/> Remove from library</button>
+    <button role="menuitem" onClick={run(() => a.details(item))}><Info size={15}/> {t('View details')}</button>
+    <button role="menuitem" onClick={run(() => a.edit(item))}><Pencil size={15}/> {t('Edit details')}</button>
+    {isHtmlItem(item) && <button role="menuitem" onClick={run(() => a.editCode(item))}><Code2 size={15}/> {t('Edit HTML code')}</button>}
+    <button role="menuitem" onClick={run(() => a.collect(item))}><FolderPlus size={15}/> {t('Add to collection')}</button>
+    <button role="menuitem" onClick={run(() => a.share(item))}><Share2 size={15}/> {t('Create encrypted link')}</button>
+    <button role="menuitem" onClick={run(() => a.duplicate(item))}><Copy size={15}/> {t('Make a copy')}</button>
+    <button role="menuitem" onClick={run(() => a.exportOne(item))}><ArrowDownToLine size={15}/> {t('Export project')}</button>
+    <button role="menuitem" className="danger-menu" onClick={run(() => a.remove(item))}><Trash2 size={15}/> {t('Remove from library')}</button>
   </div></>;
   return sheet ? createPortal(content, document.body) : content;
 }
@@ -217,13 +220,13 @@ export function ItemCard({ item, index = 0, compact = false }: { item: LibraryIt
     </button>
     <div className="item-info">
       <div className="item-title-row">
-        <button className="item-title-button" onClick={() => a.details(item)} title="View details"><b>{item.title}</b><small>{itemSubtitle(item)}</small></button>
-        <button className={`icon-button favorite-button ${item.favorite ? 'favorite-on' : ''}`} onClick={() => a.favorite(item)} aria-pressed={item.favorite} aria-label={`${item.favorite ? 'Remove' : 'Add'} ${item.title} ${item.favorite ? 'from' : 'to'} favorites`}><Heart size={17} fill={item.favorite ? 'currentColor' : 'none'}/></button>
-        <button className="icon-button item-menu-button" onClick={() => setMenu(v => !v)} aria-expanded={menu} aria-label={`More actions for ${item.title}`}><MoreHorizontal size={18}/></button>
+        <button className="item-title-button" onClick={() => a.details(item)} title={t('View details')}><b>{item.title}</b><small>{itemSubtitle(item)}</small></button>
+        <button className={`icon-button favorite-button ${item.favorite ? 'favorite-on' : ''}`} onClick={() => a.favorite(item)} aria-pressed={item.favorite} aria-label={item.favorite ? t('Remove {0} from favorites', item.title) : t('Add {0} to favorites', item.title)}><Heart size={17} fill={item.favorite ? 'currentColor' : 'none'}/></button>
+        <button className="icon-button item-menu-button" onClick={() => setMenu(v => !v)} aria-expanded={menu} aria-label={t('More actions for {0}', item.title)}><MoreHorizontal size={18}/></button>
       </div>
-      <div className="item-foot"><span>{bytes(item.storageSize)} · {item.fileCount} file{item.fileCount === 1 ? '' : 's'}</span>
+      <div className="item-foot"><span>{plural(item.fileCount, '{0} · {1} file', '{0} · {1} files', bytes(item.storageSize), item.fileCount)}</span>
         <input ref={updateInput} className="visually-hidden" type="file" accept=".zip,.html,.htm,.pdf,application/zip,text/html,application/pdf" onChange={event => void handleUpdate(event)} tabIndex={-1}/>
-        <button className="update-project-button" onClick={() => updateInput.current?.click()} disabled={updating} aria-label={`Update ${item.title} project files`} title="Replace this project’s files"><RefreshCw size={12} className={updating ? 'spin' : ''}/>{updating ? 'Updating…' : 'Update'}</button>
+        <button className="update-project-button" onClick={() => updateInput.current?.click()} disabled={updating} aria-label={t('Update {0} project files', item.title)} title={t('Replace this project’s files')}><RefreshCw size={12} className={updating ? 'spin' : ''}/>{updating ? t('Updating…') : t('Update')}</button>
       </div>
       {menu && <ItemMenu item={item} onClose={() => setMenu(false)} />}
     </div>
@@ -237,9 +240,9 @@ export function ItemRow({ item, meta }: { item: LibraryItem; meta?: React.ReactN
     <button className="item-row-cover" style={{ backgroundImage: coverBackground(item) }} onClick={() => a.open(item)} aria-label={`${OPEN_VERB[item.type]} ${item.title}`}><Play size={14} fill="currentColor"/></button>
     <button className="item-row-main" onClick={() => a.details(item)}><b>{item.title}</b><small>{itemSubtitle(item)}</small></button>
     <span className="item-row-meta">{meta ?? bytes(item.storageSize)}</span>
-    <button className={`icon-button ${item.favorite ? 'favorite-on' : ''}`} onClick={() => a.favorite(item)} aria-pressed={item.favorite} aria-label={`${item.favorite ? 'Remove' : 'Add'} ${item.title} ${item.favorite ? 'from' : 'to'} favorites`}><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'}/></button>
+    <button className={`icon-button ${item.favorite ? 'favorite-on' : ''}`} onClick={() => a.favorite(item)} aria-pressed={item.favorite} aria-label={item.favorite ? t('Remove {0} from favorites', item.title) : t('Add {0} to favorites', item.title)}><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'}/></button>
     <button className="button item-row-open" onClick={() => a.open(item)}>{OPEN_VERB[item.type]}</button>
-    <button className="icon-button" onClick={() => setMenu(v => !v)} aria-expanded={menu} aria-label={`More actions for ${item.title}`}><MoreHorizontal size={18}/></button>
+    <button className="icon-button" onClick={() => setMenu(v => !v)} aria-expanded={menu} aria-label={t('More actions for {0}', item.title)}><MoreHorizontal size={18}/></button>
     {menu && <ItemMenu item={item} onClose={() => setMenu(false)} />}
   </div>;
 }
@@ -248,7 +251,7 @@ export function ItemRow({ item, meta }: { item: LibraryItem; meta?: React.ReactN
 export function Shelf({ title, detail, items, limit = 8, seeAll }: { title: string; detail?: string; items: LibraryItem[]; limit?: number; seeAll?: { label?: string; onClick: () => void } }) {
   if (!items.length) return null;
   return <motion.section className="section-block shelf" initial={{ opacity: 0, y: 26 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ type: 'spring', bounce: .15, visualDuration: .55 }}>
-    <div className="section-title-row"><div><h2>{title}</h2>{detail && <p>{detail}</p>}</div>{seeAll && items.length > limit && <button className="text-button" onClick={seeAll.onClick}>{seeAll.label ?? 'See all'} <ChevronRight size={15}/></button>}</div>
+    <div className="section-title-row"><div><h2>{title}</h2>{detail && <p>{detail}</p>}</div>{seeAll && items.length > limit && <button className="text-button" onClick={seeAll.onClick}>{seeAll.label ?? t('See all')} <ChevronRight size={15}/></button>}</div>
     <div className="item-grid">{items.slice(0, limit).map((item, index) => <ItemCard key={item.id} item={item} index={index} compact />)}</div>
   </motion.section>;
 }

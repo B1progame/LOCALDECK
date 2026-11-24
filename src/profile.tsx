@@ -1,4 +1,5 @@
 /* Local profile: a display name and picture kept only in this browser. Separate from any sharing sign-in. */
+import { t } from './i18n';
 import { useRef, useState } from 'react';
 import { ImagePlus, Trash2, UserRound } from 'lucide-react';
 import { create } from 'zustand';
@@ -66,20 +67,20 @@ export function AccountProfileOffer({ account, notify }: { account: AccountInfo;
     setBusy(true);
     const { pictureSaved } = await importAccountProfile(account, choice);
     setBusy(false); close();
-    notify(choice.picture && !pictureSaved ? 'Your name was saved. The picture could not be copied; you can add one in Settings → Profile.' : 'Saved to your profile on this device.');
+    notify(choice.picture && !pictureSaved ? t('Your name was saved. The picture could not be copied; you can add one in Settings → Profile.') : t('Saved to your profile on this device.'));
   };
-  return <section className="account-offer" aria-label="Use your account for your profile">
+  return <section className="account-offer" aria-label={t('Use your account for your profile')}>
     <span className="account-offer-photo">{/^https:\/\//i.test(account.picture) ? <img src={account.picture} alt="" referrerPolicy="no-referrer"/> : <UserRound size={22}/>}</span>
     <div className="account-offer-copy">
-      <b>Use “{account.name || account.email}” for your LocalDeck profile?</b>
-      <small>Your name and picture are copied to this device only. Your library stays local, and you can change or remove them any time in Settings.</small>
+      <b>{t('Use “{0}” for your LocalDeck profile?', account.name || account.email)}</b>
+      <small>{t('Your name and picture are copied to this device only. Your library stays local, and you can change or remove them any time in Settings.')}</small>
     </div>
     <div className="account-offer-actions">
-      <button type="button" className="button primary" disabled={busy} onClick={() => void run({ name: true, picture: true })}>Use name & picture</button>
-      <button type="button" className="button" disabled={busy} onClick={() => void run({ name: true, picture: false })}>Name only</button>
-      <button type="button" className="text-button" disabled={busy} onClick={close}>No thanks</button>
+      <button type="button" className="button primary" disabled={busy} onClick={() => void run({ name: true, picture: true })}>{t('Use name & picture')}</button>
+      <button type="button" className="button" disabled={busy} onClick={() => void run({ name: true, picture: false })}>{t('Name only')}</button>
+      <button type="button" className="text-button" disabled={busy} onClick={close}>{t('No thanks')}</button>
     </div>
-    {profile.avatar && <span className="visually-hidden">You already have a profile picture; choosing a picture replaces it.</span>}
+    {profile.avatar && <span className="visually-hidden">{t('You already have a profile picture; choosing a picture replaces it.')}</span>}
   </section>;
 }
 
@@ -100,28 +101,28 @@ export function ProfileSettings({ notify, account }: { notify: (message: string,
     const { pictureSaved } = await importAccountProfile(account, { name: true, picture: true });
     setImporting(false);
     setDraft(useProfile.getState().name);
-    notify(pictureSaved ? 'Copied your account’s name and picture to this device.' : 'Copied your name. The picture could not be downloaded.', !pictureSaved && Boolean(account.picture));
+    notify(pictureSaved ? t('Copied your account’s name and picture to this device.') : t('Copied your name. The picture could not be downloaded.'), !pictureSaved && Boolean(account.picture));
   };
   const input = useRef<HTMLInputElement>(null);
   const choose = async (file?: File) => {
     if (!file) return;
-    if (!file.type.startsWith('image/')) { notify('Choose a PNG, JPG or WebP picture.', true); return; }
-    try { update({ avatar: await toAvatar(file) }); notify('Profile picture updated.'); }
-    catch { notify('That picture could not be read.', true); }
+    if (!file.type.startsWith('image/')) { notify(t('Choose a PNG, JPG or WebP picture.'), true); return; }
+    try { update({ avatar: await toAvatar(file) }); notify(t('Profile picture updated.')); }
+    catch { notify(t('That picture could not be read.'), true); }
   };
   return <div className="profile-editor">
-    <button type="button" className="profile-photo" onClick={() => input.current?.click()} aria-label="Choose a profile picture">
+    <button type="button" className="profile-photo" onClick={() => input.current?.click()} aria-label={t('Choose a profile picture')}>
       <Avatar size={76}/><span className="profile-photo-edit"><ImagePlus size={16}/></span>
     </button>
     <input ref={input} type="file" accept="image/*" className="visually-hidden" onChange={e => { void choose(e.target.files?.[0]); e.target.value = ''; }}/>
     <div className="profile-fields">
-      <label className="form-field"><span>Your name</span><input value={draft} maxLength={40} placeholder="e.g. Alex" onChange={e => setDraft(e.target.value)} onBlur={() => { if (draft.trim() !== name) { update({ name: draft.trim() }); notify(draft.trim() ? `Hi ${draft.trim()}! Your name is saved on this device.` : 'Name removed.'); } }} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}/></label>
+      <label className="form-field"><span>{t('Your name')}</span><input value={draft} maxLength={40} placeholder={t('e.g. Alex')} onChange={e => setDraft(e.target.value)} onBlur={() => { if (draft.trim() !== name) { update({ name: draft.trim() }); notify(draft.trim() ? t('Hi {0}! Your name is saved on this device.', draft.trim()) : t('Name removed.')); } }} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}/></label>
       <div className="row-actions">
-        <button type="button" className="button" onClick={() => input.current?.click()}><ImagePlus size={15}/> {avatar ? 'Change picture' : 'Add picture'}</button>
-        {account && <button type="button" className="button subtle" disabled={importing} onClick={() => void fromAccount()}><UserRound size={15}/> Use my sign-in name & picture</button>}
-        {avatar && <button type="button" className="button danger-button" onClick={() => { update({ avatar: null }); notify('Profile picture removed.'); }}><Trash2 size={15}/> Remove</button>}
+        <button type="button" className="button" onClick={() => input.current?.click()}><ImagePlus size={15}/> {avatar ? t('Change picture') : t('Add picture')}</button>
+        {account && <button type="button" className="button subtle" disabled={importing} onClick={() => void fromAccount()}><UserRound size={15}/> {t('Use my sign-in name & picture')}</button>}
+        {avatar && <button type="button" className="button danger-button" onClick={() => { update({ avatar: null }); notify(t('Profile picture removed.')); }}><Trash2 size={15}/> {t('Remove')}</button>}
       </div>
-      <small className="muted-text">Only stored in this browser and never uploaded. Copying from your sign-in account makes a local copy; it doesn’t link the two.</small>
+      <small className="muted-text">{t('Only stored in this browser and never uploaded. Copying from your sign-in account makes a local copy; it doesn’t link the two.')}</small>
     </div>
   </div>;
 }

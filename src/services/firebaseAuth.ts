@@ -1,3 +1,4 @@
+import { language } from '../i18n';
 type FirebaseAuthResponse = { idToken?: string; email?: string; displayName?: string; users?: Array<{ email?: string; emailVerified?: boolean; displayName?: string }>; error?: { message?: string } };
 
 function messageFor(raw: string): string {
@@ -21,7 +22,7 @@ export async function firebaseAuthRequest(apiKey: string, operation: string, bod
   let response: Response;
   try {
     response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:${operation}?key=${encodeURIComponent(apiKey)}`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-firebase-locale': language() }, body: JSON.stringify(body),
     });
   } catch {
     throw new Error('Could not reach Firebase. Check your internet connection and try again.');

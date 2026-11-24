@@ -266,8 +266,12 @@ async function adminOverview(env: Env, owner: Owner): Promise<unknown> {
 async function sendVerification(request: Request, env: Env, headers: Headers): Promise<Response> {
   if (!env.FIREBASE_SERVICE_ACCOUNT || !env.MAIL_RELAY_URL || !env.MAIL_RELAY_SECRET || !env.APP_URL) return json({ error: 'mail_not_configured' }, 501, headers);
   if (!await rateLimitIp(env, request, 'auth_windows', MAX_IP_MAILS_PER_HOUR, 'mail:')) return json({ error: 'rate_limited' }, 429, headers);
-  let credential = '';
-  try { const body = JSON.parse(new TextDecoder().decode(await readBounded(request, 12 * 1024))) as { credential?: unknown }; credential = typeof body.credential === 'string' ? body.credential : ''; }
+  let credential = '', language = 'en';
+  try {
+    const body = JSON.parse(new TextDecoder().decode(await readBounded(request, 12 * 1024))) as { credential?: unknown; language?: unknown };
+    credential = typeof body.credential === 'string' ? body.credential : '';
+    if (typeof body.language === 'string' && /^[a-z]{2}$/.test(body.language)) language = body.language;
+  }
   catch { return json({ error: 'invalid_request' }, 400, headers); }
   const claims = await verifyFirebaseToken(credential, env);
   if (!claims) return json({ error: 'unauthorized' }, 401, headers);
@@ -280,7 +284,7 @@ async function sendVerification(request: Request, env: Env, headers: Headers): P
   const slot = await env.SHARES_DB.prepare('INSERT INTO mail_windows (window_start, sent) VALUES (?, 1) ON CONFLICT(window_start) DO UPDATE SET sent = sent + 1 WHERE mail_windows.sent < ? RETURNING sent').bind(dayStart, MAX_MAILS_PER_DAY).first<{ sent: number }>();
   try {
     if (!slot) throw new Error('daily_limit');
-    await sendVerificationLink(env, claims.email, claims.name ?? '');
+    await sendVerificationLink(env, claims.email, claims.name ?? '', language);
     return json({ ok: true }, 200, headers);
   } catch (error) {
     // Frees the two-minute lock: the app falls back to Firebase's own email.

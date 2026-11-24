@@ -961,7 +961,7 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 .details-more .item-menu { top: 48px; right: auto; left: 0; color: var(--text); }
 .icon-only { width: 44px; padding: 0; }
 .details-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; margin-top: 18px; }
-.details-main, .details-side { display: grid; align-content: start; gap: 18px; }
+.details-main, .details-side { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 18px; }
 .details-page .panel h2 { margin-bottom: 12px; }
 .panel-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .panel-title-row h2 { margin-bottom: 0 !important; }
@@ -990,7 +990,7 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 .details-tools { display: grid; gap: 8px; }
 .details-tools h2 { margin-bottom: 4px !important; }
 
-@media (max-width: 1080px) { .details-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1080px) { .details-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 860px) { .details-hero { grid-template-columns: 1fr; gap: 20px; padding: 20px; } .details-cover { max-width: 420px; } }
 @media (max-width: 640px) {
   .item-row-meta, .item-row-open { display: none; }
@@ -1522,7 +1522,9 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
   .details-actions > .button:first-child { grid-column: 1 / -1; min-height: 50px; }
   .details-actions .button { min-width: 0; padding-inline: 6px; }
   .details-actions .button svg { flex: none; }
-  .details-actions .button { gap: 6px; font-size: 13px; }
+  /* Icon above the label, so longer languages fit */
+  .details-actions .hero-ghost { flex-direction: column; gap: 5px; min-height: 60px; font-size: 12px; }
+  .details-more, .details-more .button { width: 100%; height: 100%; }
 
   /* Project menu becomes a sheet */
   .menu-dismiss-sheet { position: fixed; inset: 0; z-index: 120; border: 0; background: var(--scrim); animation: scrim-in .2s ease; }
@@ -1551,3 +1553,23 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 @media (max-width: 330px) { .item-grid, .collection-grid { grid-template-columns: 1fr; } }
 @keyframes sheet-up { from { transform: translateY(100%); } }
 @keyframes scrim-in { from { opacity: 0; } }
+
+/* ---------- Language ---------- */
+.language-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; padding: 14px; }
+.language-card { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 9px 14px 9px 10px; border: 1px solid var(--line); border-radius: 15px; background: var(--bg); color: var(--text); text-align: left; transition: border-color .18s ease, background-color .18s ease, transform .18s var(--ease); }
+.language-card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.language-card[aria-checked='true'] { border-color: var(--accent); background: var(--accent-soft); }
+.language-card.pending { opacity: .6; }
+.language-mark { display: grid; flex: none; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: var(--interactive); color: var(--text-2); font-size: 13px; font-weight: 700; letter-spacing: .02em; }
+.language-card[aria-checked='true'] .language-mark { background: var(--accent); color: var(--on-accent); }
+.language-name { display: flex; flex: 1; min-width: 0; flex-direction: column; line-height: 1.3; }
+.language-name b { font-size: 14px; font-weight: 600; }
+.language-name small { color: var(--muted); font-size: 12.5px; }
+.language-check { flex: none; color: var(--accent); }
+.language-picker { display: inline-flex; align-items: center; gap: 8px; margin-top: -14px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 99px; background: var(--surface); color: var(--text-2); font-size: 13.5px; }
+.language-picker:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.language-picker select { min-height: 36px; padding: 0 4px; border: 0; outline: 0; background: transparent; color: inherit; font-weight: 550; cursor: pointer; }
+.language-picker option { background: var(--elevated); color: var(--text); }
+@media (pointer: coarse) { .language-picker select { min-height: 44px; } }
+@media (max-width: 640px) { .language-grid { grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; } .language-card { gap: 9px; padding: 8px 10px 8px 8px; } .language-card:first-child { grid-column: 1 / -1; } .language-check { display: none; } }
+.panel-title-row { flex-wrap: wrap; row-gap: 8px; }

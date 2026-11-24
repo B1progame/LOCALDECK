@@ -50,7 +50,7 @@ const mailEnv = { ...env, APP_URL: 'https://app.example/', MAIL_RELAY_URL: 'http
 const call = (path, credential, init = {}) => worker.fetch(new Request(SHARES + path, { ...init, headers: { ...(credential ? { Authorization: `Bearer ${credential}` } : {}), ...init.headers } }), env);
 const upload = credential => call('', credential, { method: 'POST', body: new Uint8Array(64), headers: { 'content-length': '64' } });
 const signIn = async credential => (await worker.fetch(new Request(`${SHARES}/auth/firebase`, { method: 'POST', body: JSON.stringify({ credential }) }), env)).json();
-const mail = (credential, target = mailEnv) => worker.fetch(new Request(`${SHARES}/auth/verification`, { method: 'POST', body: JSON.stringify({ credential }) }), target);
+const mail = (credential, target = mailEnv, language = undefined) => worker.fetch(new Request(`${SHARES}/auth/verification`, { method: 'POST', body: JSON.stringify({ credential, language }) }), target);
 
 const admin = await token({ sub: 'admin-uid', email: 'admin@example.com' });
 const person = await token({ sub: 'person-uid', email: 'person@example.com' });
@@ -100,8 +100,8 @@ test('without a mail service the app is told to use the Firebase email', async (
 
 test('the confirmation email goes to the signed address with a LocalDeck link, once per two minutes', async () => {
   const unverified = await token({ sub: 'new-uid', email: 'new@example.com', email_verified: false, name: 'New Person' });
-  assert.equal((await mail(unverified)).status, 200);
-  assert.deepEqual(sentMails, [{ secret: 'relay-secret', to: 'new@example.com', name: 'New Person', link: 'https://app.example/?mode=verifyEmail&oobCode=code%2B1' }]);
+  assert.equal((await mail(unverified, mailEnv, 'de')).status, 200);
+  assert.deepEqual(sentMails, [{ secret: 'relay-secret', to: 'new@example.com', name: 'New Person', link: 'https://app.example/?mode=verifyEmail&oobCode=code%2B1', language: 'de' }]);
   const again = await mail(unverified);
   assert.equal(again.status, 429);
   assert.equal((await again.json()).error, 'mail_wait');

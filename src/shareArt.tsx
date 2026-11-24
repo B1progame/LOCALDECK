@@ -1,5 +1,6 @@
 /* Animated illustration for the sign-in / sharing screens.
    It tells the sharing story: your project → encrypted in the browser → a friend opens the link. */
+import { t } from './i18n';
 import { useEffect, useRef } from 'react';
 import { useStillMotion } from './a11y';
 
@@ -61,7 +62,7 @@ export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
         <rect x="42" y="254" width="44" height="4" rx="2" fill="#fff" opacity=".5"/>
         <rect x="42" y="263" width="36" height="4" rx="2" fill="#fff" opacity=".5"/>
         <path d="M44 280 l6 -6 l6 4 l8 -9 l10 11 z" fill="#fff" opacity=".7"/>
-        <text x="64" y="312" textAnchor="middle" className="sa-label">Your project</text>
+        <text x="64" y="312" textAnchor="middle" className="sa-label">{t('Your project')}</text>
       </g>
 
       {/* destination: a friend */}
@@ -73,7 +74,7 @@ export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
           <circle cx="378" cy="240" r="10" fill="#fff"/>
           <path d="M373 240 l3.5 3.5 l6.5 -7" fill="none" stroke="#10b981" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
         </g>
-        <text x="356" y="312" textAnchor="middle" className="sa-label">A friend</text>
+        <text x="356" y="312" textAnchor="middle" className="sa-label">{t('A friend')}</text>
       </g>
 
       {/* the vault: encryption happens here, in your browser */}
@@ -111,10 +112,10 @@ export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
         <animateTransform attributeName="transform" type="translate" values="0 0;-73.5 -71.4" dur=".9s" additive="sum" repeatCount="indefinite"/>
         <animateTransform attributeName="transform" type="scale" values="1;1.35" dur=".9s" additive="sum" repeatCount="indefinite"/>
       </rect>
-      <g className="sa-tag"><rect x="138" y="298" width="144" height="22" rx="11" fill="#1e1442" stroke="#a78bfa" strokeOpacity=".45"/><text x="210" y="313" textAnchor="middle" className="sa-label sa-label-strong">Encrypted on your device</text></g>
+      <g className="sa-tag"><rect x="133" y="298" width="154" height="22" rx="11" fill="#1e1442" stroke="#a78bfa" strokeOpacity=".45"/><text x="210" y="313" textAnchor="middle" className="sa-label sa-label-strong">{t('Encrypted on your device')}</text></g>
     </svg>
     <div className="share-art-chips">
-      {mode === 'signup' ? <><span><i className="dot-green"/> Free account</span><span><i className="dot-violet"/> Library stays on your device</span></> : <><span><i className="dot-violet"/> AES-256</span><span><i className="dot-green"/> Key stays in the link</span></>}
+      {mode === 'signup' ? <><span><i className="dot-green"/> {t('Free account')}</span><span><i className="dot-violet"/> {t('Library stays on your device')}</span></> : <><span><i className="dot-violet"/> AES-256</span><span><i className="dot-green"/> {t('Key stays in the link')}</span></>}
     </div>
   </div>;
 }
