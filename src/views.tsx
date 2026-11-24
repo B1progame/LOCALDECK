@@ -3,7 +3,7 @@ import { language, plural, t, tm } from './i18n';
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, useScroll, useTransform } from 'motion/react';
 import {
-  Archive, ArrowLeft, ArrowRight, BookOpen, Clock3, Code2, FileText, FolderPlus, Gamepad2, Heart, LayoutGrid,
+  Archive, ArrowLeft, ArrowRight, BookOpen, Camera, Clock3, Code2, FileText, FolderPlus, Gamepad2, Heart, LayoutGrid,
   Library, List, ListFilter, MoreHorizontal, Pencil, Play, Plus, Search, Share2, ShieldCheck, Sparkles, Upload, X,
   type LucideIcon,
 } from 'lucide-react';
@@ -13,7 +13,7 @@ import { tagsWithMark, useContentMarks } from './contentMarks';
 import { ContentNote } from './contentNote';
 import { ProjectScanPanel } from './projectScanPanel';
 import { rovingKeys, useStillMotion } from './a11y';
-import { getAssets, type ItemSort } from './services/library';
+import { getAssets, hasPhotoCover, type ItemSort } from './services/library';
 import type { Collection, ContentType, LibraryAsset, LibraryItem } from './types';
 import {
   Chips, CountUp, EmptyState, ItemCard, ItemMenu, ItemRow, LEARNING_TYPES, OPEN_VERB, PLAY_TYPES, PageHeading, Shelf, TYPE_ICON, TYPE_LABEL, TYPE_PLURAL,
@@ -291,6 +291,8 @@ export function ItemDetailsPage({ item, collections }: { item: LibraryItem | und
           {memberOf.length ? <div className="tag-list">{memberOf.map(c => <button key={c.id} className="tag tag-link" style={{ '--tile': c.accentColor } as React.CSSProperties} onClick={() => go('collections', `?collection=${encodeURIComponent(c.id)}`)}>{c.name}</button>)}</div> : <p className="muted-text">{t('Not in a collection yet.')}</p>}
         </section>
         <section className="panel details-tools"><h2>{t('Manage')}</h2>
+          {isHtmlItem(item) && <button className="button" onClick={() => a.takeCover(item)}><Camera size={15}/> {t('Photo of the project as cover')}</button>}
+          {hasPhotoCover(item) && <button className="button" onClick={() => a.dropCover(item)}>{t('Remove the photo')}</button>}
           <button className="button" onClick={() => a.exportOne(item)}>{t('Export as ZIP')}</button>
           <button className="button" onClick={() => a.duplicate(item)}>{t('Make a copy')}</button>
           <button className="button danger-button" onClick={() => a.remove(item)}>{t('Remove from library')}</button>

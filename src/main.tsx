@@ -20,7 +20,7 @@ import { FirebaseSocialButtons } from './socialButtons';
 import {
   addToCollection, checkLibraryIntegrity, createCollection, createItem, deleteCollection, deleteItem, duplicateItem,
   finishOpenSession, getAllItems, getAssets, getCollections, replaceItemFiles, updateHtmlAsset,
-  getSettings, getSubjects, recordOpenSession, removeFromCollection, repairLibrary, saveSubject, toggleFavorite,
+  getSettings, getSubjects, recordOpenSession, removeFromCollection, removePhotoCover, setPhotoCover, repairLibrary, saveSubject, toggleFavorite,
   updateCollection, updateItem, type ItemSort,
 } from './services/library';
 import type { ContentCheck } from './services/contentCheck';
@@ -43,6 +43,7 @@ import { LocalAiSettings } from './localAiSettings';
 import { ITEMS_CHANGED, readProjectText, ruleCheck, scanImported } from './autoScan';
 import { asksFirst, setContentMarks, useContentMarks } from './contentMarks';
 import { ContentNote } from './contentNote';
+import { PhotoStudio } from './photoStudio';
 import { DEFAULT_ACCOUNT, getAccount, uploadShare, type ShareAccount } from './services/shareService';
 import { sendVerificationMail } from './services/verificationMail';
 import { rovingKeys, useBackgroundMotion, useConnection, useReturnFocus } from './a11y';
@@ -96,6 +97,7 @@ function App() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [, setSubjects] = useState<Awaited<ReturnType<typeof getSubjects>>>([]);
   const [query, setQuery] = useState('');
+  const [photoItem, setPhotoItem] = useState<LibraryItem | null>(null);
   const nextQuery = useRef('');
   const [globalQuery, setGlobalQuery] = useState('');
   const [sort, setSort] = useState<ItemSort>('imported');
@@ -245,6 +247,8 @@ function App() {
     describe: async (item, changes) => { try { await updateItem(item.id, changes); await refresh(); notify(t('Project details updated.')); } catch (error) { notify(t('The details could not be saved.'), true); throw error; } },
     confirmContent: item => runSafely(async () => { if (item.contentCheck) await updateItem(item.id, { contentCheck: { ...item.contentCheck, confirmed: true } }, { touch: false }); await refresh(); }),
     showTag: tag => { nextQuery.current = `#${tag}`; if (route.page === 'library') setQuery(nextQuery.current); else go('library'); },
+    takeCover: item => setPhotoItem(item),
+    dropCover: item => runSafely(async () => { await removePhotoCover(item.id); await refresh(); notify(t('The photo was removed.')); }),
     update: (item, file) => updateProject(item, file),
     collect: item => setModal({ kind: 'collect', item }),
     share: item => void prepareShare(item),
@@ -341,7 +345,7 @@ function App() {
     event.preventDefault(); setDialogError(''); const form = new FormData(event.currentTarget);
     try {
       if (modal?.kind === 'edit' && modal.item) {
-        await updateItem(modal.item.id, { title: String(form.get('title')).trim(), type: String(form.get('type')) as ContentType, subject: String(form.get('subject')).trim(), topic: String(form.get('topic')).trim(), description: String(form.get('description')).trim(), tags: String(form.get('tags')).split(',').map(x => x.trim()).filter(Boolean) });
+        await updateItem(modal.item.id, { title: String(form.get('title')).trim(), type: String(form.get('type')) as ContentType, subject: String(form.get('subject')).trim(), topic: String(form.get('topic')).trim(), description: String(form.get('description')).trim(), tags: String(form.get('tags')).split(',').map(x => x.replace(/#/g, '').trim()).filter(Boolean).slice(0, Math.max(10, modal.item.tags.length)) });
         await refresh(); notify(t('Project details updated.'));
       } else if (modal?.kind === 'collect' && modal.item) {
         const selected = new Set(form.getAll('collectionIds').map(String));
@@ -449,6 +453,7 @@ function App() {
     {!isLoginPage && <nav inert={behindSheet} className="tabbar" aria-label={t('Quick navigation')}>{([['home',t('Home'),Home],['library',t('Library'),Library],['learning',t('Learn'),BookOpen],['import',t('Import'),Upload]] as const).map(([page,label,Icon]) => <a key={page} href={`#/${page}`} className={currentPage === page ? 'active' : ''} aria-current={currentPage === page ? 'page' : undefined}>{currentPage === page && <motion.span layoutId="tab-pill" className="tab-pill" transition={{ type: 'spring', bounce: .25, visualDuration: .4 }}/>}<Icon size={21} strokeWidth={currentPage === page ? 2.2 : 1.8}/>{label}</a>)}<button type="button" onClick={() => setMobileNav(true)} aria-label={t('More destinations')}><Menu size={21} strokeWidth={1.8}/>{t('More')}</button></nav>}
     <AnimatePresence>{toast && <motion.div className={`toast ${toast.error ? 'toast-error' : ''}`} role={toast.error ? 'alert' : 'status'} initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:6 }}><span className="toast-icon">{toast.error ? '!' : '✓'}</span>{toast.message}</motion.div>}</AnimatePresence>
     <SearchOverlay open={searchOpen && !playing} onClose={() => { setSearchOpen(false); setGlobalQuery(''); }} value={globalQuery} onChange={setGlobalQuery} items={items} onOpen={item => { setSearchOpen(false); setGlobalQuery(''); go('item', `/${encodeURIComponent(item.id)}`); }} />
+    {photoItem && <PhotoStudio title={photoItem.title} game={photoItem.type === 'game'} load={async () => ({ files: (await getAssets(photoItem.id)).map(asset => ({ path: asset.normalizedPath, blob: asset.blob })), entry: photoItem.entryFile })} onUse={async photo => { try { await setPhotoCover(photoItem.id, photo); await refresh(); notify(t('The photo is the new cover.')); } catch (error) { notify(safeError(error), true); throw error; } }} onClose={() => setPhotoItem(null)}/>}
     <AnimatePresence>{modal && <Modal modal={modal} progress={shareProgress} collections={collections} busy={busy} onClose={() => { setModal(null); setDialogError(''); }} onEditCode={item=>setCodeEditorItem(item)} onSubmit={saveModal} error={dialogError} onPreviewChange={(update) => setModal(current => current?.preview ? { ...current, preview: { ...current.preview, ...update } } : current)} />}</AnimatePresence>
     <AnimatePresence>{codeEditorItem && <HtmlCodeEditor item={codeEditorItem} onClose={()=>setCodeEditorItem(null)} onSaved={refresh} notify={notify} />}</AnimatePresence>
     <AnimatePresence>{playing && <Player key={playing.id} item={playing} close={closePlayer} onOpened={playerOpened} />}</AnimatePresence>

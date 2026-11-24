@@ -53,10 +53,10 @@ test('typical mistakes of the small model are corrected', async () => {
 });
 
 test('the name on the page wins, a meaningless one does not', async () => {
-  const run = title => suggestDetails({ ...project('x'), title }, { filename: 'a.html', language: 'German', ask: async () => 'Name: Erfunden\nTopic: T\nTags: a1, b1, c1, d1, e1, f1, g1, h1' }).then(result => result.suggestion);
+  const run = title => suggestDetails({ ...project('x'), title }, { filename: 'a.html', language: 'German', ask: async () => 'Name: Erfunden\nTopic: T\nTags: a1, b1, c1, d1, e1, f1, g1, h1, i1, j1, k1' }).then(result => result.suggestion);
   assert.equal((await run('Pixel Palette')).title, 'Pixel Palette');
   for (const title of ['Document', 'Vite + React App', '']) assert.equal((await run(title)).title, 'Erfunden', title);
-  assert.equal((await run('')).tags.length, 6);
+  assert.equal((await run('')).tags.length, 10);
 });
 
 const project = text => ({ title: '', language: 'de', description: '', headings: ['H'], buttons: [], text });

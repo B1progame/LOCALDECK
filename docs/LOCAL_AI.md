@@ -14,6 +14,13 @@ Every import and every shared link is also checked by rules, without any AI (`sr
 
 A click on a hashtag shows all projects with it. `#word` in the search does the same.
 
+## Hashtags and covers
+
+- Kind, subject, topic and the important words of a project become hashtags, at most ten. Hashtags that are already there stay.
+- **Details → Manage → Photo of the project as cover** (and **Photo of the project** in the package builder) runs the project in an isolated frame, presses its start button and takes several photos. The best one is preselected. A photo can also be taken while playing. Qwen reads text and cannot see: it chooses the start button when the usual words do not help, the pictures are compared by how much there is to see.
+- The frame has no internet, no storage and no access to LocalDeck. Only a picture comes out of it (`src/services/projectPhoto.ts`, `src/photoStudio.tsx`). Some projects cannot be photographed, for example very large ones.
+- **AI studio → Package builder → Fill in with the local AI** fills in the details of a new package.
+
 ## Engines
 
 | Engine | What is loaded | Where it works |

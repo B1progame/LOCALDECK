@@ -2,12 +2,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, CircleStop, LoaderCircle, ScanText, X } from 'lucide-react';
 import { t } from './i18n';
-import { askAbout, readItem, ruleCheck, useAutoScan, withAi } from './autoScan';
+import { askAbout, kindTag, readItem, ruleCheck, useAutoScan, withAi } from './autoScan';
 import { cancelLoading, stopGenerating, useLocalAi } from './localAi/engine';
 import { ContentNote } from './contentNote';
 import { LocalAiStatus } from './localAiSettings';
 import { withOpinion, type ContentCheck } from './services/contentCheck';
-import { mergeTags, type ScanResult } from './services/projectScan';
+import { importantTags, MAX_TAGS, type ScanResult } from './services/projectScan';
 import { TYPE_LABEL, useItemActions } from './shared';
 import type { ContentType, LibraryItem } from './types';
 
@@ -46,7 +46,7 @@ export function ProjectScanPanel({ item }: { item: LibraryItem }) {
       if (cancelled()) return;
       const { suggestion } = result;
       if (!suggestion.title && !suggestion.description && !suggestion.tags.length) { setProblem(t('The AI gave no usable answer. Try again.')); return; }
-      const tags = mergeTags(item.tags, suggestion.tags);
+      const tags = importantTags(item.tags, suggestion, kindTag(suggestion.type || item.type));
       setFound({ ...result, check: withOpinion(ruleCheck(project, { ...item, tags }), result.found, suggestion.description) });
       setDraft({ title: suggestion.title || item.title, type: suggestion.type || item.type, subject: suggestion.subject || item.subject, topic: suggestion.topic || item.topic, description: suggestion.description || item.description, tags: tags.join(', ') });
       window.setTimeout(() => heading.current?.focus(), 0);
@@ -62,7 +62,7 @@ export function ProjectScanPanel({ item }: { item: LibraryItem }) {
     event.preventDefault();
     if (!draft?.title.trim() || !found) return;
     setSaving(true);
-    try { await a.describe(item, { title: draft.title.trim(), type: draft.type, subject: draft.subject.trim(), topic: draft.topic.trim(), description: draft.description.trim(), tags: draft.tags.split(',').map(tag => tag.replace(/#/g, '').trim()).filter(Boolean), contentCheck: { ...found.check, ...(item.contentCheck?.confirmed ? { confirmed: true } : {}) } }); close(); }
+    try { await a.describe(item, { title: draft.title.trim(), type: draft.type, subject: draft.subject.trim(), topic: draft.topic.trim(), description: draft.description.trim(), tags: draft.tags.split(',').map(tag => tag.replace(/#/g, '').trim()).filter(Boolean).slice(0, Math.max(MAX_TAGS, item.tags.length)), contentCheck: { ...found.check, ...(item.contentCheck?.confirmed ? { confirmed: true } : {}) } }); close(); }
     catch { /* the page shows the reason */ }
     finally { setSaving(false); }
   };

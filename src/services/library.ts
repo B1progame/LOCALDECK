@@ -25,7 +25,7 @@ function createItemFromPreview(preview: ImportPreview, itemId = id()): LibraryIt
   const now = Date.now();
   return {
     id: itemId, title: preview.title.trim() || 'Untitled project', type: preview.type, description: preview.description,
-    subject: preview.subject, topic: preview.topic, genre: preview.manifest?.genre ?? '', tags: [...preview.tags], collectionIds: [],
+    subject: preview.subject, topic: preview.topic, genre: preview.manifest?.genre ?? '', tags: preview.tags.slice(0, 10), collectionIds: [],
     favorite: false, artworkReferences: artworkFor(preview),
     entryFile: preview.selectedEntry, originalFilename: preview.sourceName, storageSize: preview.storageSize,
     manifestVersion: preview.manifest?.schemaVersion ?? 1, createdAt: now, updatedAt: now, importedAt: now,
@@ -77,10 +77,14 @@ export async function replaceItemFiles(itemId: string, preview: ImportPreview): 
     const current = await db.items.get(itemId);
     if (!current) throw new Error('This project is no longer in your library.');
     const manifest = preview.manifest;
-    const artwork = manifest ? artworkFor(preview) : current.artworkReferences;
+    // A photo of the old version goes away together with its files.
+    const { ownCover: _ownCover, ...kept } = current.artworkReferences;
+    if (hasPhotoCover(current)) delete kept.cover;
+    const artwork = manifest ? artworkFor(preview) : kept;
     updated = {
       ...current,
-      ...(manifest ? { title: preview.title.trim() || current.title, type: preview.type, description: preview.description, subject: preview.subject, topic: preview.topic, genre: manifest.genre ?? '', tags: [...preview.tags], artworkReferences: artwork } : {}),
+      ...(manifest ? { title: preview.title.trim() || current.title, type: preview.type, description: preview.description, subject: preview.subject, topic: preview.topic, genre: manifest.genre ?? '', tags: preview.tags.slice(0, 10), artworkReferences: artwork } : {}),
+      artworkReferences: artwork,
       entryFile: preview.selectedEntry, originalFilename: preview.sourceName,
       storageSize: preview.storageSize, fileCount: preview.files.length,
       manifestVersion: manifest?.schemaVersion ?? current.manifestVersion,
@@ -97,6 +101,41 @@ export async function replaceItemFiles(itemId: string, preview: ImportPreview): 
     if (stored !== updated.fileCount || !await db.assets.where('[itemId+normalizedPath]').equals([itemId, updated.entryFile]).first()) throw new Error('The updated project did not pass its file integrity check.');
   });
   return updated!;
+}
+
+const PHOTO_COVER = /^localdeck-cover-[a-z0-9]+\.jpg$/;
+export const hasPhotoCover = (item: LibraryItem) => PHOTO_COVER.test(item.artworkReferences.cover ?? '');
+
+/** Uses a photo of the running project as its cover. Every photo has a new name, so no old picture stays in a cache.
+    The cover that came with the project is kept and can be used again. */
+export async function setPhotoCover(itemId: string, photo: Blob): Promise<LibraryItem> {
+  const path = `localdeck-cover-${Date.now().toString(36)}.jpg`;
+  const contentHash = globalThis.crypto?.subtle ? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await photo.arrayBuffer())), byte => byte.toString(16).padStart(2, '0')).join('') : '';
+  let updated: LibraryItem | undefined;
+  await db.transaction('rw', db.items, db.assets, async () => {
+    const current = await db.items.get(itemId);
+    if (!current) throw new Error('This project is no longer in your library.');
+    const assets = await db.assets.where('itemId').equals(itemId).toArray();
+    const old = assets.filter(asset => PHOTO_COVER.test(asset.normalizedPath));
+    await db.assets.bulkDelete(old.map(asset => asset.id));
+    await db.assets.add({ id: `${itemId}:${path}`, itemId, normalizedPath: path, mimeType: 'image/jpeg', fileSize: photo.size, contentHash, blob: photo });
+    const own = hasPhotoCover(current) ? current.artworkReferences.ownCover : current.artworkReferences.cover;
+    updated = { ...current, artworkReferences: { ...current.artworkReferences, cover: path, ...(own ? { ownCover: own } : {}) }, fileCount: current.fileCount - old.length + 1, storageSize: current.storageSize - old.reduce((sum, asset) => sum + asset.fileSize, 0) + photo.size };
+    await db.items.put(updated);
+  });
+  return updated!;
+}
+
+/** Back to the cover that came with the project, or to the drawn one. */
+export async function removePhotoCover(itemId: string): Promise<void> {
+  await db.transaction('rw', db.items, db.assets, async () => {
+    const current = await db.items.get(itemId);
+    if (!current || !hasPhotoCover(current)) return;
+    const old = (await db.assets.where('itemId').equals(itemId).toArray()).filter(asset => PHOTO_COVER.test(asset.normalizedPath));
+    await db.assets.bulkDelete(old.map(asset => asset.id));
+    const { cover: _cover, ownCover, ...rest } = current.artworkReferences;
+    await db.items.put({ ...current, artworkReferences: { ...rest, ...(ownCover ? { cover: ownCover } : {}) }, fileCount: current.fileCount - old.length, storageSize: current.storageSize - old.reduce((sum, asset) => sum + asset.fileSize, 0) });
+  });
 }
 
 export async function createItems(previews: ImportPreview[]): Promise<LibraryItem[]> {

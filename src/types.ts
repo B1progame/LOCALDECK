@@ -2,7 +2,8 @@ import type { ContentCheck } from './services/contentCheck';
 
 export const CONTENT_TYPES = ['game', 'learning', 'app', 'tool', 'simulation', 'presentation', 'document', 'quiz', 'other'] as const;
 export type ContentType = (typeof CONTENT_TYPES)[number];
-export type ArtworkReferences = { cover?: string; banner?: string; icon?: string; screenshots?: string[] };
+/** `ownCover`: the cover of the project itself while a photo is used instead. */
+export type ArtworkReferences = { cover?: string; ownCover?: string; banner?: string; icon?: string; screenshots?: string[] };
 export type RuntimeSettings = { preferredOrientation?: 'any' | 'portrait' | 'landscape'; fullscreen?: boolean };
 export type CompatibilityReport = {
   score: 'likely' | 'partial' | 'unknown';

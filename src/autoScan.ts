@@ -7,8 +7,9 @@ import { checkLocalAi, generateText, loadLocalAi, useLocalAi } from './localAi/e
 import { checkContent, withOpinion, type ContentCheck } from './services/contentCheck';
 import { db } from './services/database';
 import { getAssets, updateItem } from './services/library';
-import { htmlText, isPlaceholderTitle, mergeTags, scriptTexts, suggestDetails, type ProjectText, type ScanResult } from './services/projectScan';
-import type { LibraryItem } from './types';
+import { htmlText, importantTags, isPlaceholderTitle, scriptTexts, suggestDetails, type ProjectText, type ScanResult } from './services/projectScan';
+import { TYPE_LABEL } from './shared';
+import type { ContentType, LibraryItem } from './types';
 
 const AUTO_KEY = 'localdeck-ai-auto';
 const MAX_FILE = 8 * 1024 * 1024;
@@ -94,6 +95,9 @@ export function cancelWaiting(): void {
   set({ waiting: [], done: 0, total: 0 });
 }
 
+/** The kind as a hashtag, such as Quiz. "Project" says nothing. */
+export const kindTag = (type: ContentType) => type === 'other' ? '' : TYPE_LABEL[type];
+
 /** Fills only what is missing. What a person wrote stays. */
 export function missingDetails(item: LibraryItem, { suggestion }: ScanResult): Partial<LibraryItem> {
   return {
@@ -102,7 +106,7 @@ export function missingDetails(item: LibraryItem, { suggestion }: ScanResult): P
     ...(suggestion.subject && !item.subject ? { subject: suggestion.subject } : {}),
     ...(suggestion.topic && !item.topic ? { topic: suggestion.topic } : {}),
     ...(suggestion.description && !item.description ? { description: suggestion.description } : {}),
-    tags: mergeTags(item.tags, suggestion.tags),
+    tags: importantTags(item.tags, suggestion, kindTag(suggestion.type || item.type)),
   };
 }
 

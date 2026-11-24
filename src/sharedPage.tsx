@@ -3,13 +3,13 @@ import { t, tm } from './i18n';
 import React, { useEffect, useState } from 'react';
 import { ArrowDownToLine, Info, LoaderCircle, Plus, RefreshCw } from 'lucide-react';
 import { analyzeFiles } from './services/importer';
-import { aiIsReady, askAbout, readProjectText, ruleCheck, scanImported, useAutoScan, withAi } from './autoScan';
+import { aiIsReady, askAbout, kindTag, readProjectText, ruleCheck, scanImported, useAutoScan, withAi } from './autoScan';
 import { tagsWithMark, useContentMarks } from './contentMarks';
 import { ContentNote } from './contentNote';
 import { stopGenerating, useLocalAi } from './localAi/engine';
 import { withOpinion, type ContentCheck } from './services/contentCheck';
 import { createItem } from './services/library';
-import { mergeTags } from './services/projectScan';
+import { importantTags } from './services/projectScan';
 import { fetchShare, parseSharedRoute, shareProblem, type ShareProblem } from './services/shareLink';
 import { downloadShare } from './services/shareService';
 import { rememberKey } from './services/savedShares';
@@ -54,7 +54,7 @@ function useExplanation(preview: ImportPreview | null): Explained {
       setState(current => ({ ...current, scanning: true }));
       try {
         const result = await withAi(`shared:${preview.id}`, async () => { owns = true; try { return await askAbout(project, preview.sourceName, { cancelled: () => !active, background: true }); } finally { owns = false; } });
-        if (active) setState({ check: withOpinion(check, result.found, result.suggestion.description), scanning: false, summary: result.suggestion.description, tags: mergeTags(preview.tags, result.suggestion.tags), subject: result.suggestion.subject, topic: result.suggestion.topic });
+        if (active) setState({ check: withOpinion(check, result.found, result.suggestion.description), scanning: false, summary: result.suggestion.description, tags: importantTags(preview.tags, result.suggestion, kindTag(result.suggestion.type || preview.type)), subject: result.suggestion.subject, topic: result.suggestion.topic });
       } catch { if (active) setState(current => ({ ...current, scanning: false })); }
     })().catch(() => undefined);
     return () => { active = false; if (owns) stopGenerating(); };

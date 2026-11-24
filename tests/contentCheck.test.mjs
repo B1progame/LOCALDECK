@@ -75,7 +75,7 @@ test('an age line does not become a hashtag', () => {
 
 test('existing hashtags stay, meaningless names are found', () => {
   assert.deepEqual(mergeTags(['html', 'Eine lange eigene Markierung'], ['HTML', 'neu']), ['html', 'Eine lange eigene Markierung', 'neu']);
-  assert.equal(mergeTags(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'], ['x']).length, 9);
+  assert.equal(mergeTags(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'], ['x', 'y', 'z']).length, 10);
   for (const title of ['index', 'Untitled project', 'index (2)', 'neu 3']) assert.ok(isPlaceholderTitle(title), title);
   for (const title of ['Vektoren', 'Index der Könige', 'Testament']) assert.ok(!isPlaceholderTitle(title), title);
 });

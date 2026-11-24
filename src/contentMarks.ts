@@ -13,7 +13,7 @@ export function setContentMarks(on: boolean): void {
 /** The hashtags to show: the own ones, and #16+ or #18+ while marks are on. They are not saved, so they go away with the mark. */
 export function tagsWithMark(tags: string[], check: ContentCheck | null | undefined, on = useContentMarks.getState().on): string[] {
   if (!on || !check || check.rating === 'ok' || check.confirmed) return tags;
-  return tags.some(tag => tag === `${check.rating}+` || tag.toLowerCase() === `${check.rating}plus`) ? tags : [...tags, `${check.rating}+`];
+  return tags.some(tag => tag === `${check.rating}+` || tag.toLowerCase() === `${check.rating}plus`) ? tags : [...tags.slice(0, 9), `${check.rating}+`];
 }
 /** True when the person wants to be asked before this project is opened. */
 export const asksFirst = (check: ContentCheck | null | undefined) => useContentMarks.getState().on && check?.rating === '18' && !check.confirmed;

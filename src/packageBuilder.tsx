@@ -4,12 +4,16 @@
 import { plural, t, tm } from './i18n';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowDownToLine, Bot, Check, ClipboardPaste, Copy, FileArchive, FileCode2, FileText, Image as ImageIcon, LoaderCircle, PackageCheck, Paperclip, Plus, Sparkles, Trash2, Upload, Wand2, X,
+  ArrowDownToLine, Bot, Camera, Check, CircleStop, ClipboardPaste, Copy, FileArchive, FileCode2, FileText, Image as ImageIcon, LoaderCircle, PackageCheck, Paperclip, Plus, Sparkles, Trash2, Upload, Wand2, X,
 } from 'lucide-react';
 import { analyzeFiles, diagnoseCompatibility, isJunkPath } from './services/importer';
 import { buildProjectPrompt, parseBundle, type BundleFile, type PromptKind } from './services/aiBundle';
 import { createItem } from './services/library';
-import { scanImported } from './autoScan';
+import { askAbout, kindTag, readProjectText, scanImported, useAutoScan, withAi } from './autoScan';
+import { cancelLoading, checkLocalAi, stopGenerating, useLocalAi } from './localAi/engine';
+import { LocalAiStatus } from './localAiSettings';
+import { PhotoStudio } from './photoStudio';
+import { importantTags, MAX_TAGS } from './services/projectScan';
 import { createStoredZip, normalizePackagePath, readZip } from './services/zip';
 import { CONTENT_TYPES, type ContentType, type LibraryItem, type ProjectManifest } from './types';
 import { TYPE_ICON, TYPE_LABEL, bytes, generatedCoverImage, go } from './shared';
@@ -60,7 +64,37 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
   const extraInput = useRef<HTMLInputElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
 
+  const [photo, setPhoto] = useState(false);
+  const [reading, setReading] = useState<{ step: number; steps: number } | null>(null);
+  const [aiNote, setAiNote] = useState('');
+  const { engine, phase, stored } = useLocalAi();
+  const { active } = useAutoScan();
+  const run = useRef(0), ownsAi = useRef(false);
+
   useEffect(() => () => { if (cover) URL.revokeObjectURL(cover.url); }, [cover]);
+  useEffect(() => { void checkLocalAi(); return () => { run.current = -1; if (ownsAi.current) { cancelLoading(); stopGenerating(); } }; }, []);
+
+  const projectFiles = () => [{ path: 'index.html', blob: new Blob([html], { type: 'text/html' }), size: html.length }, ...extras.map(extra => ({ path: extra.path, blob: extra.file, size: extra.file.size }))];
+  const stopAi = () => { run.current++; if (ownsAi.current) { cancelLoading(); stopGenerating(); } setReading(null); };
+  /** The local AI reads the project and fills in the details. */
+  const fillIn = async () => {
+    const id = ++run.current, cancelled = () => run.current !== id;
+    setAiNote(''); setReading({ step: 0, steps: 0 });
+    try {
+      const project = await readProjectText(projectFiles(), 'index.html');
+      const { suggestion } = await withAi('builder', async () => { ownsAi.current = true; try { return await askAbout(project, htmlName || 'index.html', { cancelled, onStep: (step, steps) => { if (!cancelled()) setReading({ step, steps }); } }); } finally { ownsAi.current = false; } });
+      if (cancelled()) return;
+      if (!suggestion.title && !suggestion.description && !suggestion.tags.length) { setAiNote(t('The AI gave no usable answer. Try again.')); return; }
+      setMeta(m => {
+        const type = suggestion.type || m.type;
+        const field = type === 'game' || type === 'app' || type === 'tool' ? 'genre' : 'subject';
+        return { ...m, type, title: suggestion.title || m.title, [field]: suggestion.subject || m[field], topic: suggestion.topic || m.topic, description: suggestion.description || m.description, language: m.language || project.language, tags: importantTags(m.tags.split(',').map(tag => tag.trim()).filter(Boolean), suggestion, kindTag(type)).join(', ') };
+      });
+      setAiNote(t('Filled in by the local AI. A small AI makes mistakes, so check the fields.'));
+    } catch { if (!cancelled()) setAiNote(t('The AI stopped before it was finished. Try again.')); }
+    finally { if (!cancelled()) setReading(null); }
+  };
+  const aiReady = engine === 'browser' || (engine === 'qwen' && (stored || phase === 'ready') && phase !== 'failed' && phase !== 'unsupported');
 
   /** Fills the whole builder from a set of files (an AI bundle or a ZIP). */
   const loadFiles = async (input: BundleFile[], origin: string) => {
@@ -166,7 +200,7 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
     ...(meta.subject.trim() ? { subject: meta.subject.trim() } : {}),
     ...(meta.topic.trim() ? { topic: meta.topic.trim() } : {}),
     ...(meta.genre.trim() ? { genre: meta.genre.trim() } : {}),
-    ...(meta.tags.trim() ? { tags: meta.tags.split(',').map(t => t.trim()).filter(Boolean) } : {}),
+    ...(meta.tags.trim() ? { tags: meta.tags.split(',').map(t => t.replace(/#/g, '').trim()).filter(Boolean).slice(0, MAX_TAGS) } : {}),
     ...(meta.language.trim() ? { language: meta.language.trim() } : {}),
     ...(meta.orientation !== 'any' ? { preferredOrientation: meta.orientation } : {}),
     ...(cover ? { cover: cover.name } : {}),
@@ -258,10 +292,11 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
           <div className="pb-cover-row">
             <button type="button" className="button" onClick={() => coverInput.current?.click()}><ImageIcon size={15}/> {t('Choose image')}</button>
             <button type="button" className="button subtle" onClick={() => void generateCover()} disabled={busy === 'cover'}>{busy === 'cover' ? <LoaderCircle size={15} className="spin"/> : <Wand2 size={15}/>} {t('Generate cover')}</button>
+            <button type="button" className="button subtle" onClick={() => setPhoto(true)} disabled={!html.trim()}><Camera size={15}/> {t('Photo of the project')}</button>
             {cover && <button type="button" className="icon-button" aria-label={t('Remove cover')} onClick={() => setCover(null)}><X size={16}/></button>}
           </div>
           <input ref={coverInput} type="file" accept="image/*" className="visually-hidden" onChange={e => { chooseCover(e.target.files?.[0]); e.target.value = ''; }}/>
-          <small className="muted-text">{cover ? `${cover.name} · ${bytes(cover.blob.size)}${cover.generated ? t(' · generated from your title') : ''}` : t('Use the image your AI made, or generate one from the title.')}</small>
+          <small className="muted-text">{cover ? `${cover.name} · ${bytes(cover.blob.size)}${cover.generated ? t(' · generated from your title') : ''}` : t('Use the image your AI made, a photo of the running project, or generate one from the title.')}</small>
         </div>
 
         <div className="pb-step">
@@ -276,14 +311,21 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
 
         <div className="pb-step">
           <h3>{step(4, Boolean(meta.title.trim()))} {t('Details')}</h3>
+          <div className="pb-ai">
+            {engine === 'none' ? <button type="button" className="button subtle" onClick={() => { go('settings'); window.setTimeout(() => document.getElementById('local-ai')?.scrollIntoView({ block: 'start' }), 450); }}><Sparkles size={15}/> {t('Choose a local AI to fill this in')}</button>
+              : !aiReady && !reading ? <LocalAiStatus compact/>
+              : reading ? <><button type="button" className="button" onClick={stopAi}><CircleStop size={15}/> {t('Stop')}</button><span className="muted-text" role="status"><LoaderCircle size={14} className="spin"/> {!reading.steps ? (active && active !== 'builder' ? t('Waiting for another project…') : phase === 'ready' ? t('Reading the project…') : t('Starting the AI…')) : reading.step < reading.steps ? t('Reading part {0} of {1}…', reading.step, reading.steps - 1) : t('Writing name and hashtags…')}</span></>
+              : <button type="button" className="button primary" disabled={!html.trim()} onClick={() => void fillIn()}><Sparkles size={15}/> {t('Fill in with the local AI')}</button>}
+            {!reading && (aiNote || !html.trim()) && engine !== 'none' && aiReady && <span className="muted-text" role="status">{aiNote || t('Add the HTML first.')}</span>}
+          </div>
           <div className="pb-fields">
             <label className="form-field pb-wide"><span>{t('Title')}</span><input value={meta.title} onChange={e => set('title', e.target.value)} maxLength={120} placeholder={t('e.g. Understanding derivatives')}/></label>
             <label className="form-field"><span>{t('Type')}</span><select value={meta.type} onChange={e => set('type', e.target.value as ContentType)}>{CONTENT_TYPES.map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}</select></label>
             <label className="form-field"><span>{meta.type === 'game' || meta.type === 'app' || meta.type === 'tool' ? t('Genre or category') : t('Subject')}</span>{meta.type === 'game' || meta.type === 'app' || meta.type === 'tool' ? <input value={meta.genre} onChange={e => set('genre', e.target.value)} placeholder={t('e.g. Arcade')}/> : <input value={meta.subject} onChange={e => set('subject', e.target.value)} placeholder={t('e.g. Mathematics')}/>}</label>
             <label className="form-field"><span>{t('Topic')}</span><input value={meta.topic} onChange={e => set('topic', e.target.value)} placeholder={t('optional')}/></label>
-            <label className="form-field"><span>{t('Language')}</span><input value={meta.language} onChange={e => set('language', e.target.value)} placeholder="e.g. de"/></label>
+            <label className="form-field"><span>{t('Language')}</span><input value={meta.language} onChange={e => set('language', e.target.value)} placeholder={t('e.g. de')}/></label>
             <label className="form-field pb-wide"><span>{t('Description')}</span><textarea rows={2} value={meta.description} onChange={e => set('description', e.target.value)} placeholder={t('One or two sentences about what it does')}/></label>
-            <label className="form-field"><span>{t('Tags, comma separated')}</span><input value={meta.tags} onChange={e => set('tags', e.target.value)}/></label>
+            <label className="form-field"><span>{t('Hashtags, up to 10, separated by commas')}</span><input value={meta.tags} onChange={e => set('tags', e.target.value)}/></label>
             <label className="form-field"><span>{t('Orientation')}</span><select value={meta.orientation} onChange={e => set('orientation', e.target.value as typeof meta.orientation)}><option value="any">{t('Any')}</option><option value="landscape">{t('Landscape')}</option><option value="portrait">{t('Portrait')}</option></select></label>
           </div>
         </div>
@@ -312,5 +354,6 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
         {!ready && <small className="muted-text">{t('Add the HTML and a title to export.')}</small>}
       </aside>
     </div>
+    {photo && <PhotoStudio title={meta.title || t('Untitled project')} game={meta.type === 'game'} load={async () => ({ files: projectFiles(), entry: 'index.html' })} onUse={blob => setCover({ blob, url: URL.createObjectURL(blob), name: 'cover.jpg', generated: false })} onClose={() => setPhoto(false)}/>}
   </section>;
 }

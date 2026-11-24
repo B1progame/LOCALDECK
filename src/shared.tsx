@@ -154,6 +154,9 @@ export type ItemActions = {
   /** Marks a project as fine although the check was unsure. */
   confirmContent: (item: LibraryItem) => void;
   showTag: (tag: string) => void;
+  /** Opens the photo dialog, or removes the photo. */
+  takeCover: (item: LibraryItem) => void;
+  dropCover: (item: LibraryItem) => void;
   editCode: (item: LibraryItem) => void;
   update: (item: LibraryItem, file: File) => Promise<void>;
   collect: (item: LibraryItem) => void;

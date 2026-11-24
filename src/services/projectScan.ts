@@ -103,7 +103,7 @@ export function parseTags(text: string): string[] {
     if (tag.length < 2 || tag.length > 30 || tag.split(' ').length > 3 || GENERIC.has(key) || !/\p{L}/u.test(tag) || nothing(tag) || seen.has(key)) continue;
     seen.add(key); tags.push(tag);
   }
-  return tags.slice(0, 8);
+  return tags.slice(0, MAX_TAGS);
 }
 
 /** Two plain questions per part. A small model answers these well, while it only guesses when asked for an age. */
@@ -123,10 +123,19 @@ export async function rateContent(title: string, parts: string[], ask: Ask, canc
 }
 
 /** Existing hashtags always stay, new ones are added up to a sensible number. */
+export const MAX_TAGS = 10;
 export function mergeTags(existing: string[], found: string[]): string[] {
   const seen = new Set(existing.map(tag => tag.toLocaleLowerCase()));
   const added = found.filter(tag => { const key = tag.toLocaleLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; });
-  return [...existing, ...added.slice(0, Math.max(0, 8 - existing.length))];
+  return [...existing, ...added.slice(0, Math.max(0, MAX_TAGS - existing.length))];
+}
+
+/** Everything important can be a hashtag: kind, subject, topic and the keywords. Never more than ten. */
+export function importantTags(existing: string[], suggestion: Suggestion, kind = ''): string[] {
+  const short = (text: string) => parseTags(text.replace(/[,;#]/g, ' '));
+  // The kind is already there in the language of the app.
+  const words = suggestion.tags.filter(tag => !kind || !/^(game|quiz|tool|app|simulation|presentation|learning|spiel|jeu|juego|gioco|werkzeug|outil)$/i.test(tag));
+  return mergeTags(existing, [...short(suggestion.subject), ...short(kind), ...short(suggestion.topic), ...words]);
 }
 
 /** Names that come from a file name and say nothing. */
@@ -162,7 +171,7 @@ function corrected(suggestion: Suggestion, type: ContentType | '', language: str
   if (type === 'game') topic = '';
   // The name on the page is better than one the model makes up.
   const own = [project.title, project.headings[0] ?? ''].map(text => text.trim()).find(text => text.length >= 3 && text.length <= 60 && !isPlaceholderTitle(text) && !/^(vite|react|vue|my)\b.*\bapp$/i.test(text));
-  return { ...suggestion, title: own ?? title, subject, topic, type, tags: suggestion.tags.slice(0, 6) };
+  return { ...suggestion, title: own ?? title, subject, topic, type, tags: suggestion.tags.slice(0, MAX_TAGS) };
 }
 
 const stems = (text: string) => [...new Set((text.toLocaleLowerCase().match(/\p{L}{4,}/gu) ?? []).map(entry => entry.slice(0, 5)))];
@@ -195,8 +204,8 @@ export async function suggestDetails(project: ProjectText, options: { filename: 
   const overview = [`File: ${filename}`, project.title && `Page title: ${project.title}`, project.description && `Meta description: ${cap(project.description, 300)}`, project.headings.length && `Headings: ${cap(project.headings.join(' | '), 900)}`, project.buttons.length && `Buttons: ${cap(project.buttons.join(' | '), 400)}`].filter(Boolean).join('\n');
   const answer = await ask([
     { role: 'system', content: `You sort a library of web pages. ${GUARD} Answer only with the six lines, without any introduction. Every value is written in ${language}.` },
-    { role: 'user', content: `${overview}\n${parts.length > 1 ? 'Summary of the whole page' : 'Text of the whole page'}:\n"""\n${content}\n"""\n\nDescribe this page${project.kind ? `, a ${project.kind},` : ''} in six lines. The labels stay English, the values are in ${language}:\nName: a clear name in 2 to 5 words that contains the topic\nType: one word of game, quiz, learning, simulation, presentation, tool, app, other\nSubject: the school subject in one word, or - if it is not for school\nTopic: the exact topic in 1 to 3 words\nDescription: one sentence about what the page is and what you do with it\nTags: five different keywords about the content, separated by commas` },
-  ], 170);
+    { role: 'user', content: `${overview}\n${parts.length > 1 ? 'Summary of the whole page' : 'Text of the whole page'}:\n"""\n${content}\n"""\n\nDescribe this page${project.kind ? `, a ${project.kind},` : ''} in six lines. The labels stay English, the values are in ${language}:\nName: a clear name in 2 to 5 words that contains the topic\nType: one word of game, quiz, learning, simulation, presentation, tool, app, other\nSubject: the school subject in one word, or - if it is not for school\nTopic: the exact topic in 1 to 3 words\nDescription: one sentence about what the page is and what you do with it\nTags: eight different important keywords (topic, names, things and terms that occur), separated by commas` },
+  ], 200);
   let suggestion = parseSuggestion(answer);
   const page = [project.title, project.description, ...project.headings, project.text].join('\n');
   // The form with seven lines sometimes makes a small model invent everything. Plain questions work then.
@@ -204,7 +213,7 @@ export async function suggestDetails(project: ProjectText, options: { filename: 
     if (cancelled?.()) throw new Error('cancelled');
     const plain = (question: string, tokens: number) => ask([{ role: 'system', content: `You describe web pages for a library. ${GUARD} Answer briefly, without introduction.` }, { role: 'user', content: `Text of a ${project.kind || 'page'}:\n"""\n${content}\n"""\n\n${question}` }], tokens);
     const description = cap(squash(await plain(`In one sentence in ${language}: what is it about and what do you do with it? Name the concrete topic.`, 90)), 400);
-    const tags = parseTags(await plain(`Write 5 different keywords about its content in ${language}, separated by commas. Only the keywords.`, 50)).filter(tag => grounded(tag, page) > 0).slice(0, 5);
+    const tags = parseTags(await plain(`Write 8 different important keywords about its content in ${language}, separated by commas. Only the keywords.`, 50)).filter(tag => grounded(tag, page) > 0).slice(0, 8);
     if (tags.length) suggestion = { title: `${project.kind === 'quiz' ? 'Quiz: ' : ''}${tags.slice(0, 3).join(', ')}`, type: suggestion.type, subject: '', topic: '', description: grounded(description, page) > .1 ? description : '', tags };
   }
   return { suggestion: corrected(suggestion, project.kind || suggestion.type, language, project), found: options.rate ? await rateContent(project.title || project.headings[0] || '', parts, ask, cancelled) : null, read: parts.length, total };

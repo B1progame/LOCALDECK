@@ -117,7 +117,7 @@ export function readDetails(input: Record<string, unknown>): Details {
   }
   if (input.tags !== undefined) {
     if (!Array.isArray(input.tags) || !input.tags.every(tag => typeof tag === 'string')) throw new AiError('"tags" must be a list of texts.');
-    details.tags = (input.tags as string[]).slice(0, 12).map(tag => tag.trim().slice(0, 40)).filter(Boolean);
+    details.tags = (input.tags as string[]).slice(0, 10).map(tag => tag.trim().slice(0, 40)).filter(Boolean);
   }
   return details;
 }

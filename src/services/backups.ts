@@ -1,5 +1,5 @@
 import { db } from './database';
-import { getAssets } from './library';
+import { getAssets, hasPhotoCover } from './library';
 import { normalizePackagePath, readZip, createStoredZip, ZIP_LIMITS } from './zip';
 import type { AppSettings, Collection, LibraryAsset, LibraryItem, ProjectManifest, Subject } from '../types';
 
@@ -39,6 +39,10 @@ export async function exportItem(itemId: string): Promise<Blob> {
       ...(item.artworkReferences.icon ? { icon: item.artworkReferences.icon } : {}),
     };
     entries.push({ path: 'localdeck.json', data: textEncoder.encode(JSON.stringify(manifest, null, 2)) });
+  } else if (hasPhotoCover(item)) {
+    // The photo is also the cover for the person who gets this copy.
+    const own = entries.find(x => x.path.toLowerCase() === 'localdeck.json')!;
+    try { own.data = textEncoder.encode(JSON.stringify({ ...JSON.parse(new TextDecoder().decode(own.data)) as object, cover: item.artworkReferences.cover }, null, 2)); } catch { /* keep the file as it is */ }
   }
   return createStoredZip(entries);
 }
