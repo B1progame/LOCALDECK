@@ -10,7 +10,7 @@ export type Limits = { linkMiB: number; storageMiB: number; perHour: number; per
 export type ShareAccount = { admin: boolean; limits: Limits; usage: { bytes: number; links: number; hour: number; day: number } | null; open: boolean; blocked: boolean };
 
 /** Used when the Worker is older than this app and does not know the request. */
-export const DEFAULT_ACCOUNT: ShareAccount = { admin: false, limits: { linkMiB: 24, storageMiB: 48, perHour: 5, perDay: 15, days: 3 }, usage: null, open: true, blocked: false };
+export const DEFAULT_ACCOUNT: ShareAccount = { admin: false, limits: { linkMiB: 24, storageMiB: 100, perHour: 5, perDay: 15, days: 3 }, usage: null, open: true, blocked: false };
 
 export async function getAccount(api: string, token: string): Promise<ShareAccount> {
   try {

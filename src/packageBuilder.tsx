@@ -9,6 +9,7 @@ import {
 import { analyzeFiles, diagnoseCompatibility, isJunkPath } from './services/importer';
 import { buildProjectPrompt, parseBundle, type BundleFile, type PromptKind } from './services/aiBundle';
 import { createItem } from './services/library';
+import { scanImported } from './autoScan';
 import { createStoredZip, normalizePackagePath, readZip } from './services/zip';
 import { CONTENT_TYPES, type ContentType, type LibraryItem, type ProjectManifest } from './types';
 import { TYPE_ICON, TYPE_LABEL, bytes, generatedCoverImage, go } from './shared';
@@ -207,6 +208,7 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
       const [preview] = await analyzeFiles([new File([zip], `${slug(manifest.title)}.zip`, { type: 'application/zip' })]);
       if (!preview) throw new Error(t('The package could not be read back.'));
       const item = await createItem(preview);
+      void scanImported(item);
       await onAdded();
       notify(t('“{0}” was added to your library.', item.title));
       go('item', `/${encodeURIComponent(item.id)}`);

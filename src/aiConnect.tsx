@@ -55,6 +55,7 @@ export function AiConnect({ api, token, notify }: { api: string; token: string |
     <ol className="ai-steps">
       <li>{t('Create a connection below and copy its address.')}</li>
       <li>{t('Claude: Settings → Connectors → Add custom connector, then paste the address. Other apps call it “MCP server”.')}</li>
+      <li>{t('The AI reads the LocalDeck guide by itself: how the website works, what AI studio asks for and how to hand over a project.')}</li>
       <li>{t('Ask, for example: “Make a quiz about photosynthesis in LocalDeck and give me the link.”')}</li>
     </ol>
     {error && <p className="dialog-error" role="alert">{error}</p>}
@@ -73,6 +74,6 @@ export function AiConnect({ api, token, notify }: { api: string; token: string |
       <span className="ai-name"><b>{connection.name}</b><small>{connection.lastUsed ? t('Last used {0}', friendlyDate(connection.lastUsed)) : t('Not used yet')} · {plural(connection.projects, '{0} project', '{0} projects', connection.projects)}</small></span>
       <button type="button" className="button danger-button" aria-label={t('Remove connection: {0}', connection.name)} onClick={() => void remove(connection)}><Trash2 size={14}/> {t('Remove')}</button>
     </li>)}</ul>}
-    <p className="ai-privacy"><ShieldCheck size={16}/><span>{t('Your library stays private: the AI only sees projects it created itself. Those are stored encrypted, but the company behind the AI sees what it writes.')}{data?.limits.aiPerDay !== undefined && ` ${t('Limits: {0} changes per day, 1 MiB per project, links stay online for {1} days after the last change.', data.limits.aiPerDay, data.limits.aiDays)}`}</span></p>
+    <p className="ai-privacy"><ShieldCheck size={16}/><span>{t('Your library stays private: the AI only sees projects it created itself. Those are stored encrypted, but the company behind the AI sees what it writes.')}{data?.limits.aiPerDay !== undefined && ` ${t('Limits: {0} changes per day, 10 MiB per project, links stay online for {1} days after the last change.', data.limits.aiPerDay, data.limits.aiDays)}`}</span></p>
   </div>;
 }

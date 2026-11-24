@@ -1,3 +1,5 @@
+import type { ContentCheck } from './services/contentCheck';
+
 export const CONTENT_TYPES = ['game', 'learning', 'app', 'tool', 'simulation', 'presentation', 'document', 'quiz', 'other'] as const;
 export type ContentType = (typeof CONTENT_TYPES)[number];
 export type ArtworkReferences = { cover?: string; banner?: string; icon?: string; screenshots?: string[] };
@@ -9,6 +11,8 @@ export type CompatibilityReport = {
 };
 
 export interface LibraryItem {
+  /** What the automatic check found. Missing on projects that were never checked. */
+  contentCheck?: ContentCheck;
   id: string;
   title: string;
   type: ContentType;
@@ -118,6 +122,7 @@ export interface ProjectManifest {
 }
 
 export interface ImportPreview {
+  contentCheck?: ContentCheck;
   id: string;
   sourceName: string;
   files: Array<{ path: string; blob: Blob; mimeType: string; size: number; contentHash: string }>;

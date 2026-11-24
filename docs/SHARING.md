@@ -4,7 +4,7 @@ Sharing is optional and stays off until you configure the app and Worker. Creati
 
 ## Limits and privacy
 
-- Default limits: 24 MiB per link, 48 MiB per account, 512 MiB for the whole service, 5 uploads per hour and 15 per day for each account, 100 per day for the service, 3 days online. The admin can change them ([`ADMIN.md`](ADMIN.md)).
+- Default limits: 24 MiB per link, 100 MiB per account, 1,200 MiB for the whole service, 5 uploads per hour and 15 per day for each account, 100 per day for the service, 3 days online. The admin can change them ([`ADMIN.md`](ADMIN.md)).
 - Links over 24 MiB are uploaded in parts of 20 MiB and open only when every part has arrived.
 - Maximum 50 active links shown per account. Owners can delete links at any time.
 - A client IP is limited to 240 authentication attempts and 200 share reads per hour. IP addresses are hashed before rate-limit records are stored.
@@ -19,7 +19,7 @@ GitHub and Facebook use Firebase's browser SDK and Firebase's OAuth redirect han
 
 The Firebase Web API key, Project ID, and Web App ID are public project configuration, not secrets or authorization credentials. Restrict the API key to Firebase Authentication / Identity Toolkit and review quotas. Do not enable unrelated paid Google APIs, enable Firebase Authentication with Identity Platform, or attach a billing account for this feature. Firebase Spark includes social sign-in at no cost; free-plan usage limits can stop sign-in or email delivery until they reset. Check Google's current [Spark pricing and limits](https://firebase.google.com/docs/projects/billing/firebase-pricing-plans) before enabling additional products.
 
-The Worker is designed for Cloudflare's free plan: 512 MiB active storage is below the included 1 GB KV storage limit, and the 24 MiB object maximum is below KV's 25 MiB value limit. KV includes 1,000 writes and 1,000 deletes per day, and Workers Free includes 100,000 requests per day; Cloudflare documents that free-plan KV operations fail after a quota is reached and the Workers request limit rejects additional requests. Service limits are a backstop, not a billing setting. Keep the account on Workers Free and do not enable R2, Workers Paid, or other paid storage. The account owner should also review their Cloudflare plan and billing settings directly.
+The Worker is designed for Cloudflare's free plan: KV use is capped at 900 MiB, below the included 1 GB, and small projects go into the databases, and the 24 MiB object maximum is below KV's 25 MiB value limit. KV includes 1,000 writes and 1,000 deletes per day, and Workers Free includes 100,000 requests per day; Cloudflare documents that free-plan KV operations fail after a quota is reached and the Workers request limit rejects additional requests. Service limits are a backstop, not a billing setting. Keep the account on Workers Free and do not enable R2, Workers Paid, or other paid storage. The account owner should also review their Cloudflare plan and billing settings directly.
 
 ## Set up Google sign-in (free)
 

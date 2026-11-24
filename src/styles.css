@@ -1718,7 +1718,7 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 .local-ai-line { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 14px; font-variant-numeric: tabular-nums; }
 .local-ai-line svg { flex: none; }
 .local-ai-line.good svg { color: var(--success); }
-.local-ai-line.warn svg { color: var(--danger); }
+.local-ai-line.warn svg { color: var(--error); }
 .local-ai .local-ai-note { margin: 0; }
 .local-ai > .text-button { justify-self: start; }
 .scan-panel h2:focus { outline: 0; }
@@ -1734,3 +1734,22 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 .scan-hint { margin-bottom: 14px; color: var(--text-2); font-size: 13px; }
 .scan-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 @media (max-width: 640px) { .scan-fields { grid-template-columns: 1fr; } .local-ai { padding: 14px; } }
+
+.content-note { display: flex; gap: 11px; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); font-size: 14px; }
+.content-note > svg { flex: none; margin-top: 1px; color: var(--success); }
+.content-note > div { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.content-note small { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.content-note.r16 { border-color: color-mix(in srgb, var(--warning) 45%, transparent); background: color-mix(in srgb, var(--warning) 9%, var(--bg)); }
+.content-note.r16 > svg, .content-note.watch > svg { color: var(--warning); }
+.content-note.r18 { border-color: color-mix(in srgb, var(--error) 50%, transparent); background: color-mix(in srgb, var(--error) 10%, var(--bg)); }
+.content-note.r18 > svg { color: var(--error); }
+.rating-badge { flex: none; padding: 2px 8px; border-radius: 99px; background: var(--warning); color: #17130a; font-size: 12px; font-weight: 700; line-height: 1.5; }
+.rating-badge.r18 { background: #B3243B; color: #fff; }
+.item-cover .rating-badge { position: absolute; z-index: 2; top: 12px; left: 54px; }
+.shared-about { margin-top: 16px; }
+.shared-about h2 { margin-bottom: 8px; }
+.shared-card .tag-list { margin-top: 12px; }
+.local-ai-auto { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 15px; background: var(--bg); cursor: pointer; }
+.local-ai-auto > span { display: flex; flex-direction: column; min-width: 0; }
+.local-ai-auto b { font-size: 14px; font-weight: 600; }
+.local-ai-auto small { color: var(--muted); font-size: 12.5px; }

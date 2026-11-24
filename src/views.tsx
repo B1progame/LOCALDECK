@@ -9,13 +9,14 @@ import {
 } from 'lucide-react';
 import { db } from './services/database';
 import { useProfile } from './profile';
+import { ContentNote } from './contentNote';
 import { ProjectScanPanel } from './projectScanPanel';
 import { rovingKeys, useStillMotion } from './a11y';
 import { getAssets, type ItemSort } from './services/library';
 import type { Collection, ContentType, LibraryAsset, LibraryItem } from './types';
 import {
   Chips, CountUp, EmptyState, ItemCard, ItemMenu, ItemRow, LEARNING_TYPES, OPEN_VERB, PLAY_TYPES, PageHeading, Shelf, TYPE_ICON, TYPE_LABEL, TYPE_PLURAL,
-  base, bytes, colorFor, coverBackground, friendlyDate, go, isHtmlItem, itemSubtitle, useItemActions, type Page,
+  base, bytes, colorFor, coverBackground, friendlyDate, go, isHtmlItem, itemSubtitle, matchesQuery, useItemActions, type Page,
 } from './shared';
 
 type View = 'grid' | 'list';
@@ -28,7 +29,6 @@ const SORTERS: Record<ItemSort, (a: LibraryItem, b: LibraryItem) => number> = {
   name: (a, b) => a.title.localeCompare(b.title), imported: byImported, opened: byOpened,
   size: (a, b) => b.storageSize - a.storageSize, modified: (a, b) => b.updatedAt - a.updatedAt,
 };
-const matches = (item: LibraryItem, q: string) => [item.title, item.description, item.type, item.subject, item.topic, item.genre, ...item.tags].join(' ').toLocaleLowerCase().includes(q.toLocaleLowerCase());
 
 function dayGroup(ts: number): string {
   const day = new Date(ts); day.setHours(0, 0, 0, 0);
@@ -149,7 +149,7 @@ export function LibraryView({ page, items, query, setQuery, sort, setSort }: { p
     let result = scope;
     if (type !== 'all') result = result.filter(i => i.type === type);
     if (subject) result = result.filter(i => (page === 'games' ? i.genre || i.subject : i.subject).trim() === subject);
-    if (query.trim()) result = result.filter(i => matches(i, query.trim()));
+    if (query.trim()) result = result.filter(i => matchesQuery(i, query));
     return [...result].sort(page === 'recent' ? byOpened : SORTERS[sort]);
   }, [scope, type, subject, query, sort, page]);
 
@@ -267,8 +267,9 @@ export function ItemDetailsPage({ item, collections }: { item: LibraryItem | und
         <section className="panel">
           <h2>{t('About')}</h2>
           <p className="details-description">{item.description || t('No description yet. Add one so this project is easier to find in search.')}</p>
-          {item.tags.length > 0 && <div className="tag-list">{item.tags.map(tag => <span key={tag} className="tag">#{tag}</span>)}</div>}
+          {item.tags.length > 0 && <div className="tag-list">{item.tags.map(tag => <button key={tag} type="button" className="tag tag-link" title={t('Show projects with #{0}', tag)} onClick={() => a.showTag(tag)}>#{tag}</button>)}</div>}
           {!item.description && <button className="text-button" onClick={() => a.edit(item)}><Pencil size={14}/> {t('Add a description')}</button>}
+          {item.contentCheck && <ContentNote check={item.contentCheck}>{item.contentCheck.rating !== 'ok' && !item.contentCheck.confirmed && <button type="button" className="text-button" onClick={() => a.confirmContent(item)}>{t('This is fine')}</button>}</ContentNote>}
         </section>
         {isHtmlItem(item) && <ProjectScanPanel key={item.id} item={item}/>}
         <section className="panel">

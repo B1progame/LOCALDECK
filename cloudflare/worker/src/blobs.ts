@@ -1,15 +1,24 @@
-/* Encrypted projects up to 1 MiB, spread over several D1 databases.
+/* Encrypted projects. Up to 1 MiB they are spread over several D1 databases, larger ones of an AI are in KV.
 
    A database of the free plan holds 500 MB. The first one also keeps accounts and limits, the others hold only
    projects. `blob_index` in the first database says where each project is, so a database can be added or be
-   unavailable without touching the others. Every version has its own row: a reader always gets a complete one. */
+   unavailable without touching the others. Every version has its own row or key: a reader always gets a complete one. */
 
-export interface BlobEnv { SHARES_DB: D1Database; PROJECTS_DB_2?: D1Database; PROJECTS_DB_3?: D1Database }
+export interface BlobEnv { SHARES_DB: D1Database; SHARES_KV: KVNamespace; PROJECTS_DB_2?: D1Database; PROJECTS_DB_3?: D1Database }
 export type Store = { number: number; name: string; db: D1Database; capBytes: number };
 
 const MIB = 1024 * 1024;
 /** One row holds at most 2 MB, and base64 text needs a third more than the bytes. */
 export const MAX_BLOB_BYTES = MIB + 64;
+
+/** Number of the KV storage in `blob_index`. KV takes the bytes as they are, which saves computing time for large projects. */
+export const KV_STORE = 0;
+const kvKey = (id: string, version: number) => `ai:${id}:${version}`;
+
+export async function putLarge(env: BlobEnv, id: string, version: number, bytes: Uint8Array, ttl: number): Promise<number> {
+  await env.SHARES_KV.put(kvKey(id, version), bytes, { expirationTtl: Math.max(60, ttl) });
+  return KV_STORE;
+}
 
 /** Full capacity is 500 MB of text. Base64 turns 340 MiB into about 475 MB. The first database keeps room for everything else. */
 export function stores(env: BlobEnv): Store[] {
@@ -63,6 +72,11 @@ export async function putBlob(env: BlobEnv, id: string, version: number, bytes: 
 
 /** A failed delete leaves unused bytes behind, never a broken project. */
 export async function dropVersion(env: BlobEnv, storeNumber: number, id: string, version: number): Promise<void> {
+  if (storeNumber === KV_STORE) {
+    // A new KV value needs up to a minute to reach every place. Until then readers get the version before it, so that one stays until the next change.
+    if (version > 1) await env.SHARES_KV.delete(kvKey(id, version - 1)).catch(() => undefined);
+    return;
+  }
   const store = stores(env).find(entry => entry.number === storeNumber);
   if (store) await store.db.prepare('DELETE FROM blobs WHERE id = ? AND version = ?').bind(id, version).run().catch(() => undefined);
 }
@@ -77,6 +91,13 @@ export async function readBlob(env: BlobEnv, id: string): Promise<{ bytes: Uint8
   for (let attempt = 0; attempt < 2; attempt++) {
     const entry = await env.SHARES_DB.prepare('SELECT store, version FROM blob_index WHERE id = ?').bind(id).first<{ store: number; version: number }>();
     if (!entry) return null;
+    if (entry.store === KV_STORE) {
+      for (const version of [entry.version, entry.version - 1]) {
+        const value = version > 0 ? await env.SHARES_KV.get(kvKey(id, version), 'arrayBuffer') : null;
+        if (value) return { bytes: new Uint8Array(value), version, store: KV_STORE };
+      }
+      continue;
+    }
     const store = stores(env).find(candidate => candidate.number === entry.store);
     const row = store ? await store.db.prepare('SELECT data FROM blobs WHERE id = ? AND version = ?').bind(id, entry.version).first<{ data: string }>() : null;
     if (row) return { bytes: fromBase64(row.data), version: entry.version, store: entry.store };
@@ -86,8 +107,9 @@ export async function readBlob(env: BlobEnv, id: string): Promise<{ bytes: Uint8
 
 /** Removes a project from its database. True when there was one. */
 export async function removeBlob(env: BlobEnv, id: string): Promise<boolean> {
-  const entry = await env.SHARES_DB.prepare('SELECT store FROM blob_index WHERE id = ?').bind(id).first<{ store: number }>();
+  const entry = await env.SHARES_DB.prepare('SELECT store, version FROM blob_index WHERE id = ?').bind(id).first<{ store: number; version: number }>();
   if (!entry) return false;
+  if (entry.store === KV_STORE) for (const version of [entry.version, entry.version - 1]) if (version > 0) await env.SHARES_KV.delete(kvKey(id, version));
   const store = stores(env).find(candidate => candidate.number === entry.store);
   if (store) await store.db.prepare('DELETE FROM blobs WHERE id = ?').bind(id).run();
   await env.SHARES_DB.prepare('DELETE FROM blob_index WHERE id = ?').bind(id).run();
@@ -97,6 +119,9 @@ export async function removeBlob(env: BlobEnv, id: string): Promise<boolean> {
 /** Removes projects whose share is gone. D1 has no expiry of its own. */
 export async function sweepBlobs(env: BlobEnv): Promise<void> {
   const rows = await env.SHARES_DB.prepare('SELECT id, store FROM blob_index WHERE NOT EXISTS (SELECT 1 FROM shares WHERE shares.id = blob_index.id) LIMIT 60').bind().all<{ id: string; store: number }>();
+  // KV drops its values by itself, only the index is left.
+  const gone = rows.results.filter(row => row.store === KV_STORE).map(row => row.id);
+  if (gone.length) await env.SHARES_DB.prepare(`DELETE FROM blob_index WHERE id IN (${gone.map(() => '?').join(', ')})`).bind(...gone).run();
   for (const store of stores(env)) {
     const ids = rows.results.filter(row => row.store === store.number).map(row => row.id);
     if (!ids.length) continue;

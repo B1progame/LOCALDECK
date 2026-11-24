@@ -141,14 +141,36 @@ export function mimeType(path: string): string {
   return ({ html:'text/html', htm:'text/html', js:'text/javascript', mjs:'text/javascript', css:'text/css', json:'application/json', svg:'image/svg+xml', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', webp:'image/webp', avif:'image/avif', mp3:'audio/mpeg', ogg:'audio/ogg', wav:'audio/wav', mp4:'video/mp4', webm:'video/webm', woff:'font/woff', woff2:'font/woff2', ttf:'font/ttf', otf:'font/otf', ico:'image/x-icon', wasm:'application/wasm', txt:'text/plain', xml:'application/xml', pdf:'application/pdf' } as Record<string, string>)[ext] ?? 'application/octet-stream';
 }
 
-export function createStoredZip(entries: Array<{ path: string; data: Uint8Array }>): Blob {
+/** Reads a ZIP that createStoredZip wrote and that was verified in another way, for example by its encryption.
+    Skips the checks for foreign archives and returns the checksums, so unchanged files need no second pass. */
+export function readOwnZip(data: Uint8Array): Array<{ path: string; data: Uint8Array; crc: number }> {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength), decoder = new TextDecoder();
+  const end = data.length - 22;
+  assertRange(end, 22, data.length);
+  if (view.getUint32(end, true) !== 0x06054b50) throw new Error('This ZIP looks incomplete or uses an unsupported ZIP64 format.');
+  const entries: Array<{ path: string; data: Uint8Array; crc: number }> = [];
+  let cursor = view.getUint32(end + 16, true);
+  for (let i = view.getUint16(end + 10, true); i > 0; i--) {
+    assertRange(cursor, 46, data.length);
+    const size = view.getUint32(cursor + 24, true), name = view.getUint16(cursor + 28, true), local = view.getUint32(cursor + 42, true);
+    if (view.getUint32(cursor, true) !== 0x02014b50 || view.getUint16(cursor + 10, true) !== 0) throw new Error('The ZIP central directory is malformed.');
+    assertRange(cursor + 46, name, data.length); assertRange(local, 30, data.length);
+    const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
+    assertRange(start, size, data.length);
+    entries.push({ path: normalizePackagePath(decoder.decode(data.subarray(cursor + 46, cursor + 46 + name))), data: data.subarray(start, start + size), crc: view.getUint32(cursor + 16, true) });
+    cursor += 46 + name + view.getUint16(cursor + 30, true) + view.getUint16(cursor + 32, true);
+  }
+  return entries;
+}
+
+export function createStoredZip(entries: Array<{ path: string; data: Uint8Array; crc?: number }>): Blob {
   const encoder = new TextEncoder(), locals: Uint8Array[] = [], central: Uint8Array[] = [];
   let offset = 0;
   for (const entry of entries) {
     const path = normalizePackagePath(entry.path);
     const name = encoder.encode(path), bytes = entry.data;
     if (name.length > 0xffff || bytes.length > 0xffffffff || offset > 0xffffffff) throw new Error('This ZIP exceeds the classic ZIP file format limits.');
-    const crc = crc32(bytes);
+    const crc = entry.crc ?? crc32(bytes);
     const local = new Uint8Array(30 + name.length), lv = new DataView(local.buffer);
     lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0x800, true);
     lv.setUint32(14, crc, true); lv.setUint32(18, bytes.length, true); lv.setUint32(22, bytes.length, true); lv.setUint16(26, name.length, true); local.set(name, 30);

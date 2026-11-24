@@ -25,10 +25,12 @@ The address works like a password. Whoever has it can create projects in your na
 | `create_project` | Title, details and files in, link out. Needs `index.html`. `localdeck.json` is written by the server |
 | `update_project` | `edits` (find and replace a text that appears once), `files`, `remove`, or new details. Same link |
 | `read_project` | List of files, or the content of one file |
+| `check_project` | Names what does not work: internet requests, missing files, browser storage, no viewport, no cover. `create_project` and `update_project` answer with the same list |
+| `read_guide` | How the website works, what AI studio asks for, how to hand over a project, design, types and limits |
 | `list_projects` | Projects of this connection with links |
 | `delete_project` | Deletes a project and its link |
 
-Limits: 1 MiB and 60 files per project, 240 calls per hour, and the admin limits for changes per day, days online and storage. A change extends the time online.
+Limits: 10 MiB and 300 files per project, 6 MiB per call (larger projects are built with several calls), 1,000 calls per hour, and the admin limits for changes per day (150 by default, 600 for admins), days online and storage. A change extends the time online.
 
 ## Privacy
 
@@ -41,5 +43,6 @@ Limits: 1 MiB and 60 files per project, 240 calls per hour, and the admin limits
 ## Technical
 
 - `cloudflare/worker/src/mcp.ts`: protocol. Stateless, HTTP POST, JSON answers. Speaks 2026-07-28 and the 2024 to 2025 versions with the `initialize` handshake.
-- `cloudflare/worker/src/ai.ts`: connections, encryption, projects. Project data is spread over three D1 databases (`cloudflare/worker/src/blobs.ts`), 500 MB each on the free plan. About 930 MiB of projects fit, because they are stored as text.
+- `cloudflare/worker/src/ai.ts`: connections, encryption, projects. Project data is spread over three D1 databases (`cloudflare/worker/src/blobs.ts`), 500 MB each on the free plan. About 930 MiB of projects fit, because they are stored as text. Projects over 1 MiB are in KV, at most 300 such changes a day. The version before a change stays there until the next one, because KV needs up to a minute to reach every place.
+- `cloudflare/worker/src/guide.ts`: the guide and the check.
 - Tested with the official MCP SDK against a local D1. Very large projects may run into the 10 ms computing limit of the free Workers plan.

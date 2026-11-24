@@ -1,8 +1,8 @@
 /* Limits, accounts, statistics and stored shares. Everything that talks to D1 and KV for them lives here. */
 
-import { BLOB_TABLE, indexBlob, MAX_BLOB_BYTES, putBlob, removeBlob, sweepBlobs, usage, type BlobEnv } from './blobs.ts';
+import { BLOB_TABLE, indexBlob, KV_STORE, MAX_BLOB_BYTES, putBlob, removeBlob, sweepBlobs, usage, type BlobEnv } from './blobs.ts';
 
-export interface StoreEnv extends BlobEnv { SHARES_KV: KVNamespace }
+export type StoreEnv = BlobEnv;
 export type Owner = { id: string; email: string; name: string; picture: string; provider: string; admin: boolean };
 export type Limits = { linkMiB: number; storageMiB: number; perHour: number; perDay: number; days: number; aiPerDay: number; aiDays: number };
 export type ServiceLimits = { totalMiB: number; perDay: number; open: boolean; ai: boolean };
@@ -14,15 +14,17 @@ export const PART_BYTES = 20 * MIB;
 /** One upload without parts may be as large as before. */
 export const SINGLE_BYTES = 24 * MIB;
 /** The free KV plan holds 1 GB. */
-const MAX_KV_BYTES = 900 * MIB;
+export const MAX_KV_BYTES = 900 * MIB;
+/** What KV holds. A large AI project counts twice, because its version before the last change stays for a while. */
+export const KV_USED = `SELECT COALESCE(SUM(shares.size_bytes * (CASE WHEN blob_index.store = ${KV_STORE} THEN 2 ELSE 1 END)), 0) as bytes FROM shares LEFT JOIN blob_index ON blob_index.id = shares.id WHERE shares.expires_at > ?1 AND (blob_index.store IS NULL OR blob_index.store = ${KV_STORE})`;
 const PENDING_MS = 15 * 60_000;
 const MAX_PENDING_PER_OWNER = 3;
 const MAX_PENDING = 8;
 
 export const DEFAULTS: Settings = {
-  users: { linkMiB: 24, storageMiB: 48, perHour: 5, perDay: 15, days: 3, aiPerDay: 40, aiDays: 30 },
-  admins: { linkMiB: 80, storageMiB: 400, perHour: 100, perDay: 200, days: 7, aiPerDay: 300, aiDays: 90 },
-  service: { totalMiB: 512, perDay: 100, open: true, ai: true },
+  users: { linkMiB: 24, storageMiB: 100, perHour: 5, perDay: 15, days: 3, aiPerDay: 150, aiDays: 60 },
+  admins: { linkMiB: 80, storageMiB: 400, perHour: 100, perDay: 200, days: 7, aiPerDay: 600, aiDays: 180 },
+  service: { totalMiB: 1200, perDay: 100, open: true, ai: true },
 };
 /** What the free plans of Cloudflare and the app itself can carry. KV has 1 GB and 1,000 writes a day. */
 export const BOUNDS = { linkMiB: [1, 80], storageMiB: [1, 900], perHour: [1, 200], perDay: [1, 500], days: [1, 30], aiPerDay: [0, 1000], aiDays: [1, 180], totalMiB: [50, 1800], servicePerDay: [1, 800] } as const;
@@ -149,7 +151,7 @@ export async function reserve(env: StoreEnv, owner: Owner, size: number, parts: 
     SELECT ?1, ?2, 'revoked', ?3, ?4, ?5
     WHERE (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE expires_at > ?3) + ?5 <= ?6
       AND (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE expires_at > ?3 AND owner_id = ?2) + ?5 <= ?7
-      AND (?5 <= ?11 OR (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE expires_at > ?3 AND NOT EXISTS (SELECT 1 FROM blob_index WHERE blob_index.id = shares.id)) + ?5 <= ?12)
+      AND (?5 <= ?11 OR (${KV_USED.replace('?1', '?3')}) + ?5 <= ?12)
       AND (SELECT COUNT(*) FROM shares WHERE status = 'revoked' AND created_at > ?8) < ?9
       AND (SELECT COUNT(*) FROM shares WHERE status = 'revoked' AND created_at > ?8 AND owner_id = ?2) < ?10
     RETURNING id`).bind(id, owner.id, now.toISOString(), expiresAt, size, settings.service.totalMiB * MIB, limits.storageMiB * MIB, recent, MAX_PENDING, MAX_PENDING_PER_OWNER, MAX_BLOB_BYTES, MAX_KV_BYTES).first<{ id: string }>();
@@ -263,7 +265,7 @@ export async function overview(env: StoreEnv, owner: Owner): Promise<unknown> {
     FROM shares LEFT JOIN accounts ON accounts.owner_id = shares.owner_id LEFT JOIN share_meta ON share_meta.id = shares.id
     WHERE shares.status = 'active' AND shares.expires_at > ? ORDER BY shares.created_at DESC LIMIT 300`).bind(now).all<{ ownerId: string; ai: number }>();
   const ai = await db.prepare('SELECT (SELECT COUNT(*) FROM ai_tokens) as connections, (SELECT COUNT(*) FROM ai_projects JOIN shares ON shares.id = ai_projects.id WHERE shares.expires_at > ?1) as projects, (SELECT COALESCE(SUM(size_bytes), 0) FROM shares JOIN ai_projects ON ai_projects.id = shares.id WHERE shares.expires_at > ?1) as bytes, (SELECT COALESCE(SUM(created + updated), 0) FROM ai_daily WHERE day > ?2) as changes').bind(now, today - 30 * 86_400_000).first();
-  const kv = await db.prepare('SELECT COALESCE(SUM(size_bytes), 0) as bytes FROM shares WHERE expires_at > ? AND NOT EXISTS (SELECT 1 FROM blob_index WHERE blob_index.id = shares.id)').bind(now).first<{ bytes: number }>();
+  const kv = await db.prepare(KV_USED).bind(now).first<{ bytes: number }>();
   const entries = await db.prepare('SELECT at, admin, action, target FROM admin_log ORDER BY id DESC LIMIT 30').bind().all();
   return {
     totals: { links: totals?.links ?? 0, owners: new Set(shares.results.map(share => share.ownerId)).size, bytes: totals?.bytes ?? 0, limitBytes: settings.service.totalMiB * MIB, uploadsToday: uploads?.uploads ?? 0, uploadsLimit: settings.service.perDay, accounts: people?.accounts ?? 0, activeWeek: people?.week ?? 0, blocked: people?.blocked ?? 0 },

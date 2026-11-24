@@ -31,6 +31,7 @@ function createItemFromPreview(preview: ImportPreview, itemId = id()): LibraryIt
     manifestVersion: preview.manifest?.schemaVersion ?? 1, createdAt: now, updatedAt: now, importedAt: now,
     lastOpenedAt: null, openCount: 0, runtimeSettings: { preferredOrientation: preview.manifest?.preferredOrientation ?? 'any' },
     offlineCompatibility: preview.report, packageId: itemId, fileCount: preview.files.length,
+    ...(preview.contentCheck ? { contentCheck: preview.contentCheck } : {}),
   };
 }
 
@@ -87,6 +88,8 @@ export async function replaceItemFiles(itemId: string, preview: ImportPreview): 
       runtimeSettings: manifest?.preferredOrientation ? { ...current.runtimeSettings, preferredOrientation: manifest.preferredOrientation } : current.runtimeSettings,
       updatedAt: Date.now(),
     };
+    // New files, so the old result does not count any more.
+    delete updated.contentCheck;
     await db.assets.where('itemId').equals(itemId).delete();
     await db.assets.bulkAdd(prepared);
     await db.items.put(updated);

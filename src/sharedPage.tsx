@@ -3,7 +3,12 @@ import { t, tm } from './i18n';
 import React, { useEffect, useState } from 'react';
 import { ArrowDownToLine, Info, LoaderCircle, Plus, RefreshCw } from 'lucide-react';
 import { analyzeFiles } from './services/importer';
+import { aiIsReady, askAbout, readProjectText, ruleCheck, scanImported, useAutoScan, withAi } from './autoScan';
+import { ContentNote } from './contentNote';
+import { stopGenerating, useLocalAi } from './localAi/engine';
+import { withOpinion, type ContentCheck } from './services/contentCheck';
 import { createItem } from './services/library';
+import { mergeTags } from './services/projectScan';
 import { fetchShare, parseSharedRoute, shareProblem, type ShareProblem } from './services/shareLink';
 import { downloadShare } from './services/shareService';
 import { rememberKey } from './services/savedShares';
@@ -28,6 +33,33 @@ type State =
 
 const LOADING: State = { kind: 'loading', message: t('Checking this shared project…') };
 const asMessage = (error: unknown) => error instanceof Error ? tm(error.message) : t('Something went wrong. Please try again.');
+
+type Explained = { check: ContentCheck | null; scanning: boolean; summary: string; tags: string[]; subject: string; topic: string };
+const NOTHING: Explained = { check: null, scanning: false, summary: '', tags: [], subject: '', topic: '' };
+
+/** Checks a shared project before it is imported: by rules at once, then by the local AI if one is ready. */
+function useExplanation(preview: ImportPreview | null): Explained {
+  const [state, setState] = useState<Explained>(NOTHING);
+  useEffect(() => {
+    if (!preview) return;
+    let active = true, owns = false;
+    setState(NOTHING);
+    void (async () => {
+      const project = await readProjectText(preview.files, preview.selectedEntry);
+      const check = ruleCheck(project, preview);
+      if (!active) return;
+      setState({ ...NOTHING, check, tags: preview.tags });
+      if (!useAutoScan.getState().auto || !await aiIsReady() || !active) return;
+      setState(current => ({ ...current, scanning: true }));
+      try {
+        const result = await withAi(`shared:${preview.id}`, async () => { owns = true; try { return await askAbout(project, preview.sourceName, { cancelled: () => !active, background: true }); } finally { owns = false; } });
+        if (active) setState({ check: withOpinion(check, result.age, result.suggestion.description), scanning: false, summary: result.suggestion.description, tags: mergeTags(preview.tags, result.suggestion.tags), subject: result.suggestion.subject, topic: result.suggestion.topic });
+      } catch { if (active) setState(current => ({ ...current, scanning: false })); }
+    })().catch(() => undefined);
+    return () => { active = false; if (owns) stopGenerating(); };
+  }, [preview]);
+  return state;
+}
 
 export function SharedPage({ hash, notify }: { hash: string; notify: (message: string, error?: boolean) => void }) {
   const [state, setState] = useState<State>(LOADING);
@@ -72,8 +104,18 @@ export function SharedPage({ hash, notify }: { hash: string; notify: (message: s
     return () => { active = false; };
   }, [api, hash, attempt]);
 
+  const preview = state.kind === 'ready' ? state.preview : null;
+  const explained = useExplanation(preview);
+  const { engine } = useLocalAi();
+  const [allowed, setAllowed] = useState(false);
+  useEffect(() => setAllowed(false), [preview]);
+  const locked = explained.check?.rating === '18' && !allowed;
+
   const importShared = async (preview: ImportPreview) => {
-    try { await createItem(preview); notify(t('“{0}” was imported to this device.', preview.title)); go('library'); }
+    try {
+      const item = await createItem({ ...preview, description: preview.description || explained.summary, subject: preview.subject || explained.subject, topic: preview.topic || explained.topic, tags: explained.tags.length ? explained.tags : preview.tags, ...(explained.check ? { contentCheck: explained.check } : {}) });
+      void scanImported(item);
+      notify(t('“{0}” was imported to this device.', preview.title)); go('library'); }
     catch (error) { notify(asMessage(error), true); }
   };
   const downloadShared = async (preview: ImportPreview) => {
@@ -100,12 +142,21 @@ export function SharedPage({ hash, notify }: { hash: string; notify: (message: s
         <h2>{state.preview.title}</h2>
         <p>{state.preview.description || t('A project shared with you.')}</p>
         <small>{t('Link expires {0}', state.expires)}</small>
+        {explained.tags.length > 0 && <div className="tag-list">{explained.tags.map(tag => <span key={tag} className="tag">#{tag}</span>)}</div>}
       </div>
       <div className="shared-actions">
-        <button className="button primary" onClick={() => void importShared(state.preview)}><Plus size={16}/> {t('Import to my library')}</button>
-        <button className="button" onClick={() => void downloadShared(state.preview)}><ArrowDownToLine size={15}/> {t('Download copy')}</button>
+        {locked && <button className="button" onClick={() => setAllowed(true)}>{t('I am old enough, continue')}</button>}
+        <button className="button primary" disabled={locked} onClick={() => void importShared(state.preview)}><Plus size={16}/> {t('Import to my library')}</button>
+        <button className="button" disabled={locked} onClick={() => void downloadShared(state.preview)}><ArrowDownToLine size={15}/> {t('Download copy')}</button>
       </div>
     </div>}
+    {state.kind === 'ready' && <section className="panel shared-about" aria-live="polite">
+      <h2>{t('What is this?')}</h2>
+      {explained.summary && <p>{explained.summary}</p>}
+      {explained.scanning && <p className="local-ai-line"><LoaderCircle size={16} className="spin"/> {t('The local AI is reading this project…')}</p>}
+      {explained.check && <ContentNote check={explained.check}/>}
+      {engine === 'none' && <p className="muted-text">{t('With a local AI (Settings) LocalDeck also explains what a shared project is.')}</p>}
+    </section>}
     {state.kind === 'problem' && <div className="shared-error" role="alert">
       <Info size={20}/>
       <h2>{t(state.problem.title)}</h2>

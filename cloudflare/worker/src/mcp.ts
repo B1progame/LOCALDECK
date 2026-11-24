@@ -1,15 +1,20 @@
 /* The MCP endpoint: lets an AI create and update LocalDeck projects.
    Stateless, HTTP POST with JSON answers, tools only. Serves clients of the 2025 versions (initialize
    handshake) and of 2026-07-28 (every request carries its version). */
-import { AiError, connect, createProject, deleteProject, listProjects, readDetails, readEdits, readFiles, readProject, updateProject, type AiEnv, type Connection, type ProjectInfo } from './ai.ts';
+import { AiError, checkStored, connect, createProject, deleteProject, listProjects, MAX_CALLS_PER_HOUR, MAX_FILES, MAX_PROJECT_MIB, readDetails, readEdits, readFiles, readProject, updateProject, type AiEnv, type Connection, type ProjectInfo } from './ai.ts';
+import { guide, TOPICS } from './guide.ts';
 
 const MODERN = '2026-07-28';
 const LEGACY = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const SERVER = { name: 'localdeck', title: 'LocalDeck', version: '1.0.0' };
 const VERSION_FIELD = 'io.modelcontextprotocol/protocolVersion';
-const MAX_BODY = 3 * 1024 * 1024;
+/** One call. A larger project is built with several calls, so a call stays within the computing time of the free plan. */
+const REQUEST_MIB = 6;
+const MAX_BODY = REQUEST_MIB * 1024 * 1024;
+const TOO_LARGE = `The request is too large. One call may carry ${REQUEST_MIB} MiB. Create the project first and add more files with update_project.`;
 
 const INSTRUCTIONS = `LocalDeck is a private offline library for HTML projects: study sheets, quizzes, games, simulations, presentations and small tools.
+Before your first project read the guide: read_guide explains how the website works, what AI studio asks for and how to output a project.
 With these tools you create a project, get a private link for the person, and change the project later. The link stays the same after changes; people who open it get the newest version.
 
 How to build a good project:
@@ -18,7 +23,9 @@ How to build a good project:
 - It runs in an isolated frame: localStorage, cookies and service workers are not available. Keep state in memory.
 - Make it work on phones and with touch, use large tap targets, readable contrast and a layout that fits 360 px.
 - Draw illustrations as SVG. Add cover.svg (1200x750) as the cover. Do not write localdeck.json, it is created from the details you pass.
-- Use the language of the person. The whole project may be at most 1 MiB.
+- Use the language of the person. A project may have ${MAX_PROJECT_MIB} MiB and ${MAX_FILES} files. One call may carry ${REQUEST_MIB} MiB, add more with update_project.
+- Pass subject, topic, description and 3 to 6 tags (hashtags), so the project can be found in the library.
+- create_project and update_project answer with problems they find. Fix them and update again.
 For changes prefer "edits" over sending whole files again. Read the file first so "find" matches exactly.
 Always give the person the complete link, including everything after "#". Whoever has the link can open the project. Do not put secrets or other people's personal data into projects.`;
 
@@ -38,7 +45,9 @@ const projectId = { ...text, description: 'The project_id from create_project or
 const TOOLS = [
   { name: 'create_project', title: 'Create a project', description: 'Creates an HTML project in LocalDeck and returns a private link that you give to the person. Use it when someone wants a study sheet, quiz, game, simulation, presentation or tool.', inputSchema: { type: 'object', properties: { ...details, files }, required: ['title', 'files'] }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   { name: 'update_project', title: 'Update a project', description: 'Changes a project. The link stays the same. Use "edits" for small changes, "files" to add or replace whole files, "remove" to delete files, and the details to rename it.', inputSchema: { type: 'object', properties: { project_id: projectId, edits: { type: 'array', description: 'Replaces a text that appears exactly once in the file', items: { type: 'object', properties: { path: text, find: text, replace: text }, required: ['path', 'find', 'replace'] } }, files, remove: { type: 'array', items: text, description: 'Paths to delete' }, ...details }, required: ['project_id'] }, annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false } },
-  { name: 'read_project', title: 'Read a project', description: 'Without "path": the link, details and list of files. With "path": the content of that file.', inputSchema: { type: 'object', properties: { project_id: projectId, path: { ...text, description: 'Such as index.html' } }, required: ['project_id'] }, annotations: { readOnlyHint: true, openWorldHint: false } },
+  { name: 'read_project', title: 'Read a project', description: 'Without "path": the link, details and list of files. With "path": the content of that file.', inputSchema: { type: 'object', properties: { project_id: projectId, path: { ...text, description: 'Such as index.html' }, offset: { type: 'integer', minimum: 0, description: 'For files over 100,000 characters: where to continue' } }, required: ['project_id'] }, annotations: { readOnlyHint: true, openWorldHint: false } },
+  { name: 'check_project', title: 'Check a project', description: 'Looks for things that do not work in LocalDeck: internet requests, missing files, browser storage, missing viewport or cover.', inputSchema: { type: 'object', properties: { project_id: projectId }, required: ['project_id'] }, annotations: { readOnlyHint: true, openWorldHint: false } },
+  { name: 'read_guide', title: 'Read the LocalDeck guide', description: 'How LocalDeck works and how a project has to look. Read it before the first project. Topics: website (pages, import, links, what is blocked), ai_studio (the request AI studio writes, for a kind and an idea), output (how to hand over files, limits, text format for chats without tools), design, types (types and details). Without a topic: everything except ai_studio.', inputSchema: { type: 'object', properties: { topic: { ...text, enum: [...TOPICS] }, kind: { ...text, enum: ['game', 'learning', 'quiz', 'app', 'tool', 'simulation', 'presentation', 'other'], description: 'For ai_studio' }, idea: { ...text, description: 'For ai_studio' }, title: text, subject: text, language: text } }, annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: 'list_projects', title: 'List projects', description: 'The projects of this connection with title, link, downloads and expiry.', inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: 'delete_project', title: 'Delete a project', description: 'Deletes a project for good. Its link stops working at once. Ask the person first.', inputSchema: { type: 'object', properties: { project_id: projectId }, required: ['project_id'] }, annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false } },
 ];
@@ -58,7 +67,7 @@ function header(request: Request, name: string): string | null {
 }
 
 function summary(project: ProjectInfo, verb: string): string {
-  return `${verb} "${project.title}" (version ${project.version}, ${Math.ceil(project.size / 1024)} KB).\nLink for the person: ${project.link}\nproject_id: ${project.id}\nThe link works until ${project.expiresAt.slice(0, 10)}. Every update extends it.`;
+  return `${verb} "${project.title}" (version ${project.version}, ${Math.ceil(project.size / 1024)} KB).\nLink for the person: ${project.link}\nproject_id: ${project.id}\nThe link works until ${project.expiresAt.slice(0, 10)}. Every update extends it.${project.problems.length ? `\n\nProblems found, please fix them with update_project:\n- ${project.problems.join('\n- ')}` : ''}`;
 }
 
 async function runTool(env: AiEnv, connection: Connection, name: string, input: Record<string, unknown>): Promise<string> {
@@ -70,7 +79,9 @@ async function runTool(env: AiEnv, connection: Connection, name: string, input: 
       if (!Array.isArray(remove) || !remove.every(path => typeof path === 'string')) throw new AiError('"remove" must be a list of paths.');
       return summary(await updateProject(env, connection, id, { files: readFiles(input.files), edits: readEdits(input.edits), remove: remove as string[], details: readDetails(input) }), 'Updated');
     }
-    case 'read_project': return readProject(env, connection, id, typeof input.path === 'string' && input.path ? input.path : undefined);
+    case 'read_project': return readProject(env, connection, id, typeof input.path === 'string' && input.path ? input.path : undefined, Number.isSafeInteger(input.offset) && Number(input.offset) > 0 ? Number(input.offset) : 0);
+    case 'check_project': { const problems = await checkStored(env, connection, id); return problems.length ? `Problems:\n- ${problems.join('\n- ')}` : 'No problems found.'; }
+    case 'read_guide': return guide(typeof input.topic === 'string' ? input.topic : undefined, input, { projectMiB: MAX_PROJECT_MIB, files: MAX_FILES, requestMiB: REQUEST_MIB, callsPerHour: MAX_CALLS_PER_HOUR, changesPerDay: connection.limits.aiPerDay, days: connection.limits.aiDays });
     case 'list_projects': { const projects = await listProjects(env, connection); return projects.length ? JSON.stringify(projects, null, 2) : 'This connection has no projects yet.'; }
     case 'delete_project': await deleteProject(env, connection, id); return 'Deleted. The link no longer works.';
     default: throw new AiError(`There is no tool ${name}.`);
@@ -93,11 +104,11 @@ export async function handleMcp(request: Request, env: AiEnv, token: string, isA
   const connection = await connect(env, token, isAdmin);
   if (connection === null) return await unknownToken() ? failure(401, null, -32001, 'This LocalDeck connection does not exist. Create a new one in LocalDeck under Settings, Connect an AI.') : failure(429, null, -32001, 'Too many attempts.');
   if (typeof connection === 'string') return failure(403, null, -32001, connection);
-  if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY) return failure(413, null, -32600, 'The request is too large. A project may be at most 1 MiB.');
+  if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY) return failure(413, null, -32600, TOO_LARGE);
   let message: Message;
   try {
     const body = await request.text();
-    if (body.length > MAX_BODY) return failure(413, null, -32600, 'The request is too large. A project may be at most 1 MiB.');
+    if (body.length > MAX_BODY) return failure(413, null, -32600, TOO_LARGE);
     message = JSON.parse(body) as Message;
   } catch { return failure(400, null, -32700, 'Parse error'); }
   if (!message || typeof message !== 'object' || Array.isArray(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') return failure(400, null, -32600, 'Invalid request');

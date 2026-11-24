@@ -42,6 +42,7 @@ import {
   Activity, ArrowDownToLine, BookOpen, Check, ChevronRight, Code2, Copy, FileText, FolderPlus, Gamepad2, Heart, Image, Info, Library,
   MoreHorizontal, PackageOpen, Pencil, Play, RefreshCw, Share2, Trash2, type LucideIcon,
 } from 'lucide-react';
+import { RatingBadge } from './contentNote';
 import type { ContentType, LibraryItem } from './types';
 import { rovingKeys, useReturnFocus } from './a11y';
 
@@ -148,7 +149,10 @@ export type ItemActions = {
   details: (item: LibraryItem) => void;
   favorite: (item: LibraryItem) => void;
   edit: (item: LibraryItem) => void;
-  describe: (item: LibraryItem, changes: Pick<LibraryItem, 'title' | 'type' | 'subject' | 'topic' | 'description' | 'tags'>) => Promise<void>;
+  describe: (item: LibraryItem, changes: Pick<LibraryItem, 'title' | 'type' | 'subject' | 'topic' | 'description' | 'tags' | 'contentCheck'>) => Promise<void>;
+  /** Marks a project as fine although the check was unsure. */
+  confirmContent: (item: LibraryItem) => void;
+  showTag: (tag: string) => void;
   editCode: (item: LibraryItem) => void;
   update: (item: LibraryItem, file: File) => Promise<void>;
   collect: (item: LibraryItem) => void;
@@ -162,6 +166,13 @@ export function useItemActions(): ItemActions {
   const value = useContext(ItemActionsContext);
   if (!value) throw new Error('ItemActionsContext is missing.');
   return value;
+}
+
+/** "#word" finds hashtags, anything else looks at all details. */
+export function matchesQuery(item: LibraryItem, query: string): boolean {
+  const q = query.trim().toLocaleLowerCase();
+  if (q.startsWith('#')) { const tag = q.slice(1).trim(); return item.tags.some(entry => entry.toLocaleLowerCase().startsWith(tag)); }
+  return [item.title, item.description, item.type, item.subject, item.topic, item.genre, ...item.tags].join(' ').toLocaleLowerCase().includes(q);
 }
 
 export const isHtmlItem = (item: LibraryItem) => /\.html?$/i.test(item.entryFile);
@@ -240,6 +251,7 @@ export function ItemCard({ item, index = 0, compact = false }: { item: LibraryIt
     <motion.span className="card-glare" style={{ backgroundImage: tilt.glare }} aria-hidden="true" />
     <button className={`item-cover cover-${item.type}`} onClick={() => a.open(item)} aria-label={`${OPEN_VERB[item.type]} ${item.title}`}>
       <span className="cover-type"><Icon size={17}/></span>
+      <RatingBadge check={item.contentCheck}/>
       <span className="cover-title">{item.title}</span>
       <span className="cover-meta">{item.subject || item.genre || TYPE_LABEL[item.type]}</span>
       <span className="cover-play"><Play size={14} fill="currentColor"/></span>
@@ -266,6 +278,7 @@ export function ItemRow({ item, meta }: { item: LibraryItem; meta?: React.ReactN
   return <div className="item-row" onContextMenu={event => { event.preventDefault(); setMenu(true); }}>
     <button className="item-row-cover" style={{ backgroundImage: coverBackground(item) }} onClick={() => a.open(item)} aria-label={`${OPEN_VERB[item.type]} ${item.title}`}><Play size={14} fill="currentColor"/></button>
     <button className="item-row-main" onClick={() => a.details(item)}><b>{item.title}</b><small>{itemSubtitle(item)}</small></button>
+    <RatingBadge check={item.contentCheck}/>
     <span className="item-row-meta">{meta ?? bytes(item.storageSize)}</span>
     <button className={`icon-button ${item.favorite ? 'favorite-on' : ''}`} onClick={() => a.favorite(item)} aria-pressed={item.favorite} aria-label={item.favorite ? t('Remove {0} from favorites', item.title) : t('Add {0} to favorites', item.title)}><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'}/></button>
     <button className="button item-row-open" onClick={() => a.open(item)}>{OPEN_VERB[item.type]}</button>

@@ -179,7 +179,7 @@ test('downloads are counted per link, per account and per day', async () => {
 test('limits can be changed by the admin only, and stay within what the service can carry', async () => {
   assert.equal((await call('/admin/limits', person, { method: 'PUT', body: '{}' })).status, 403);
   const changed = await (await asAdmin('/admin/limits', 'PUT', { users: { linkMiB: 10, storageMiB: 99999, perHour: 50, perDay: 2.5, days: 30 }, service: { totalMiB: 900, open: true } })).json();
-  assert.deepEqual(changed.users, { linkMiB: 10, storageMiB: 48, perHour: 50, perDay: 15, days: 30, aiPerDay: 40, aiDays: 30 });
+  assert.deepEqual(changed.users, { linkMiB: 10, storageMiB: 100, perHour: 50, perDay: 15, days: 30, aiPerDay: 150, aiDays: 60 });
   assert.equal(changed.service.totalMiB, 900);
   assert.equal(changed.admins.linkMiB, 80);
   const guest = await token({ sub: 'limits-uid', email: 'limits@example.com' });
@@ -206,7 +206,7 @@ test('one account can get its own limits', async () => {
   await signIn(guest);
   const path = `/admin/accounts/${encodeURIComponent('firebase:own-uid')}`;
   assert.equal((await asAdmin(path, 'PUT', { limits: { linkMiB: 60, storageMiB: 200, perHour: 30, perDay: 60, days: 14 } })).status, 200);
-  assert.deepEqual((await (await call('/me', guest)).json()).limits, { linkMiB: 60, storageMiB: 200, perHour: 30, perDay: 60, days: 14, aiPerDay: 40, aiDays: 30 });
+  assert.deepEqual((await (await call('/me', guest)).json()).limits, { linkMiB: 60, storageMiB: 200, perHour: 30, perDay: 60, days: 14, aiPerDay: 150, aiDays: 60 });
   assert.equal((await asAdmin(path, 'PUT', { limits: null })).status, 200);
   assert.equal((await (await call('/me', guest)).json()).limits.linkMiB, 10);
   assert.equal((await asAdmin('/admin/accounts/firebase%3Anobody', 'PUT', { blocked: true })).status, 409);
@@ -316,7 +316,7 @@ test('older and newer MCP clients are both served', async () => {
   assert.equal((await rpc(url, 'initialize', { protocolVersion: '1999-01-01' })).body.result.protocolVersion, '2025-11-25');
   const note = await worker.fetch(new Request(url, { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) }), env);
   assert.equal(note.status, 202);
-  assert.deepEqual((await rpc(url, 'tools/list')).body.result.tools.map(entry => entry.name), ['create_project', 'update_project', 'read_project', 'list_projects', 'delete_project']);
+  assert.deepEqual((await rpc(url, 'tools/list')).body.result.tools.map(entry => entry.name), ['create_project', 'update_project', 'read_project', 'check_project', 'read_guide', 'list_projects', 'delete_project']);
   assert.equal((await worker.fetch(new Request(url), env)).status, 405);
   const meta = { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {} } };
   const headers = method => ({ 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': method });
@@ -385,7 +385,7 @@ test('wrong input is explained to the AI', async () => {
   await fails({ files: [{ path: 'index.html', content: 'x' }] }, /title/);
   await fails({ title: 'A', files: [{ path: '../x', content: 'x' }] }, /Unsafe/);
   await fails({ title: 'A', type: 'virus', files: [{ path: 'index.html', content: 'x' }] }, /type/);
-  await fails({ title: 'A', files: [{ path: 'index.html', content: 'x'.repeat(1100 * 1024) }] }, /1 MiB/);
+  await fails({ title: 'A', files: Array.from({ length: 301 }, (_, i) => ({ path: i ? `f${i}.txt` : 'index.html', content: 'x' })) }, /300 files/);
   await fails({ title: 'A', files: [{ path: 'index.html', content: 'x' }, { path: 'INDEX.html', content: 'x' }] }, /same name/);
   const id = idOf((await tool(url, 'create_project', { title: 'A', files: [{ path: 'index.html', content: 'aa bb aa' }] })).text);
   assert.match((await tool(url, 'update_project', { project_id: id, edits: [{ path: 'index.html', find: 'aa', replace: 'c' }] })).text, /2 times/);
@@ -485,4 +485,70 @@ test('the cleanup empties all databases of expired projects', async () => {
   let done; await worker.scheduled({}, three, { waitUntil(promise) { done = promise; } }); await done;
   for (const db of [SHARES_DB, three.PROJECTS_DB_2, three.PROJECTS_DB_3]) for (const id of ids) assert.equal(await db.prepare('SELECT id FROM blobs WHERE id = ?').bind(id).first(), null);
   assert.equal(await storeOf(ids[0]), null);
+});
+
+const goodPage = body => `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width"><title>T</title></head><body>${body}</body></html>`;
+
+test('an AI project can grow to 10 MiB over several calls and stays readable', async () => {
+  const guest = await token({ sub: 'ai-large', email: 'ai-large@example.com' });
+  const { url } = await newConnection(guest);
+  const created = (await tool(url, 'create_project', { title: 'Large', files: [{ path: 'index.html', content: goodPage('hi') }, { path: 'cover.svg', content: '<svg/>' }] })).text;
+  const id = idOf(created);
+  assert.ok(!created.includes('Problems'), created);
+  assert.equal(env.SHARES_KV.store.has(`ai:${id}:1`), false);
+  const big = 'a'.repeat(4 * 1024 * 1024);
+  for (const [version, name] of [[2, 'one.txt'], [3, 'two.txt']]) {
+    const result = await tool(url, 'update_project', { project_id: id, files: [{ path: name, content: big }] });
+    assert.equal(result.isError, false, result.text);
+    assert.ok(env.SHARES_KV.store.has(`ai:${id}:${version}`));
+  }
+  assert.match((await tool(url, 'update_project', { project_id: id, files: [{ path: 'three.txt', content: big }] })).text, /limit is 10 MiB/);
+  // The version before stays for readers far away, older ones are gone.
+  await tool(url, 'update_project', { project_id: id, edits: [{ path: 'index.html', find: 'hi', replace: 'hello' }] });
+  assert.deepEqual([2, 3, 4].map(version => env.SHARES_KV.store.has(`ai:${id}:${version}`)), [false, true, true]);
+  assert.match((await tool(url, 'read_project', { project_id: id, path: 'index.html' })).text, /hello/);
+  const start = (await tool(url, 'read_project', { project_id: id, path: 'one.txt' })).text;
+  assert.match(start, /offset 100000/);
+  assert.ok(start.length < 101_000);
+  const blob = await (await call(`/${id}/blob`)).arrayBuffer();
+  assert.ok(blob.byteLength > 8 * 1024 * 1024);
+  // A place that does not have the newest value yet delivers the one before it.
+  const newest = env.SHARES_KV.store.get(`ai:${id}:4`);
+  env.SHARES_KV.store.delete(`ai:${id}:4`);
+  assert.equal((await call(`/${id}/blob`)).status, 200);
+  assert.equal((await tool(url, 'update_project', { project_id: id, title: 'New' })).isError, true);
+  env.SHARES_KV.store.set(`ai:${id}:4`, newest);
+  // Small again: back into a database, nothing is left in KV.
+  await tool(url, 'update_project', { project_id: id, remove: ['one.txt', 'two.txt'] });
+  assert.deepEqual([...env.SHARES_KV.store.keys()].filter(key => key.startsWith(`ai:${id}`)), []);
+  assert.match((await tool(url, 'read_project', { project_id: id, path: 'index.html' })).text, /hello/);
+});
+
+test('deleting a large AI project removes it from KV', async () => {
+  const guest = await token({ sub: 'ai-large-delete', email: 'ai-large-delete@example.com' });
+  const { url } = await newConnection(guest);
+  const id = idOf((await tool(url, 'create_project', { title: 'L', files: [{ path: 'index.html', content: goodPage('x') }, { path: 'big.txt', content: 'b'.repeat(2 * 1024 * 1024) }] })).text);
+  assert.ok(env.SHARES_KV.store.has(`ai:${id}:1`));
+  await tool(url, 'delete_project', { project_id: id });
+  assert.equal(env.SHARES_KV.store.has(`ai:${id}:1`), false);
+});
+
+test('the guide explains the website, AI studio and the output', async () => {
+  const guest = await token({ sub: 'ai-guide', email: 'ai-guide@example.com' });
+  const { url } = await newConnection(guest);
+  const all = (await tool(url, 'read_guide', {})).text;
+  for (const part of ['HOW LOCALDECK WORKS', 'HOW TO OUTPUT', 'HOW TO MAKE IT GOOD', 'TYPES', '10 MiB', '=== LOCALDECK FILE: index.html ===']) assert.ok(all.includes(part), part);
+  const studio = (await tool(url, 'read_guide', { topic: 'ai_studio', kind: 'quiz', idea: 'Volcanoes', language: 'German' })).text;
+  for (const part of ['Volcanoes', 'interactive quiz', 'German', 'create_project']) assert.ok(studio.includes(part), part);
+});
+
+test('problems in a project are named so the AI can fix them', async () => {
+  const guest = await token({ sub: 'ai-check', email: 'ai-check@example.com' });
+  const { url } = await newConnection(guest);
+  const made = (await tool(url, 'create_project', { title: 'P', files: [{ path: 'index.html', content: '<html><script src="https://cdn.example/x.js"></script><img src="pics/missing.png"><a href="https://example.com">ok</a><script>localStorage.setItem("a",1);alert("hi")</script></html>' }] })).text;
+  for (const part of ['loads something from the internet', '"pics/missing.png" is not in the project', 'browser storage', 'uses alert', 'viewport', 'lang attribute', 'no cover']) assert.ok(made.includes(part), part);
+  const id = idOf(made);
+  const fixed = (await tool(url, 'update_project', { project_id: id, files: [{ path: 'index.html', content: goodPage('<a href="https://example.com">ok</a><script src="app.js"></script>') }, { path: 'app.js', content: 'let state = {};' }, { path: 'cover.svg', content: '<svg xmlns="http://www.w3.org/2000/svg"/>' }] })).text;
+  assert.ok(!fixed.includes('Problems'), fixed);
+  assert.match((await tool(url, 'check_project', { project_id: id })).text, /No problems/);
 });

@@ -3,19 +3,23 @@
    Nothing readable is stored. A project is a ZIP, encrypted exactly like a share from the browser, so the
    normal share link opens it. Its key and title are stored only encrypted with a key that is derived from the
    token. The database knows the hash of a token, so without the token itself it cannot read them. */
-import { createStoredZip, normalizePackagePath, readZip } from '../../../src/services/zip.ts';
-import { dropVersion, fromBase64, indexBlob, putBlob, readBlob, removeBlob, toBase64 } from './blobs.ts';
-import { dayStart, hourStart, limitsFor, MIB, readSettings, recordAi, removeShare, type Limits, type Owner, type StoreEnv } from './service.ts';
+import { createStoredZip, normalizePackagePath, readOwnZip } from '../../../src/services/zip.ts';
+import { checkProject } from './guide.ts';
+import { dropVersion, fromBase64, indexBlob, KV_STORE, MAX_BLOB_BYTES, putBlob, putLarge, readBlob, removeBlob, toBase64 } from './blobs.ts';
+import { dayStart, hourStart, KV_USED, limitsFor, MAX_KV_BYTES, MIB, readSettings, recordAi, removeShare, type Limits, type Owner, type StoreEnv } from './service.ts';
 
 export interface AiEnv extends StoreEnv { APP_URL?: string; ADMIN_EMAILS?: string }
 export type Connection = { id: string; owner: Owner; key: CryptoKey; limits: Limits };
 export type ProjectFile = { path: string; data: Uint8Array };
 
-/** One database row holds at most 2 MB, and the free plan gives little computing time per request. */
-export const MAX_PROJECT_BYTES = MIB;
-const MAX_FILES = 60;
+/** A project may be this large. The free plan gives little computing time per request, so one request may carry less (see mcp.ts). */
+export const MAX_PROJECT_MIB = 10;
+export const MAX_PROJECT_BYTES = MAX_PROJECT_MIB * MIB;
+export const MAX_FILES = 300;
+/** Projects over 1 MiB are written to KV, which allows 1,000 writes a day for the whole service. */
+const MAX_LARGE_PER_DAY = 300;
 const MAX_CONNECTIONS = 5;
-const MAX_CALLS_PER_HOUR = 240;
+export const MAX_CALLS_PER_HOUR = 1000;
 const TYPES = ['game', 'learning', 'app', 'tool', 'simulation', 'presentation', 'quiz', 'other'];
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 
@@ -135,13 +139,19 @@ function applyDetails(files: Map<string, Uint8Array>, details: Details): string 
   return title;
 }
 
+/** Checksums of files that did not change since they were stored. */
+const checksums = new WeakMap<Uint8Array, number>();
+const tooLarge = (bytes: number) => new AiError(`The project is ${(bytes / MIB).toFixed(2)} MiB. The limit is ${MAX_PROJECT_MIB} MiB. Use SVG or smaller images.`);
+
 async function pack(files: Map<string, Uint8Array>): Promise<Uint8Array> {
   if (!files.has('index.html')) throw new AiError('The project needs an index.html.');
   if (files.size > MAX_FILES) throw new AiError(`A project can have at most ${MAX_FILES} files.`);
   const seen = new Set<string>();
   for (const path of files.keys()) { const lower = path.toLowerCase(); if (seen.has(lower)) throw new AiError(`Two files have the same name: ${path}`); seen.add(lower); }
-  const zip = new Uint8Array(await createStoredZip([...files].map(([path, data]) => ({ path, data }))).arrayBuffer());
-  if (zip.length > MAX_PROJECT_BYTES) throw new AiError(`The project is ${(zip.length / MIB).toFixed(2)} MiB. The limit for AI projects is 1 MiB. Use SVG instead of photos and fewer embedded files.`);
+  const bytes = [...files.values()].reduce((sum, data) => sum + data.length, 0);
+  if (bytes > MAX_PROJECT_BYTES) throw tooLarge(bytes);
+  const zip = new Uint8Array(await createStoredZip([...files].map(([path, data]) => ({ path, data, crc: checksums.get(data) }))).arrayBuffer());
+  if (zip.length > MAX_PROJECT_BYTES) throw tooLarge(zip.length);
   return zip;
 }
 
@@ -149,7 +159,7 @@ async function pack(files: Map<string, Uint8Array>): Promise<Uint8Array> {
 
 type Sealed = { key: string; title: string };
 type Row = { id: string; sealed: string; version: number; expiresAt: string };
-export type ProjectInfo = { id: string; title: string; link: string; expiresAt: string; version: number; size: number };
+export type ProjectInfo = { id: string; title: string; link: string; expiresAt: string; version: number; size: number; problems: string[] };
 
 const link = (env: AiEnv, id: string, key: string) => `${env.APP_URL}#/shared/${id}?k=${key}`;
 
@@ -161,6 +171,20 @@ const seal = async (connection: Connection, value: Sealed) => toBase64(await enc
 async function countWrite(env: AiEnv, connection: Connection): Promise<void> {
   const used = await env.SHARES_DB.prepare('INSERT INTO daily_upload_windows (owner_id, window_start, uploads) VALUES (?, ?, 1) ON CONFLICT(owner_id, window_start) DO UPDATE SET uploads = uploads + 1 RETURNING uploads').bind(`ai:${connection.owner.id}`, dayStart()).first<{ uploads: number }>();
   if ((used?.uploads ?? 0) > connection.limits.aiPerDay) throw new AiError(`The limit of ${connection.limits.aiPerDay} AI changes per day is reached. It resets at 00:00 UTC.`);
+}
+
+/** Writes a version into the databases, or into KV when it is large. */
+async function store(env: AiEnv, connection: Connection, id: string, version: number, data: Uint8Array): Promise<number> {
+  if (data.length > MAX_BLOB_BYTES) {
+    const used = (await env.SHARES_DB.prepare(KV_USED).bind(new Date().toISOString()).first<{ bytes: number }>())?.bytes ?? 0;
+    if (used + data.length > MAX_KV_BYTES) throw storageError();
+    const today = await env.SHARES_DB.prepare('INSERT INTO daily_upload_windows (owner_id, window_start, uploads) VALUES (?, ?, 1) ON CONFLICT(owner_id, window_start) DO UPDATE SET uploads = uploads + 1 RETURNING uploads').bind('ai-large', dayStart()).first<{ uploads: number }>();
+    if ((today?.uploads ?? 0) > MAX_LARGE_PER_DAY) throw new AiError('No more changes to projects over 1 MiB are possible today. Make the project smaller or continue tomorrow (00:00 UTC).');
+    return putLarge(env, id, version, data, connection.limits.aiDays * 86_400);
+  }
+  const number = await putBlob(env, id, version, data);
+  if (number === null) throw storageError();
+  return number;
 }
 
 const storageError = () => new AiError('The storage of this account or of the service is full. Delete a project or wait until a link expires.');
@@ -181,15 +205,13 @@ export async function createProject(env: AiEnv, connection: Connection, input: P
     .bind(id, connection.owner.id, now, expiresAt, data.length, settings.service.totalMiB * MIB, connection.limits.storageMiB * MIB).first();
   if (!reserved) throw storageError();
   try {
-    const store = await putBlob(env, id, 1, data);
-    if (store === null) throw storageError();
-    await indexBlob(env, id, store, 1, data.length);
+    await indexBlob(env, id, await store(env, connection, id, 1, data), 1, data.length);
     await env.SHARES_DB.prepare('INSERT INTO ai_projects (id, token_id, sealed, version, updated_at) VALUES (?, ?, ?, 1, ?)').bind(id, connection.id, await seal(connection, { key, title }), Date.now()).run();
     await env.SHARES_DB.prepare('INSERT INTO share_meta (id, parts, received) VALUES (?, 1, 1)').bind(id).run();
     await env.SHARES_DB.prepare("UPDATE shares SET status = 'active' WHERE id = ?").bind(id).run();
   } catch (error) { await removeBlob(env, id).catch(() => undefined); await removeShare(env, id, connection.owner.id).catch(() => undefined); throw error; }
   await recordAi(env, connection, data.length).catch(() => undefined);
-  return { id, title, link: link(env, id, key), expiresAt, version: 1, size: zip.length };
+  return { id, title, link: link(env, id, key), expiresAt, version: 1, size: zip.length, problems: checkProject(files) };
 }
 
 async function load(env: AiEnv, connection: Connection, id: string): Promise<{ row: Row; store: number; sealed: Sealed; raw: Uint8Array; files: Map<string, Uint8Array> }> {
@@ -200,9 +222,9 @@ async function load(env: AiEnv, connection: Connection, id: string): Promise<{ r
   const blob = await readBlob(env, row.id);
   if (!blob || blob === 'missing' || blob.version !== row.version) throw new AiError('The project could not be loaded right now. Try again in a moment.');
   const zip = await decrypt(await projectKey(raw), blob.bytes);
-  const entries = await readZip(new Blob([zip as Uint8Array<ArrayBuffer>]));
+  // The encryption already proves that the archive is unchanged.
   const files = new Map<string, Uint8Array>();
-  for (const entry of entries) files.set(entry.path, new Uint8Array(await entry.blob.arrayBuffer()));
+  for (const entry of readOwnZip(zip)) { files.set(entry.path, entry.data); checksums.set(entry.data, entry.crc); }
   return { row, store: blob.store, sealed, raw, files };
 }
 
@@ -222,14 +244,17 @@ async function saveVersion(env: AiEnv, connection: Connection, row: Row, next: {
   const claimed = await env.SHARES_DB.prepare('UPDATE ai_projects SET claim = ? WHERE id = ? AND token_id = ? AND version = ? AND (claim IS NULL OR claim < ?) RETURNING id').bind(Date.now(), row.id, connection.id, row.version, Date.now() - 30_000).first();
   if (!claimed) return null;
   const version = row.version + 1;
-  const store = await putBlob(env, row.id, version, next.data);
-  if (store === null) { await env.SHARES_DB.prepare('UPDATE ai_projects SET claim = NULL WHERE id = ?').bind(row.id).run(); throw storageError(); }
+  let number: number;
+  try { number = await store(env, connection, row.id, version, next.data); }
+  catch (error) { await env.SHARES_DB.prepare('UPDATE ai_projects SET claim = NULL WHERE id = ?').bind(row.id).run(); throw error; }
   // Both together or not at all, so index and project never disagree about the version.
   await env.SHARES_DB.batch([
-    env.SHARES_DB.prepare('UPDATE blob_index SET store = ?, version = ?, bytes = ? WHERE id = ?').bind(store, version, next.data.length, row.id),
+    env.SHARES_DB.prepare('UPDATE blob_index SET store = ?, version = ?, bytes = ? WHERE id = ?').bind(number, version, next.data.length, row.id),
     env.SHARES_DB.prepare('UPDATE ai_projects SET sealed = ?, version = ?, updated_at = ?, claim = NULL WHERE id = ?').bind(next.sealed, version, Date.now(), row.id),
   ]);
   await dropVersion(env, oldStore, row.id, row.version);
+  // Moved out of KV: the databases are at once the same everywhere, so nothing has to stay for latecomers.
+  if (oldStore === KV_STORE && number !== KV_STORE) await dropVersion(env, KV_STORE, row.id, version);
   return version;
 }
 
@@ -258,18 +283,28 @@ export async function updateProject(env: AiEnv, connection: Connection, id: stri
   if (!saved) throw new AiError('The project was changed at the same time. Read it again and repeat the change.');
   await env.SHARES_DB.prepare('UPDATE shares SET size_bytes = ?, expires_at = ? WHERE id = ?').bind(data.length, expiresAt, row.id).run();
   await recordAi(env, connection, 0).catch(() => undefined);
-  return { id: row.id, title, link: link(env, row.id, sealed.key), expiresAt, version: saved, size: zip.length };
+  return { id: row.id, title, link: link(env, row.id, sealed.key), expiresAt, version: saved, size: zip.length, problems: checkProject(files) };
 }
 
-export async function readProject(env: AiEnv, connection: Connection, id: string, path?: string): Promise<string> {
+/** More than this would fill the memory of the AI with one file. */
+const READ_CHARS = 100_000;
+
+export async function readProject(env: AiEnv, connection: Connection, id: string, path?: string, offset = 0): Promise<string> {
   const { row, sealed, files } = await load(env, connection, id);
   if (path) {
     const data = files.get(path);
     if (!data) throw new AiError(`There is no file ${path}. Files: ${[...files.keys()].join(', ')}`);
     if (!TEXT.test(path)) return `${path} is a binary file with ${data.length} bytes.`;
-    return decoder.decode(data);
+    const text = decoder.decode(data);
+    if (text.length <= READ_CHARS && !offset) return text;
+    const end = Math.min(text.length, offset + READ_CHARS);
+    return `${text.slice(offset, end)}${end < text.length ? `\n\n[Characters ${offset} to ${end} of ${text.length}. Call read_project again with offset ${end} for the rest.]` : ''}`;
   }
   return JSON.stringify({ project_id: row.id, title: sealed.title, version: row.version, link: link(env, row.id, sealed.key), expires: row.expiresAt, files: [...files].map(([name, data]) => ({ path: name, bytes: data.length })) }, null, 2);
+}
+
+export async function checkStored(env: AiEnv, connection: Connection, id: string): Promise<string[]> {
+  return checkProject((await load(env, connection, id)).files);
 }
 
 export async function listProjects(env: AiEnv, connection: Connection): Promise<Array<{ project_id: string; title: string; link: string; version: number; updated: string; expires: string; downloads: number }>> {

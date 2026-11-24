@@ -23,8 +23,9 @@ import {
   getSettings, getSubjects, recordOpenSession, removeFromCollection, repairLibrary, saveSubject, toggleFavorite,
   updateCollection, updateItem, type ItemSort,
 } from './services/library';
+import type { ContentCheck } from './services/contentCheck';
 import type { Collection, ContentType, ImportPreview, LibraryAsset, LibraryItem } from './types';
-import { cacheCover, hasCachedCover, CountUp, EmptyState, ItemActionsContext, PageHeading, PreviewIcon, TYPE_LABEL, base, bytes, coverBackground, go, type ItemActions, type Page } from './shared';
+import { cacheCover, hasCachedCover, CountUp, EmptyState, ItemActionsContext, PageHeading, PreviewIcon, TYPE_LABEL, base, bytes, coverBackground, go, matchesQuery, type ItemActions, type Page } from './shared';
 import { CollectionsPage, HomePage, ItemDetailsPage, LibraryView } from './views';
 import { AuthActionPage, readAuthAction } from './authAction';
 import { demosEnabled, installDemos, removeDemos, syncDemos } from './demos';
@@ -39,6 +40,8 @@ import { forgetShare, saveShare, shareUrl } from './services/savedShares';
 import { AdminPage } from './adminPage';
 import { AiConnect } from './aiConnect';
 import { LocalAiSettings } from './localAiSettings';
+import { ITEMS_CHANGED, readProjectText, ruleCheck, scanImported } from './autoScan';
+import { ContentNote } from './contentNote';
 import { DEFAULT_ACCOUNT, getAccount, uploadShare, type ShareAccount } from './services/shareService';
 import { sendVerificationMail } from './services/verificationMail';
 import { rovingKeys, useBackgroundMotion, useConnection, useReturnFocus } from './a11y';
@@ -92,6 +95,7 @@ function App() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [, setSubjects] = useState<Awaited<ReturnType<typeof getSubjects>>>([]);
   const [query, setQuery] = useState('');
+  const nextQuery = useRef('');
   const [globalQuery, setGlobalQuery] = useState('');
   const [sort, setSort] = useState<ItemSort>('imported');
   const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null);
@@ -182,7 +186,12 @@ function App() {
     return () => { active = false; window.removeEventListener('hashchange', onHash); window.removeEventListener('keydown', onKey); window.removeEventListener('storage', onStorage); };
   }, [notify, refresh]);
 
-  useEffect(() => { if (route.page !== 'shared') void refresh(); setQuery(''); }, [route.page, refresh]);
+  useEffect(() => { if (route.page !== 'shared') void refresh(); setQuery(nextQuery.current); nextQuery.current = ''; }, [route.page, refresh]);
+  useEffect(() => {
+    const update = (event: Event) => { void refresh(); const title = (event as CustomEvent<string>).detail; if (title) notify(t('The local AI has described “{0}”.', title)); };
+    window.addEventListener(ITEMS_CHANGED, update);
+    return () => window.removeEventListener(ITEMS_CHANGED, update);
+  }, [refresh, notify]);
   useEffect(() => { if (!toast) return; const id = window.setTimeout(() => setToast(null), 3600); return () => window.clearTimeout(id); }, [toast]);
 
   useEffect(() => { document.documentElement.classList.toggle('reduce-motion', reducedMotion); }, [reducedMotion]);
@@ -205,8 +214,7 @@ function App() {
     if (currentPage === 'recent') result = result.filter(item => item.lastOpenedAt).sort((a,b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0));
     if (currentPage === 'collections' && route.collectionId) result = result.filter(item => item.collectionIds.includes(route.collectionId!));
     if (query.trim()) {
-      const q = query.toLocaleLowerCase();
-      result = result.filter(item => [item.title,item.description,item.type,item.subject,item.topic,item.genre,...item.tags].join(' ').toLocaleLowerCase().includes(q));
+      result = result.filter(item => matchesQuery(item, query));
     }
     const comparator: Record<ItemSort,(a:LibraryItem,b:LibraryItem)=>number> = {
       name:(a,b)=>a.title.localeCompare(b.title), imported:(a,b)=>b.importedAt-a.importedAt,
@@ -218,7 +226,7 @@ function App() {
 
   const pageTitle = currentPage === 'item' ? items.find(x => x.id === route.itemId)?.title ?? t('Project') : currentPage === 'collections' && route.collectionId ? collections.find(x => x.id === route.collectionId)?.name ?? t('Collection') : ({ home:t('Home'), library:t('All items'), favorites:t('Favorites'), recent:t('Recently opened'), learning:t('Learning hub'), games:t('Games & apps'), collections:t('Collections'), import:t('Import center'), studio:t('AI studio'), storage:t('Storage & backups'), sharing:t('Shared links'), admin:t('Admin'), login:t('Sign in'), settings:t('Settings'), shared:t('Shared project') } as Record<string,string>)[currentPage];
 
-  const openProject = (item: LibraryItem) => setPlaying(item);
+  const openProject = (item: LibraryItem) => { if (item.contentCheck?.rating === '18' && !item.contentCheck.confirmed && !window.confirm(t('“{0}” may be for adults only (18+). Open it anyway?', item.title))) return; setPlaying(item); };
   useEffect(() => { void demosEnabled().then(async on => { setDemosOn(on); if (on) { await syncDemos(); await refresh(); } }).catch(() => undefined); }, [refresh]);
   const toggleDemos = async (on: boolean) => {
     setBusy(true);
@@ -234,6 +242,8 @@ function App() {
     edit: item => setModal({ kind: 'edit', item }),
     editCode: item => setCodeEditorItem(item),
     describe: async (item, changes) => { try { await updateItem(item.id, changes); await refresh(); notify(t('Project details updated.')); } catch (error) { notify(t('The details could not be saved.'), true); throw error; } },
+    confirmContent: item => runSafely(async () => { if (item.contentCheck) await updateItem(item.id, { contentCheck: { ...item.contentCheck, confirmed: true } }, { touch: false }); await refresh(); }),
+    showTag: tag => { nextQuery.current = `#${tag}`; if (route.page === 'library') setQuery(nextQuery.current); else go('library'); },
     update: (item, file) => updateProject(item, file),
     collect: item => setModal({ kind: 'collect', item }),
     share: item => void prepareShare(item),
@@ -251,7 +261,7 @@ function App() {
   };
 
   const savePreview = async (preview: ImportPreview) => {
-    try { setBusy(true); await createItem(preview); setImportPreviews(list => list.filter(x => x !== preview)); await refresh(); notify(t('“{0}” is saved on this device.', preview.title)); }
+    try { setBusy(true); const item = await createItem(preview); void scanImported(item); setImportPreviews(list => list.filter(x => x !== preview)); await refresh(); notify(t('“{0}” is saved on this device.', preview.title)); }
     catch (error) { notify(safeError(error), true); }
     finally { setBusy(false); }
   };
@@ -263,7 +273,7 @@ function App() {
       if (previews.length !== 1) throw new Error(t('Choose one project file at a time.'));
       const preview = previews[0];
       if (!window.confirm(t('Replace all saved files for “{0}” with “{1}”? Its library entry, favorite, and collection links will stay.', item.title, preview.title))) return;
-      await replaceItemFiles(item.id, preview);
+      void scanImported(await replaceItemFiles(item.id, preview));
       await refresh();
       notify(t('“{0}” was updated on this device.', item.title));
     } catch (error) { notify(t('Project update failed: {0}', safeError(error)), true); }
@@ -475,13 +485,20 @@ function CollectionDetail({collection,items,onBack,open,favorite,onChange,onRemo
   return <><button className="text-button back-link" onClick={onBack}><ArrowLeft size={15}/> {t('All collections')}</button><div className="collection-detail-head"><span className="collection-swatch" style={{background:collection.accentColor}}><Archive size={19}/></span><div><h2>{collection.name}</h2><p>{collection.description||plural(ordered.length, '{0} project · ordered by you', '{0} projects · ordered by you', ordered.length)}</p></div><button className="button" onClick={()=>go('import')}><Plus size={15}/> {t('Import')}</button></div>{ordered.length?<div className="collection-projects">{ordered.map((item,index)=><div className="collection-project" key={item.id}><div className="order-controls"><button disabled={index===0} aria-label={t('Move {0} up', item.title)} onClick={()=>move(item,-1)}>↑</button><button disabled={index===ordered.length-1} aria-label={t('Move {0} down', item.title)} onClick={()=>move(item,1)}>↓</button></div><button className="collection-project-main" onClick={()=>open(item)}><span className={`mini-cover cover-${item.type}`} style={{backgroundImage:coverBackground(item)}}><PreviewIcon type={item.type}/></span><span><b>{item.title}</b><small>{TYPE_LABEL[item.type]}{item.subject?` · ${item.subject}`:''}</small></span><ArrowRight size={15}/></button><button className={`icon-button ${item.favorite?'favorite-on':''}`} aria-label={item.favorite?t('Remove {0} from favorites', item.title):t('Add {0} to favorites', item.title)} onClick={()=>favorite(item)}><Heart size={16} fill={item.favorite?'currentColor':'none'}/></button><button className="icon-button" aria-label={t('Remove {0} from this collection', item.title)} onClick={()=>onRemove(item)}><X size={16}/></button></div>)}</div>:<EmptyState icon={Archive} title={t('This collection is ready')} detail={t('Add projects from your library with the project menu, or import something new.')} action={<button className="button primary" onClick={()=>go('library')}><Library size={15}/> {t('Browse library')}</button>}/>}</>;
 }
 
+/** The check by rules, before anything is saved. */
+function PreviewCheck({preview}:{preview:ImportPreview}) {
+  const [check,setCheck]=useState<ContentCheck|null>(null);
+  useEffect(()=>{let active=true;setCheck(null);void readProjectText(preview.files,preview.selectedEntry).then(project=>{if(active)setCheck(ruleCheck(project,preview));}).catch(()=>undefined);return()=>{active=false;};},[preview]);
+  return check&&(check.rating!=='ok'||check.reasons.length>0)?<ContentNote check={check}/>:null;
+}
+
 function ImportPage({previews,busy,addFiles,addFolder,save,discard,editPreview,onDrop}:{previews:ImportPreview[];busy:boolean;addFiles:()=>void;addFolder:()=>void;save:(preview:ImportPreview)=>void;discard:(preview:ImportPreview)=>void;editPreview:(preview:ImportPreview)=>void;onDrop:(files:File[])=>void}) {
   return <><PageHeading eyebrow={t('Bring your projects with you')} title={t('Import center')} description={t('Choose files or a folder. They are inspected locally, and nothing is saved until you confirm.')} />
     <div className="import-drop dot-pattern" onDragOver={event=>{event.preventDefault();event.currentTarget.classList.add('drag-over');}} onDragLeave={event=>event.currentTarget.classList.remove('drag-over')} onDrop={event=>{event.preventDefault();event.currentTarget.classList.remove('drag-over');const files=[...event.dataTransfer.files];if(files.length)onDrop(files);}}>
       <span className="drop-icon">{busy?<LoaderCircle size={24} className="spin"/>:<Upload size={23}/>}</span><h2>{busy?t('Inspecting your files…'):t('Bring in something you made')}</h2><p>{t('HTML pages, complete ZIP projects, PDFs, or a whole folder. Files stay in this browser.')}</p><div className="drop-actions"><button className="button primary" onClick={addFiles}><Upload size={16}/> {t('Choose files')}</button><button className="button" onClick={addFolder}>{t('Choose a folder')}</button></div>{busy?<div className="progress-bar indeterminate" role="progressbar" aria-label={t('Inspecting files')}><i/></div>:<small>{t('80 MB ZIP · 120 MB expanded project · 50 MB per file')}</small>}
     </div>
     <div className="privacy-note"><ShieldCheck size={17}/><span><b>{t('Private by default')}</b><small>{t('Importing never sends your projects to a server. You choose explicitly if you ever share one.')}</small></span></div>
-    {previews.length>0 && <section className="preview-section"><div className="section-title-row"><div><h2>{t('Ready to add')}</h2><p>{t('Review details and choose the entry page before saving.')}</p></div></div><div className="preview-list">{previews.map((preview,index)=><div className="preview-row" key={`${preview.sourceName}-${index}`}><span className="preview-icon"><PreviewIcon type={preview.type}/></span><div className="preview-copy"><b>{preview.title}</b><small>{plural(preview.files.length, '{0} · {1} · {2} file', '{0} · {1} · {2} files', preview.sourceName, bytes(preview.storageSize), preview.files.length)}</small><small className={`compat-${preview.report.score}`}>{preview.report.score==='likely'?t('Likely to work offline'):t('May need network or unsupported browser features')}</small>{preview.entryCandidates.length>1&&<button className="inline-link" onClick={()=>editPreview(preview)}>{t('Choose entry page ({0} found)', preview.entryCandidates.length)}</button>}{preview.warnings.map(w=><small className="warning-text" key={w}><Info size={13}/>{tm(w)}</small>)}</div><div className="preview-actions"><button className="button subtle" onClick={()=>editPreview(preview)}>{t('Edit details')}</button><button className="button primary" disabled={busy} onClick={()=>save(preview)}>{t('Add to library')}</button><button className="icon-button" aria-label={t('Discard {0}', preview.title)} onClick={()=>discard(preview)}><X size={17}/></button></div></div>)}</div></section>}
+    {previews.length>0 && <section className="preview-section"><div className="section-title-row"><div><h2>{t('Ready to add')}</h2><p>{t('Review details and choose the entry page before saving.')}</p></div></div><div className="preview-list">{previews.map((preview,index)=><div className="preview-row" key={`${preview.sourceName}-${index}`}><span className="preview-icon"><PreviewIcon type={preview.type}/></span><div className="preview-copy"><b>{preview.title}</b><small>{plural(preview.files.length, '{0} · {1} · {2} file', '{0} · {1} · {2} files', preview.sourceName, bytes(preview.storageSize), preview.files.length)}</small><small className={`compat-${preview.report.score}`}>{preview.report.score==='likely'?t('Likely to work offline'):t('May need network or unsupported browser features')}</small><PreviewCheck preview={preview}/>{preview.entryCandidates.length>1&&<button className="inline-link" onClick={()=>editPreview(preview)}>{t('Choose entry page ({0} found)', preview.entryCandidates.length)}</button>}{preview.warnings.map(w=><small className="warning-text" key={w}><Info size={13}/>{tm(w)}</small>)}</div><div className="preview-actions"><button className="button subtle" onClick={()=>editPreview(preview)}>{t('Edit details')}</button><button className="button primary" disabled={busy} onClick={()=>save(preview)}>{t('Add to library')}</button><button className="icon-button" aria-label={t('Discard {0}', preview.title)} onClick={()=>discard(preview)}><X size={17}/></button></div></div>)}</div></section>}
     <section className="import-guidance"><h2>{t('What works best')}</h2><p>{t('ZIP projects keep their folders and relative asset paths. Put')} <code>localdeck.json</code> {t('next to the entry page for metadata, or add a JSON manifest in the page. Local-only projects usually work offline; projects that need a server or remote APIs may not.')}</p></section>
   </>;
 }
@@ -807,7 +824,7 @@ function SearchPanel({onClose,value,onChange,items,onOpen}:SearchProps) {
   const input=useRef<HTMLInputElement>(null);
   useReturnFocus();
   useEffect(()=>{input.current?.focus();},[]);
-  const results=value.trim()?items.filter(item=>[item.title,item.subject,item.topic,item.description,...item.tags].join(' ').toLocaleLowerCase().includes(value.toLocaleLowerCase())).slice(0,8):[];
+  const results=value.trim()?items.filter(item=>matchesQuery(item,value)).slice(0,8):[];
   return <motion.div className="search-overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}><motion.div className="search-panel" role="dialog" aria-modal="true" aria-label={t('Search your library')} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp')rovingKeys(event,'.search-panel-input input, .search-panel-results button');}} initial={{opacity:0,y:-10,scale:.99}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:-6}} transition={{duration:.16}}><div className="search-panel-input"><Search size={19} aria-hidden="true"/><label className="field-label" htmlFor="quick-search">{t('Search')}</label><input id="quick-search" ref={input} value={value} onChange={event=>onChange(event.target.value)} placeholder={t('Title, subject, topic or tag')}/><kbd>ESC</kbd><button className="icon-button" onClick={onClose} aria-label={t('Close search')}><X size={18}/></button></div>{value.trim()&&<div className="search-panel-results">{results.length?results.map(item=><button key={item.id} onClick={()=>onOpen(item)}><span className="search-result-icon"><PreviewIcon type={item.type}/></span><span><b>{item.title}</b><small>{item.subject||TYPE_LABEL[item.type]}</small></span><ArrowRight size={15}/></button>):<p>{t('No matches found. Try another title, subject, or tag.')}</p>}</div>}<div className="search-footer">{t('Search titles, subjects, topics, descriptions, and tags')}</div></motion.div></motion.div>;
 }
 
