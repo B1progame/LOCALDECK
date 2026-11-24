@@ -13,6 +13,7 @@ import {
   signInWithRedirect,
   type UserCredential,
 } from '@firebase/auth';
+import { requestBrandedMail } from './verificationMail';
 
 export type FirebaseSocialProvider = 'google' | 'github' | 'facebook';
 export type FirebaseSocialConfig = { apiKey: string; projectId: string; appId: string };
@@ -45,7 +46,7 @@ async function finishSignIn(result: UserCredential): Promise<{ token?: string; p
     throw new Error('The provider did not share an email address. Add an email to that account and allow LocalDeck to use it.');
   }
   if (!user.emailVerified) {
-    await sendEmailVerification(user, { url: `${window.location.origin}${import.meta.env.BASE_URL}#/sharing` });
+    if (!await requestBrandedMail(await user.getIdToken())) await sendEmailVerification(user, { url: `${window.location.origin}${import.meta.env.BASE_URL}#/sharing` });
     return { verificationSent: true };
   }
   return {

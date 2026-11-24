@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from 'motion/react';
 import {
@@ -11,9 +11,8 @@ import '@fontsource-variable/inter';
 import { ACCENTS, THEMES, applyAppearance, readAppearance, useAppearance, type Appearance } from './theme';
 import { openLibrary, db } from './services/database';
 import { analyzeFiles } from './services/importer';
-import { decryptSharePackage, encryptSharePackage } from './services/sharing';
+import { encryptSharePackage } from './services/sharing';
 import { exportItem, exportLibrary, restoreLibrary } from './services/backups';
-import { createStoredZip } from './services/zip';
 import { buildHtmlHandoffPrompt, inspectHtml, type HtmlInspection } from './services/htmlInspection';
 import { buildLocalScanContext, LOCAL_SCAN_SYSTEM_PROMPT } from './services/localAi';
 import { firebaseAuthRequest } from './services/firebaseAuth';
@@ -34,14 +33,17 @@ import { ShareArt } from './shareArt';
 import { LoginExperience } from './authForm';
 import { AccountProfileOffer, Avatar, ProfileSettings, useProfile } from './profile';
 import { BUNDLE_FORMAT } from './services/aiBundle';
-import { MotionToggle, rovingKeys, useConnection, useReturnFocus } from './a11y';
+import { SharedPage, downloadBlob } from './sharedPage';
+import { AdminPanel } from './adminPanel';
+import { sendVerificationMail } from './services/verificationMail';
+import { rovingKeys, useBackgroundMotion, useConnection, useReturnFocus } from './a11y';
 import { isPdfPath } from './services/frameSource';
 import { useProjectFrame } from './useProjectFrame';
 import './styles.css';
 
-type AppRoute = { page: Page | 'shared'; shareId?: string; shareQuery?: string; collectionId?: string; itemId?: string };
+type AppRoute = { page: Page | 'shared'; sharedHash?: string; collectionId?: string; itemId?: string };
 type ModalState = { kind: 'edit' | 'collect' | 'collection' | 'subject' | 'entry' | 'restore' | 'share'; item?: LibraryItem; preview?: ImportPreview; conflicts?: number; shareUrl?: string; shareArchive?: Blob };
-type ShareSession = { token:string; exp:number; email:string; name:string; picture:string };
+type ShareSession = { token:string; exp:number; email:string; name:string; picture:string; admin?:boolean };
 type GoogleIdentity = { accounts:{ id:{ initialize:(options:{client_id:string;callback:(response:{credential:string})=>void;auto_select:boolean})=>void; renderButton:(target:HTMLElement,options:Record<string,string|number|boolean>)=>void } } };
 type LocalLanguageModel = { prompt:(input:string)=>Promise<string>; destroy?:()=>void };
 type LocalLanguageModelApi = { availability:()=>Promise<'available'|'downloadable'|'downloading'|'unavailable'|string>; create:(options?:{initialPrompts:Array<{role:'system'|'user'|'assistant';content:string}>})=>Promise<LocalLanguageModel> };
@@ -57,16 +59,16 @@ function getShareSession():ShareSession|null {
   try { const value=JSON.parse(sessionStorage.getItem(SHARE_SESSION_KEY)||'null') as ShareSession|null; if(!value?.token||!value.exp||value.exp*1000<=Date.now()+15_000){sessionStorage.removeItem(SHARE_SESSION_KEY);return null;}return value; }
   catch { sessionStorage.removeItem(SHARE_SESSION_KEY);return null; }
 }
-function saveShareSession(token:string,profile:{email:string;name:string;picture:string}) {
+function saveShareSession(token:string,profile:{email:string;name:string;picture:string;admin?:boolean}) {
   const segment=token.split('.')[1];if(!segment)throw new Error('Google returned an invalid sign-in token.');const encoded=segment.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-segment.length%4)%4);
   const claims=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encoded),char=>char.charCodeAt(0)))) as {exp:number};
-  const session={token,exp:claims.exp,email:profile.email,name:profile.name,picture:profile.picture};sessionStorage.setItem(SHARE_SESSION_KEY,JSON.stringify(session));return session;
+  const session={token,exp:claims.exp,email:profile.email,name:profile.name,picture:profile.picture,admin:profile.admin===true};sessionStorage.setItem(SHARE_SESSION_KEY,JSON.stringify(session));return session;
 }
 
 function routeFromHash(): AppRoute {
   const raw = location.hash.replace(/^#\/?/, '');
   const [path, query = ''] = raw.split('?');
-  if (path.startsWith('shared/')) return { page: 'shared', shareId: path.slice(7), shareQuery: query };
+  if (path.startsWith('shared/')) return { page: 'shared', sharedHash: raw };
   if (path.startsWith('item/')) { try { return { page: 'item', itemId: decodeURIComponent(path.slice(5)) }; } catch { return { page: 'library' }; } }
   const valid = new Set<Page>(['home','library','favorites','recent','learning','games','collections','import','studio','storage','sharing','login','settings']);
   return { page: valid.has(path as Page) ? path as Page : 'home', ...(path === 'collections' && new URLSearchParams(query).has('collection') ? { collectionId: new URLSearchParams(query).get('collection') ?? undefined } : {}) };
@@ -89,6 +91,21 @@ function App() {
   const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
+  const nextScroll = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (nextScroll.current !== null) window.scrollTo({ top: nextScroll.current, behavior: 'instant' });
+    nextScroll.current = null;
+  }, [route]);
+  const closeNav = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!mobileNav) return;
+    const opener = document.activeElement as HTMLElement | null;
+    closeNav.current?.focus();
+    const wide = matchMedia('(min-width: 861px)');
+    const close = () => setMobileNav(false);
+    wide.addEventListener('change', close);
+    return () => { wide.removeEventListener('change', close); requestAnimationFrame(() => opener?.focus()); };
+  }, [mobileNav]);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [playing, setPlaying] = useState<LibraryItem | null>(null);
   const [codeEditorItem, setCodeEditorItem] = useState<LibraryItem | null>(null);
@@ -138,7 +155,15 @@ function App() {
       const motionSetting = await getSettings<boolean>('reduced-motion', false);
       if (active) setReducedMotion(motionSetting);
     }).catch(error => notify(`Could not open your local library: ${safeError(error)}`, true));
-    const onHash = () => setRoute(routeFromHash());
+    // A new page starts at the top. Coming back from a project returns to the same spot in the list.
+    let current = location.hash;
+    const positions = new Map<string, number>();
+    const onHash = () => {
+      positions.set(current, window.scrollY);
+      nextScroll.current = current.startsWith('#/item/') ? positions.get(location.hash) ?? 0 : 0;
+      current = location.hash;
+      setRoute(routeFromHash());
+    };
     window.addEventListener('hashchange', onHash);
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setSearchOpen(true); }
@@ -334,14 +359,15 @@ function App() {
   const connection = useConnection();
   // While the player or the search is open, the page behind it must not be reachable by keyboard.
   const covered = Boolean(playing) || searchOpen;
+  const behindSheet = covered || mobileNav;
   return <MotionConfig reducedMotion={reduceMotion || reducedMotion ? 'always' : 'never'}><div className={`app-shell ${isLoginPage ? 'auth-shell' : ''}`}>
     <IntroSplash />
     <TopProgress active={busy || !loaded} />
     <input ref={fileInput} className="visually-hidden" type="file" accept=".html,.htm,.zip,.pdf,text/html,application/pdf,application/zip" multiple onChange={event => void handlePickedFiles(event.target.files)} />
     <input ref={folderInput} className="visually-hidden" type="file" {...{ webkitdirectory: '', directory: '' } as React.InputHTMLAttributes<HTMLInputElement>} multiple onChange={event => void handlePickedFiles(event.target.files)} />
     <input ref={restoreInput} className="visually-hidden" type="file" accept=".zip,application/zip" onChange={event => void handleRestore(event.target.files?.[0])} />
-    {isLoginPage && <MotionToggle className="motion-toggle motion-toggle-fixed"/>}
     {!isLoginPage && <aside inert={covered} className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}>
+      <div className="sidebar-head"><span>All pages</span><button ref={closeNav} type="button" className="icon-button sidebar-close" aria-label="Close navigation" onClick={() => setMobileNav(false)}><X size={19}/></button></div>
       <a className="brand" href="#/home" aria-label="LocalDeck home"><span className="brand-mark"><img src={`${base}icon-192.png`} alt="" /></span><span>LocalDeck</span></a>
       <div className="workspace-card"><span className="workspace-icon">L</span><span><b>My library</b><small>Private space</small></span><ChevronDown size={15} /></div>
       <div className="nav-heading">Library</div>
@@ -361,14 +387,14 @@ function App() {
       <ProfileRow onNavigate={() => setMobileNav(false)} />
     </aside>}
     {!isLoginPage && mobileNav && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
-    <main inert={covered} className={`main-area ${isLoginPage ? 'auth-main' : ''}`}>
+    <main inert={behindSheet} className={`main-area ${isLoginPage ? 'auth-main' : ''}`}>
       {!isLoginPage && <header className="topbar">
-        <button className="mobile-menu icon-button" aria-label="Open menu" onClick={() => setMobileNav(true)}><Menu size={19} /></button>
+        <a className="topbar-logo" href="#/home" aria-label="LocalDeck home"><img src={`${base}icon-192.png`} alt="" /></a>
         <div className="breadcrumbs"><span>My library</span><span className="crumb-separator">/</span><b>{pageTitle}</b></div>
-        <div className="top-actions"><span className={`offline-pill ${connection}`} role="status"><i />{connection === 'offline-ready' ? 'Offline-ready' : connection === 'online' ? 'Online' : 'Offline'}</span><button className="search-trigger" onClick={() => setSearchOpen(true)}><Search size={16} /><span>Search anything</span><kbd>{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'}</kbd></button><MotionToggle className="motion-toggle"/><button className="icon-button theme-toggle" onClick={toggleLight} aria-label="Switch between light and dark appearance" title="Light / dark"><Sun size={18} className="icon-sun"/><Moon size={18} className="icon-moon"/></button><button className="avatar-small" aria-label="Your profile and settings" onClick={() => go('settings')}><Avatar size={32}/></button></div>
+        <div className="top-actions"><span className={`offline-pill ${connection}`} role="status"><i />{connection === 'offline-ready' ? 'Offline-ready' : connection === 'online' ? 'Online' : 'Offline'}</span><button className="search-trigger" onClick={() => setSearchOpen(true)}><Search size={16} /><span>Search anything</span><kbd>{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'}</kbd></button><button className="icon-button theme-toggle" onClick={toggleLight} aria-label="Switch between light and dark appearance" title="Light / dark"><Sun size={18} className="icon-sun"/><Moon size={18} className="icon-moon"/></button><button className="avatar-small" aria-label="Your profile and settings" onClick={() => go('settings')}><Avatar size={32}/></button></div>
       </header>}
       <ItemActionsContext.Provider value={itemActions}><AnimatePresence initial={false}>
-        <motion.div key={`${currentPage}-${route.shareId ?? ''}`} className="page-content" {...routeMotion}>
+        <motion.div key={`${currentPage}-${route.sharedHash ?? ''}`} className="page-content" {...routeMotion}>
           {!loaded && ['home','library','favorites','recent','learning','games','collections','item'].includes(currentPage) ? <LibrarySkeleton /> : <>
           {currentPage === 'home' && <HomePage items={items} collections={collections} add={() => fileInput.current?.click()} tryDemos={demosOn ? undefined : () => void toggleDemos(true)} />}
           {currentPage === 'item' && <ItemDetailsPage item={items.find(x => x.id === route.itemId)} collections={collections} />}
@@ -381,11 +407,11 @@ function App() {
           {currentPage === 'login' && <SharingPage notify={notify} loginOnly />}
           {currentPage === 'settings' && <SettingsPage notify={notify} appearance={appearance} setAppearance={setAppearance} demosOn={demosOn} busy={busy} onDemos={value => void toggleDemos(value)} reducedMotion={reducedMotion} onMotion={async value => { setReducedMotion(value); await db.settings.put({ id:'reduced-motion', value, updatedAt:Date.now() }); }} />}
           </>}
-          {currentPage === 'shared' && <SharedPage shareId={route.shareId ?? ''} shareQuery={route.shareQuery ?? ''} notify={notify} />}
+          {currentPage === 'shared' && <SharedPage hash={route.sharedHash ?? ''} notify={notify} />}
         </motion.div>
       </AnimatePresence></ItemActionsContext.Provider>
     </main>
-    {!isLoginPage && <nav inert={covered} className="tabbar" aria-label="Quick navigation">{([['home','Home',Home],['library','Library',Library],['learning','Learn',BookOpen],['import','Import',Upload]] as const).map(([page,label,Icon]) => <a key={page} href={`#/${page}`} className={currentPage === page ? 'active' : ''} aria-current={currentPage === page ? 'page' : undefined}>{currentPage === page && <motion.span layoutId="tab-pill" className="tab-pill" transition={{ type: 'spring', bounce: .25, visualDuration: .4 }}/>}<Icon size={21} strokeWidth={currentPage === page ? 2.2 : 1.8}/>{label}</a>)}<button type="button" onClick={() => setMobileNav(true)} aria-label="More destinations"><Menu size={21} strokeWidth={1.8}/>More</button></nav>}
+    {!isLoginPage && <nav inert={behindSheet} className="tabbar" aria-label="Quick navigation">{([['home','Home',Home],['library','Library',Library],['learning','Learn',BookOpen],['import','Import',Upload]] as const).map(([page,label,Icon]) => <a key={page} href={`#/${page}`} className={currentPage === page ? 'active' : ''} aria-current={currentPage === page ? 'page' : undefined}>{currentPage === page && <motion.span layoutId="tab-pill" className="tab-pill" transition={{ type: 'spring', bounce: .25, visualDuration: .4 }}/>}<Icon size={21} strokeWidth={currentPage === page ? 2.2 : 1.8}/>{label}</a>)}<button type="button" onClick={() => setMobileNav(true)} aria-label="More destinations"><Menu size={21} strokeWidth={1.8}/>More</button></nav>}
     <AnimatePresence>{toast && <motion.div className={`toast ${toast.error ? 'toast-error' : ''}`} role={toast.error ? 'alert' : 'status'} initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:6 }}><span className="toast-icon">{toast.error ? '!' : '✓'}</span>{toast.message}</motion.div>}</AnimatePresence>
     <SearchOverlay open={searchOpen && !playing} onClose={() => { setSearchOpen(false); setGlobalQuery(''); }} value={globalQuery} onChange={setGlobalQuery} items={items} onOpen={item => { setSearchOpen(false); setGlobalQuery(''); go('item', `/${encodeURIComponent(item.id)}`); }} />
     <AnimatePresence>{modal && <Modal modal={modal} collections={collections} busy={busy} onClose={() => { setModal(null); setDialogError(''); }} onEditCode={item=>setCodeEditorItem(item)} onSubmit={saveModal} error={dialogError} onPreviewChange={(update) => setModal(current => current?.preview ? { ...current, preview: { ...current.preview, ...update } } : current)} />}</AnimatePresence>
@@ -505,6 +531,7 @@ function StoragePage({items,storage,integrity,busy,backup,restore,requestPersist
 }
 
 function SettingsPage({notify,appearance,setAppearance,demosOn,busy,onDemos,reducedMotion,onMotion}:{notify:(message:string,error?:boolean)=>void;appearance:Appearance;setAppearance:(next:Partial<Appearance>)=>void;demosOn:boolean;busy:boolean;onDemos:(value:boolean)=>void;reducedMotion:boolean;onMotion:(value:boolean)=>void}) {
+  const [backgroundMotion, setBackgroundMotion] = useBackgroundMotion();
   const customAccent = appearance.accent && !ACCENTS.includes(appearance.accent) ? appearance.accent : null;
   return <><PageHeading title="Settings" description="Tune how LocalDeck looks and behaves in this browser."/>
     <section className="settings-section" id="profile"><h2>Profile</h2><div className="settings-list"><ProfileSettings notify={notify} account={getShareSession()}/></div></section>
@@ -522,6 +549,7 @@ function SettingsPage({notify,appearance,setAppearance,demosOn,busy,onDemos,redu
       <label className="setting-row"><span><b>Demo projects</b><small>Adds 8 working examples: a game, a Lernzettel, a quiz, a simulation, a palette tool, a presentation, a focus timer and a sorting visualizer. Turning this off removes only the demos.</small></span><input type="checkbox" checked={demosOn} disabled={busy} onChange={event=>onDemos(event.target.checked)}/></label>
     </div></section>
     <section className="settings-section"><h2>Motion & accessibility</h2><div className="settings-list">
+      <label className="setting-row"><span><b>Background animations</b><small>The moving light, glow and sign-in scene. Turn this off to pause them.</small></span><input type="checkbox" checked={backgroundMotion} onChange={event=>setBackgroundMotion(event.target.checked)}/></label>
       <label className="setting-row"><span><b>Reduce motion</b><small>Use simple fades instead of movement, even when your system allows animation.</small></span><input type="checkbox" checked={reducedMotion} onChange={event=>onMotion(event.target.checked)}/></label>
     </div></section>
     <section className="settings-section"><h2>Privacy & security</h2><div className="settings-list">
@@ -572,13 +600,13 @@ function FirebaseEmailAuth({apiKey,onCredential}:{apiKey:string;onCredential:(cr
       if(password.length<12)throw new Error('Choose a password with at least 12 characters.');
       const created=await firebaseAuthRequest(apiKey,'signUp',{email:email.trim(),password,returnSecureToken:true});
       if(!created.idToken)throw new Error('Firebase did not return an account session.');
-      await firebaseAuthRequest(apiKey,'sendOobCode',{requestType:'VERIFY_EMAIL',idToken:created.idToken});
+      await sendVerificationMail(apiKey,created.idToken);
       setMessage('Check your inbox for a verification link. After confirming your email, sign in here to manage your shares.');setPassword('');setMode('signin');
     }else{
       const result=await firebaseAuthRequest(apiKey,'signInWithPassword',{email:email.trim(),password,returnSecureToken:true});
       if(!result.idToken||!result.email)throw new Error('Email sign-in could not be completed.');
       const account=await firebaseAuthRequest(apiKey,'lookup',{idToken:result.idToken});
-      if(account.users?.[0]?.emailVerified!==true){await firebaseAuthRequest(apiKey,'sendOobCode',{requestType:'VERIFY_EMAIL',idToken:result.idToken});throw new Error('Verify your email first. We sent you a fresh verification link.');}
+      if(account.users?.[0]?.emailVerified!==true){await sendVerificationMail(apiKey,result.idToken);throw new Error('Verify your email first. We sent you a fresh verification link.');}
       setPassword('');await onCredential(result.idToken);
     }
   }catch(err){setError(err instanceof Error?err.message:'Email sign-in could not be completed.');}finally{setBusy(false);}};
@@ -601,7 +629,7 @@ function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boo
   const signIn=useCallback(async(credential:string,provider:'google'|'firebase'='google')=>{
     if(!api){setError('Sharing is not connected to a Cloudflare Worker yet.');return;}
     setError('');setLoading(true);
-    try{let response:Response;try{response=await fetch(`${api}/api/v1/shares/auth/${provider}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credential})});}catch{throw new Error('Could not reach the LocalDeck sharing service. It may be offline, or this site’s address is not allowed by the Worker.');}if(response.status===503)throw new Error('The sharing service is not finished setting up (its database tables are missing). Run the D1 schema step in docs/SHARING.md.');if(!response.ok)throw new Error(response.status===429?'Too many sign-in attempts. Please wait and try again.':provider==='google'?'Google could not verify this account for sharing.':'The sharing service could not verify this account.');const profile=await response.json() as {email:string;name:string;picture:string};const next=saveShareSession(credential,profile);setSession(next);notify(`Signed in as ${profile.email}.`);if(loginOnly)go('sharing');}
+    try{let response:Response;try{response=await fetch(`${api}/api/v1/shares/auth/${provider}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credential})});}catch{throw new Error('Could not reach the LocalDeck sharing service. It may be offline, or this site’s address is not allowed by the Worker.');}if(response.status===503)throw new Error('The sharing service is not finished setting up (its database tables are missing). Run the D1 schema step in docs/SHARING.md.');if(!response.ok)throw new Error(response.status===429?'Too many sign-in attempts. Please wait and try again.':provider==='google'?'Google could not verify this account for sharing.':'The sharing service could not verify this account.');const profile=await response.json() as {email:string;name:string;picture:string;admin?:boolean};const next=saveShareSession(credential,profile);setSession(next);notify(`Signed in as ${profile.email}.`);if(loginOnly)go('sharing');}
     catch(err){setError(safeError(err));}
     finally{setLoading(false);}
   },[api,notify,loginOnly]);
@@ -638,7 +666,8 @@ function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boo
   if(loginOnly&&firebaseConfigured&&api)return <div className="login-page-wrap"><a className="login-brand" href="#/home"><img src={`${base}icon-192.png`} alt=""/> LocalDeck</a><LoginExperience apiKey={firebaseApiKey} backHref="#/sharing" error={error} onCredential={credential=>signIn(credential,'firebase')} social={mode=><FirebaseSocialButtons bare verb={mode==='signup'?'Sign up':'Continue'} apiKey={firebaseApiKey} projectId={firebaseProjectId} appId={firebaseAppId} githubEnabled={firebaseGithubEnabled} facebookEnabled={firebaseFacebookEnabled} onCredential={credential=>signIn(credential,'firebase')}/>}/></div>;
   if(loginOnly)return <div className="login-page-wrap"><a className="login-brand" href="#/home"><img src={`${base}icon-192.png`} alt=""/> LocalDeck</a>{loginCard}</div>;
   return <><PageHeading eyebrow="Private sharing" title="Shared links" description="Sign in to create and manage your encrypted links. Anyone with a link can open it without an account."/>
-    {session&&<AccountProfileOffer account={session} notify={notify}/>}{!session?loginCard:<section className="share-manager panel"><div className="share-manager-heading"><span className="share-manager-icon"><Cloud size={19}/></span><div><h2>Your encrypted links</h2><p>Signed in as {session.email}. Link data is encrypted before upload.</p></div><div className="share-session-actions"><button className="button" disabled={loading} onClick={()=>void load(session)}>{loading?<LoaderCircle size={15} className="spin"/>:<Activity size={15}/>} Refresh</button><button className="button subtle" onClick={signOut}>Sign out</button></div></div><div className="share-quota-note"><ShieldCheck size={16}/><span>Per account: 48 MiB active storage · 24 MiB per link · 5 uploads/hour, 15/day · links expire in 3 days.</span></div>{error&&<p className="dialog-error" role="alert">{error}</p>}{loaded&&(shares.length?<div className="share-list">{shares.map(share=><div className="share-row" key={share.id}><span className="share-state active"/><span className="share-row-main"><b>{labels[share.id]||share.label}</b><small>{Date.parse(share.expiresAt)<=Date.now()?'Expired':`Expires ${friendlyDate(Date.parse(share.expiresAt))}`} · {bytes(share.sizeBytes)}</small></span><button className="button danger-button" onClick={()=>void remove(share.id)}><Trash2 size={14}/> Delete link</button></div>)}</div>:<EmptyState icon={Share2} title="No active links" detail="Create an encrypted link from a project's actions menu."/>)}{!loaded&&!loading&&<p className="share-setup-hint">Your share list will load after sign-in. You can sign out at any time.</p>}</section>}
+    {session&&<AccountProfileOffer account={session} notify={notify}/>}{!session?loginCard:<section className="share-manager panel"><div className="share-manager-heading"><span className="share-manager-icon"><Cloud size={19}/></span><div><h2>Your encrypted links</h2><p>{session.admin&&<span className="admin-badge"><ShieldCheck size={12}/> Admin</span>}Signed in as {session.email}. Link data is encrypted before upload.</p></div><div className="share-session-actions"><button className="button" disabled={loading} onClick={()=>void load(session)}>{loading?<LoaderCircle size={15} className="spin"/>:<Activity size={15}/>} Refresh</button><button className="button subtle" onClick={signOut}>Sign out</button></div></div><div className="share-quota-note"><ShieldCheck size={16}/><span>Per account: 48 MiB active storage · 24 MiB per link · 5 uploads/hour, 15/day · links expire in 3 days.</span></div>{error&&<p className="dialog-error" role="alert">{error}</p>}{loaded&&(shares.length?<div className="share-list">{shares.map(share=><div className="share-row" key={share.id}><span className="share-state active"/><span className="share-row-main"><b>{labels[share.id]||share.label}</b><small>{Date.parse(share.expiresAt)<=Date.now()?'Expired':`Expires ${friendlyDate(Date.parse(share.expiresAt))}`} · {bytes(share.sizeBytes)}</small></span><button className="button danger-button" onClick={()=>void remove(share.id)}><Trash2 size={14}/> Delete link</button></div>)}</div>:<EmptyState icon={Share2} title="No active links" detail="Create an encrypted link from a project’s actions menu."/>)}{!loaded&&!loading&&<p className="share-setup-hint">Your share list will load after sign-in. You can sign out at any time.</p>}</section>}
+    {session?.admin&&<AdminPanel api={api} token={session.token} notify={notify} onDeleted={()=>void load(session)}/>}
   </>;
 }
 
@@ -790,16 +819,6 @@ function Modal({modal,collections,busy,onClose,onEditCode,onSubmit,error,onPrevi
     </form></motion.dialog></motion.div>;
 }
 
-function SharedPage({shareId,shareQuery,notify}:{shareId:string;shareQuery:string;notify:(message:string,error?:boolean)=>void}) {
-  const [status,setStatus]=useState<'loading'|'ready'|'error'|'missing-key'>('loading'); const [message,setMessage]=useState('Checking this shared project…'); const [preview,setPreview]=useState<ImportPreview|null>(null); const [api,setApi]=useState(import.meta.env.VITE_SHARE_API_BASE??''); const [apiDraft,setApiDraft]=useState(api); const [retry,setRetry]=useState(0);
-  useEffect(()=>{const key=new URLSearchParams(shareQuery).get('k');if(!key){setStatus('missing-key');setMessage('The decryption key is missing from this link.');return;}if(!api){setStatus('error');setMessage('Online sharing is not configured for this LocalDeck deployment.');return;}let cancelled=false;void (async()=>{try{const baseUrl=api.replace(/\/$/,'');const metaResponse=await fetch(`${baseUrl}/api/v1/shares/${encodeURIComponent(shareId)}`);if(!metaResponse.ok)throw new Error(metaResponse.status===410?'This share has expired or was revoked.':'This shared project could not be found.');const metadata=await metaResponse.json() as {status:string;expiresAt:string};if(metadata.status!=='active')throw new Error('This shared project is no longer available.');const response=await fetch(`${baseUrl}/api/v1/shares/${encodeURIComponent(shareId)}/blob`);if(!response.ok)throw new Error('The shared project could not be downloaded.');const clear=await decryptSharePackage(await response.arrayBuffer(),key);const file=new File([clear],`shared-${shareId}.zip`,{type:'application/zip'});const previews=await analyzeFiles([file]);if(cancelled)return;if(previews.length!==1)throw new Error('The shared archive did not contain a valid project.');setPreview(previews[0]);setStatus('ready');setMessage(`Shared project · expires ${friendlyDate(Date.parse(metadata.expiresAt))}`);}catch(error){if(cancelled)return;setStatus('error');setMessage(safeError(error));}})();return()=>{cancelled=true;};},[api,shareId,shareQuery,retry]);
-  const importShared=async()=>{if(!preview)return;try{await createItem(preview);notify(`“${preview.title}” was imported to this device.`);go('library');}catch(error){notify(safeError(error),true);}};
-  const downloadShared=async()=>{if(!preview)return;try{const entries=await Promise.all(preview.files.map(async file=>({path:file.path,data:new Uint8Array(await file.blob.arrayBuffer())})));downloadBlob(await createStoredZip(entries),`${preview.title.replace(/[^a-z0-9_-]+/gi,'-')}.zip`);notify('Encrypted share decrypted and exported as a local ZIP copy.');}catch(error){notify(safeError(error),true);}};
-  return <><PageHeading eyebrow="Private transfer" title="Shared project" description="This project is encrypted in transit and decrypted in this browser. Imported code remains isolated." />{status==='loading'?<div className="shared-state"><LoaderCircle className="spin" size={24}/><p>{message}</p></div>:status==='ready'&&preview?<div className="shared-card"><span className="preview-icon"><PreviewIcon type={preview.type}/></span><div><div className="eyebrow">{TYPE_LABEL[preview.type]} · {bytes(preview.storageSize)}</div><h2>{preview.title}</h2><p>{preview.description||'A project shared with you.'}</p><small>{message}</small></div><div className="shared-actions"><button className="button primary" onClick={()=>void importShared()}><Plus size={16}/> Import to my library</button><button className="button" onClick={()=>void downloadShared()}><ArrowDownToLine size={15}/> Download copy</button></div></div>:<div className="shared-error"><Info size={20}/><h2>{status==='missing-key'?'This link is incomplete':'This share is unavailable'}</h2><p>{message}</p></div>}{status==='error'&&<div className="share-setup panel"><h2>Sharing is not connected</h2><p>This is an optional service. To create and manage links, open Shared links and connect a Cloudflare Worker.</p><label className="form-field"><span>Worker API URL</span><input value={apiDraft} onChange={event=>setApiDraft(event.target.value)} placeholder="https://your-worker.workers.dev"/></label><button className="button" onClick={()=>{const next=apiDraft.trim();if(!/^https:\/\/\S+$/i.test(next)){notify('Enter the Worker’s https:// URL first.',true);return;}setStatus('loading');setMessage('Checking this shared project…');setApi(next);setRetry(n=>n+1);}}>Retry this link</button></div>}</>;
-}
-
-function downloadBlob(blob:Blob,name:string) { const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();window.setTimeout(()=>URL.revokeObjectURL(url),30_000); }
-
 /** Brand intro shown once per browser session while the library opens. */
 function IntroSplash() {
   const [show,setShow]=useState(()=>{try{return !sessionStorage.getItem('localdeck-intro')&&!matchMedia('(prefers-reduced-motion: reduce)').matches;}catch{return false;}});
@@ -825,5 +844,5 @@ const rootElement=document.getElementById('root');
 if (!rootElement) throw new Error('LocalDeck could not start because its root element is missing.');
 applyAppearance(readAppearance());
 const authAction = readAuthAction();
-createRoot(rootElement).render(<React.StrictMode>{authAction ? <div className="app-shell auth-shell"><MotionToggle className="motion-toggle motion-toggle-fixed"/><main className="main-area auth-main"><AuthActionPage action={authAction}/></main></div> : <App/>}</React.StrictMode>);
+createRoot(rootElement).render(<React.StrictMode>{authAction ? <div className="app-shell auth-shell"><main className="main-area auth-main"><AuthActionPage action={authAction}/></main></div> : <App/>}</React.StrictMode>);
 

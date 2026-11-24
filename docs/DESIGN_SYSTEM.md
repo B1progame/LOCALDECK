@@ -61,8 +61,8 @@ A project without its own cover gets deterministic SVG artwork (`generatedCoverI
 
 - Above 860px: fixed 250px sidebar (228px below 1280px), sticky translucent top bar.
 - 860px and below: the sidebar becomes a drawer, and a bottom tab bar (Home, Library, Learn, Import, More) appears with safe-area padding.
-- 640px and below: compact top bar (search icon only), stacked page headings, full-width actions, bottom-sheet dialogs, full-screen code editor, two-row player toolbar.
-- 380px and below: single-column card grid.
+- 640px and below: the drawer and the project menu are bottom sheets, shelves and filter chips swipe sideways, cards are two per row with the title below the cover, compact top bar (search icon only), stacked page headings, full-width actions, bottom-sheet dialogs, full-screen code editor, two-row player toolbar.
+- 330px and below: single-column card grid.
 - Card grid: `repeat(auto-fill, minmax(232px, 1fr))`.
 
 ## Interaction and motion
@@ -71,6 +71,6 @@ A project without its own cover gets deterministic SVG artwork (`generatedCoverI
 - Menus and dialogs use a short pop (140–180ms, `--ease`). Route changes fade and slide 8px through Motion.
 - Focus: a 2px accent outline on `:focus-visible` everywhere.
 - Keyboard: menus, tabs, chips and view switches use `rovingKeys` from `src/a11y.tsx` (arrow keys, Home, End). Overlays call `useReturnFocus`, and the page behind the player and quick search is `inert`. Escape closes them.
-- Pause: `MotionToggle` (top bar, and bottom right on the sign-in pages) sets `.ambient-paused` on `<html>` and stops every endless loop. Scripted motion must check `useStillMotion()`.
+- Pause: the **Background animations** switch in Settings (`useBackgroundMotion`) sets `.ambient-paused` on `<html>` and stops every endless loop. Scripted motion must check `useStillMotion()`.
 - Touch: under `@media (pointer: coarse)` every control is at least 44px high.
 - Reduced motion: honours `prefers-reduced-motion`, and the Settings toggle adds `.reduce-motion` to `<html>`. Higher contrast: `prefers-contrast: more` strengthens lines and secondary text.

@@ -1,4 +1,5 @@
 /* Shared building blocks used across LocalDeck screens. */
+import { createPortal } from 'react-dom';
 import React, { createContext, useContext, useRef, useState } from 'react';
 import { animate, motion, useInView, useMotionTemplate, useMotionValue, useSpring, useTransform } from 'motion/react';
 
@@ -173,7 +174,10 @@ export function ItemMenu({ item, onClose }: { item: LibraryItem; onClose: () => 
     if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
     rovingKeys(event, '[role="menuitem"]');
   };
-  return <><button className="menu-dismiss" tabIndex={-1} aria-hidden="true" onClick={onClose} /><div ref={menu} className="item-menu" role="menu" aria-label={`Actions for ${item.title}`} onKeyDown={onKeyDown}>
+  // Phones get a sheet at the bottom of the screen. It leaves the card, because scrolling rows would cut it off.
+  const [sheet] = useState(() => matchMedia('(max-width: 640px)').matches);
+  const content = <><button className={sheet ? 'menu-dismiss-sheet' : 'menu-dismiss'} tabIndex={-1} aria-hidden="true" onClick={onClose} /><div ref={menu} className={`item-menu ${sheet ? 'item-menu-sheet' : ''}`} role="menu" aria-label={`Actions for ${item.title}`} onKeyDown={onKeyDown}>
+    {sheet && <div className="item-menu-title" role="presentation">{item.title}</div>}
     <button role="menuitem" onClick={run(() => a.details(item))}><Info size={15}/> View details</button>
     <button role="menuitem" onClick={run(() => a.edit(item))}><Pencil size={15}/> Edit details</button>
     {isHtmlItem(item) && <button role="menuitem" onClick={run(() => a.editCode(item))}><Code2 size={15}/> Edit HTML code</button>}
@@ -183,6 +187,7 @@ export function ItemMenu({ item, onClose }: { item: LibraryItem; onClose: () => 
     <button role="menuitem" onClick={run(() => a.exportOne(item))}><ArrowDownToLine size={15}/> Export project</button>
     <button role="menuitem" className="danger-menu" onClick={run(() => a.remove(item))}><Trash2 size={15}/> Remove from library</button>
   </div></>;
+  return sheet ? createPortal(content, document.body) : content;
 }
 
 export function ItemCard({ item, index = 0, compact = false }: { item: LibraryItem; index?: number; compact?: boolean }) {

@@ -1,6 +1,5 @@
 /* Keyboard, focus and motion helpers shared by the whole app. */
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
-import { Pause, Play } from 'lucide-react';
 
 const KEY_STEP: Record<string, number | 'first' | 'last'> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1, Home: 'first', End: 'last' };
 
@@ -60,14 +59,12 @@ export function useStillMotion(): boolean {
   return useSyncExternalStore(subscribeRootClass, () => ambientPaused() || root.classList.contains('reduce-motion') || systemReduced());
 }
 
-/** Visible control that pauses and resumes the decorative, endlessly looping animations. */
-export function MotionToggle({ className = '' }: { className?: string }) {
-  const paused = useSyncExternalStore(subscribeRootClass, ambientPaused);
-  const toggle = () => {
-    const next = !paused;
-    root.classList.toggle(AMBIENT_CLASS, next);
-    try { localStorage.setItem(AMBIENT_KEY, next ? 'paused' : 'playing'); } catch { /* storage unavailable */ }
+/** Settings switch for the decorative, endlessly looping animations. */
+export function useBackgroundMotion(): [boolean, (playing: boolean) => void] {
+  const playing = !useSyncExternalStore(subscribeRootClass, ambientPaused);
+  const setPlaying = (next: boolean) => {
+    root.classList.toggle(AMBIENT_CLASS, !next);
+    try { localStorage.setItem(AMBIENT_KEY, next ? 'playing' : 'paused'); } catch { /* storage unavailable */ }
   };
-  const label = paused ? 'Play background animations' : 'Pause background animations';
-  return <button type="button" className={`icon-button ${className}`} onClick={toggle} aria-label={label} title={label}>{paused ? <Play size={17} aria-hidden="true"/> : <Pause size={17} aria-hidden="true"/>}</button>;
+  return [playing, setPlaying];
 }

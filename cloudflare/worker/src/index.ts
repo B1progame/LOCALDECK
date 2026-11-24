@@ -1,4 +1,8 @@
-interface Env {
+import { sendVerificationLink, type MailEnv } from './verificationMail.ts';
+
+interface Env extends MailEnv {
+  /** Comma-separated Google addresses with admin rights. Stored as a Worker secret, never in the repository. */
+  ADMIN_EMAILS?: string;
   SHARES_KV: KVNamespace;
   SHARES_DB: D1Database;
   GOOGLE_CLIENT_ID: string;
@@ -8,8 +12,8 @@ interface Env {
 
 type GoogleClaims = { sub: string; aud: string | string[]; azp?: string; iss: string; exp: number; iat: number; nbf?: number; email: string; email_verified: boolean; name?: string; picture?: string };
 type GoogleJwk = JsonWebKey & { kid: string };
-type FirebaseClaims = { sub: string; aud: string; iss: string; exp: number; iat: number; auth_time?: number; email?: string; email_verified?: boolean; name?: string; picture?: string };
-type Owner = { id: string; email: string; name: string; picture: string };
+type FirebaseClaims = { sub: string; aud: string; iss: string; exp: number; iat: number; auth_time?: number; email?: string; email_verified?: boolean; name?: string; picture?: string; firebase?: { sign_in_provider?: string } };
+type Owner = { id: string; email: string; name: string; picture: string; admin: boolean };
 const jsonHeaders = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' };
 const idPattern = /^[a-f0-9-]{36}$/i;
 const encoder = new TextEncoder();
@@ -22,6 +26,9 @@ const MAX_USER_UPLOADS_PER_DAY = 15;
 const MAX_GLOBAL_UPLOADS_PER_DAY = 100;
 const MAX_IP_READS_PER_HOUR = 120;
 const MAX_IP_AUTH_PER_HOUR = 40;
+const MAX_IP_MAILS_PER_HOUR = 8;
+const MAX_MAILS_PER_DAY = 90;
+const MAIL_WAIT_MS = 120_000;
 const SHARE_TTL_SECONDS = 3 * 24 * 60 * 60;
 let googleKeys: { keys: GoogleJwk[]; expiresAt: number } | null = null;
 let firebaseKeys: { keys: GoogleJwk[]; expiresAt: number } | null = null;
@@ -73,13 +80,13 @@ async function readBounded(request: Request, maxBytes: number): Promise<ArrayBuf
   return output.buffer;
 }
 
-async function clientHash(request: Request): Promise<string> {
+async function clientHash(request: Request, scope = ''): Promise<string> {
   const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
-  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(ip)))).map(value => value.toString(16).padStart(2, '0')).join('');
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(scope + ip)))).map(value => value.toString(16).padStart(2, '0')).join('');
 }
 
-async function rateLimitIp(env: Env, request: Request, table: 'auth_windows' | 'read_windows', limit: number): Promise<boolean> {
-  const hash = await clientHash(request);
+async function rateLimitIp(env: Env, request: Request, table: 'auth_windows' | 'read_windows', limit: number, scope = ''): Promise<boolean> {
+  const hash = await clientHash(request, scope);
   const windowStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
   const column = table === 'auth_windows' ? 'attempts' : 'reads';
   await env.SHARES_DB.prepare(`INSERT INTO ${table} (client_hash, window_start, ${column}) VALUES (?, ?, 1) ON CONFLICT(client_hash, window_start) DO UPDATE SET ${column} = ${column} + 1`).bind(hash, windowStart).run();
@@ -119,7 +126,7 @@ async function verifyGoogleCredential(token: string, env: Env): Promise<Owner | 
     signature.set(rawSignature);
     const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', publicKey, signature, encoder.encode(`${parts[0]}.${parts[1]}`));
     if (!valid) return null;
-    return { id: claims.sub, email: claims.email.slice(0, 320), name: (claims.name || claims.email).slice(0, 120), picture: (claims.picture || '').slice(0, 1000) };
+    return { id: claims.sub, email: claims.email.slice(0, 320), name: (claims.name || claims.email).slice(0, 120), picture: (claims.picture || '').slice(0, 1000), admin: isAdminEmail(claims.email, env) };
   } catch { return null; }
 }
 
@@ -135,7 +142,13 @@ async function getFirebaseKeys(): Promise<GoogleJwk[]> {
   return data.keys;
 }
 
-async function verifyFirebaseCredential(token: string, env: Env): Promise<Owner | null> {
+/** Admins are named by their Google address. Other sign-in methods never grant admin rights. */
+function isAdminEmail(email: string, env: Env): boolean {
+  return (env.ADMIN_EMAILS || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean).includes(email.trim().toLowerCase());
+}
+
+/** Checks signature, project and lifetime. Does not require a confirmed email address. */
+async function verifyFirebaseToken(token: string, env: Env): Promise<(FirebaseClaims & { email: string }) | null> {
   const projectId = env.FIREBASE_PROJECT_ID;
   if (!projectId || token.length > 8192) return null;
   const parts = token.split('.');
@@ -143,7 +156,7 @@ async function verifyFirebaseCredential(token: string, env: Env): Promise<Owner 
   try {
     const header = decodeJson<{ alg?: string; kid?: string }>(parts[0]);
     const claims = decodeJson<FirebaseClaims>(parts[1]);
-    if (header.alg !== 'RS256' || !header.kid || !claims.sub || claims.sub.length > 128 || !claims.email || claims.email_verified !== true) return null;
+    if (header.alg !== 'RS256' || !header.kid || !claims.sub || claims.sub.length > 128 || !claims.email) return null;
     if (claims.iss !== `https://securetoken.google.com/${projectId}` || claims.aud !== projectId) return null;
     const now = Math.floor(Date.now() / 1000);
     if (!Number.isFinite(claims.exp) || claims.exp <= now || !Number.isFinite(claims.iat) || claims.iat > now + 300 || claims.iat < now - 3600 || (claims.auth_time !== undefined && (!Number.isFinite(claims.auth_time) || claims.auth_time > now + 300))) return null;
@@ -154,8 +167,15 @@ async function verifyFirebaseCredential(token: string, env: Env): Promise<Owner 
     const signature = new Uint8Array(rawSignature.byteLength); signature.set(rawSignature);
     const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', publicKey, signature, encoder.encode(`${parts[0]}.${parts[1]}`));
     if (!valid) return null;
-    return { id: `firebase:${claims.sub}`, email: claims.email.slice(0, 320), name: (claims.name || claims.email).slice(0, 120), picture: (claims.picture || '').slice(0, 1000) };
+    return { ...claims, email: claims.email };
   } catch { return null; }
+}
+
+async function verifyFirebaseCredential(token: string, env: Env): Promise<Owner | null> {
+  const claims = await verifyFirebaseToken(token, env);
+  if (!claims || claims.email_verified !== true) return null;
+  const admin = claims.firebase?.sign_in_provider === 'google.com' && isAdminEmail(claims.email, env);
+  return { id: `firebase:${claims.sub}`, email: claims.email.slice(0, 320), name: (claims.name || claims.email).slice(0, 120), picture: (claims.picture || '').slice(0, 1000), admin };
 }
 
 async function isAuthorized(request: Request, env: Env): Promise<Owner | null> {
@@ -193,6 +213,8 @@ async function cleanupExpired(env: Env): Promise<void> {
   await env.SHARES_DB.prepare('DELETE FROM read_windows WHERE window_start < ?').bind(old).run();
   await env.SHARES_DB.prepare('DELETE FROM daily_upload_windows WHERE window_start < ?').bind(Date.now() - 8 * 86_400_000).run();
   await env.SHARES_DB.prepare('DELETE FROM global_upload_windows WHERE window_start < ?').bind(Date.now() - 8 * 86_400_000).run();
+  await env.SHARES_DB.prepare('DELETE FROM verification_mails WHERE sent_at < ?').bind(old).run();
+  await env.SHARES_DB.prepare('DELETE FROM mail_windows WHERE window_start < ?').bind(Date.now() - 8 * 86_400_000).run();
   await env.SHARES_DB.prepare('DELETE FROM user_storage WHERE active_bytes = 0 AND active_uploads = 0 AND NOT EXISTS (SELECT 1 FROM shares WHERE shares.owner_id = user_storage.owner_id)').run();
 }
 
@@ -209,20 +231,72 @@ const SCHEMA = [
   'CREATE TABLE IF NOT EXISTS read_windows ( client_hash TEXT NOT NULL, window_start INTEGER NOT NULL, reads INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (client_hash, window_start) )',
   'CREATE TABLE IF NOT EXISTS user_storage ( owner_id TEXT PRIMARY KEY, active_bytes INTEGER NOT NULL DEFAULT 0 CHECK (active_bytes >= 0 AND active_bytes <= 50331648), active_uploads INTEGER NOT NULL DEFAULT 0 CHECK (active_uploads >= 0 AND active_uploads <= 3) )',
   'CREATE TABLE IF NOT EXISTS storage_state ( id INTEGER PRIMARY KEY CHECK (id = 1), reserved_bytes INTEGER NOT NULL DEFAULT 0 CHECK (reserved_bytes >= 0 AND reserved_bytes <= 536870912), active_uploads INTEGER NOT NULL DEFAULT 0 CHECK (active_uploads >= 0 AND active_uploads <= 3) )',
+  'CREATE TABLE IF NOT EXISTS verification_mails ( owner_id TEXT PRIMARY KEY, sent_at INTEGER NOT NULL )',
+  'CREATE TABLE IF NOT EXISTS mail_windows ( window_start INTEGER PRIMARY KEY, sent INTEGER NOT NULL DEFAULT 0 )',
   'INSERT OR IGNORE INTO storage_state (id, reserved_bytes, active_uploads) VALUES (1, 0, 0)',
 ];
-let schemaReady: Promise<void> | null = null;
-function ensureSchema(env: Env): Promise<void> {
-  if (!env.SHARES_DB) return Promise.resolve();
-  schemaReady ??= (async () => { for (const sql of SCHEMA) await env.SHARES_DB.prepare(sql).run(); })().catch(error => { schemaReady = null; throw error; });
-  return schemaReady;
+let schemaReady = false;
+/** Only the finished result is shared between requests. A shared in-flight promise would belong to the
+    request that started it, and Workers can fail every other request that waits on it. */
+async function ensureSchema(env: Env): Promise<void> {
+  if (schemaReady || !env.SHARES_DB) return;
+  for (const sql of SCHEMA) await env.SHARES_DB.prepare(sql).run();
+  schemaReady = true;
+}
+
+/** Totals and all active links. Contains no email addresses, and contents stay encrypted. */
+async function adminOverview(env: Env, owner: Owner): Promise<unknown> {
+  const now = new Date().toISOString();
+  const dayStart = Math.floor(Date.now() / 86_400_000) * 86_400_000;
+  const totals = await env.SHARES_DB.prepare("SELECT COUNT(*) as links, COUNT(DISTINCT owner_id) as owners, COALESCE(SUM(size_bytes), 0) as bytes FROM shares WHERE status = 'active' AND expires_at > ?").bind(now).first<{ links: number; owners: number; bytes: number }>();
+  const uploads = await env.SHARES_DB.prepare('SELECT uploads FROM global_upload_windows WHERE window_start = ?').bind(dayStart).first<{ uploads: number }>();
+  const rows = await env.SHARES_DB.prepare("SELECT id, owner_id as ownerId, created_at as createdAt, expires_at as expiresAt, size_bytes as sizeBytes FROM shares WHERE status = 'active' AND expires_at > ? ORDER BY created_at DESC LIMIT 200").bind(now).all<{ id: string; ownerId: string; createdAt: string; expiresAt: string; sizeBytes: number }>();
+  return {
+    totals: { links: totals?.links ?? 0, owners: totals?.owners ?? 0, bytes: totals?.bytes ?? 0, limitBytes: MAX_ACTIVE_BYTES, uploadsToday: uploads?.uploads ?? 0, uploadsLimit: MAX_GLOBAL_UPLOADS_PER_DAY },
+    shares: rows.results.map(({ ownerId, ...row }) => ({ ...row, owner: ownerId.replace(/^firebase:/, '').slice(0, 6), mine: ownerId === owner.id })),
+  };
+}
+
+/** Sends the LocalDeck confirmation email to the address inside a valid Firebase token, never to one the client names. */
+async function sendVerification(request: Request, env: Env, headers: Headers): Promise<Response> {
+  if (!env.FIREBASE_SERVICE_ACCOUNT || !env.MAIL_RELAY_URL || !env.MAIL_RELAY_SECRET || !env.APP_URL) return json({ error: 'mail_not_configured' }, 501, headers);
+  if (!await rateLimitIp(env, request, 'auth_windows', MAX_IP_MAILS_PER_HOUR, 'mail:')) return json({ error: 'rate_limited' }, 429, headers);
+  let credential = '';
+  try { const body = JSON.parse(new TextDecoder().decode(await readBounded(request, 12 * 1024))) as { credential?: unknown }; credential = typeof body.credential === 'string' ? body.credential : ''; }
+  catch { return json({ error: 'invalid_request' }, 400, headers); }
+  const claims = await verifyFirebaseToken(credential, env);
+  if (!claims) return json({ error: 'unauthorized' }, 401, headers);
+  if (claims.email_verified === true) return json({ ok: true, alreadyVerified: true }, 200, headers);
+
+  const now = Date.now();
+  const claimed = await env.SHARES_DB.prepare('INSERT INTO verification_mails (owner_id, sent_at) VALUES (?, ?) ON CONFLICT(owner_id) DO UPDATE SET sent_at = excluded.sent_at WHERE verification_mails.sent_at <= ? RETURNING owner_id').bind(claims.sub, now, now - MAIL_WAIT_MS).first<{ owner_id: string }>();
+  if (!claimed) return json({ error: 'mail_wait' }, 429, headers);
+  const dayStart = Math.floor(now / 86_400_000) * 86_400_000;
+  const slot = await env.SHARES_DB.prepare('INSERT INTO mail_windows (window_start, sent) VALUES (?, 1) ON CONFLICT(window_start) DO UPDATE SET sent = sent + 1 WHERE mail_windows.sent < ? RETURNING sent').bind(dayStart, MAX_MAILS_PER_DAY).first<{ sent: number }>();
+  try {
+    if (!slot) throw new Error('daily_limit');
+    await sendVerificationLink(env, claims.email, claims.name ?? '');
+    return json({ ok: true }, 200, headers);
+  } catch (error) {
+    // Frees the two-minute lock: the app falls back to Firebase's own email.
+    await env.SHARES_DB.prepare('DELETE FROM verification_mails WHERE owner_id = ?').bind(claims.sub).run();
+    console.error('verification_mail_failed', error instanceof Error ? error.message : 'unknown');
+    return json({ error: slot ? 'mail_failed' : 'mail_daily_limit' }, slot ? 502 : 429, headers);
+  }
 }
 
 const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
-      if (request.method !== 'OPTIONS') await ensureSchema(env);
-      return await worker.handle(request, env);
+      // Existing tables keep working when this check fails, so a short database outage must not stop the request here.
+      if (request.method !== 'OPTIONS') await ensureSchema(env).catch(error => console.error('schema_check_failed', error));
+      if (request.method !== 'GET') return await worker.handle(request, env);
+      try { return await worker.handle(request, env); }
+      catch (error) {
+        console.error('read_retry', error);
+        await new Promise(resolve => setTimeout(resolve, 150));
+        return await worker.handle(request, env);
+      }
     } catch (error) {
       console.error('unhandled_request_error', error);
       return json({ error: 'service_unavailable' }, 503, cors(request, env));
@@ -245,7 +319,7 @@ const worker = {
       catch { return json({ error: 'invalid_request' }, 400, headers); }
       const owner = await verifyGoogleCredential(credential, env);
       if (!owner) return json({ error: 'unauthorized' }, 401, headers);
-      return json({ id: owner.id, email: owner.email, name: owner.name, picture: owner.picture }, 200, headers);
+      return json(owner, 200, headers);
     }
 
     if (parts[3] === 'auth' && parts[4] === 'firebase' && parts.length === 5 && request.method === 'POST') {
@@ -255,7 +329,16 @@ const worker = {
       catch { return json({ error: 'invalid_request' }, 400, headers); }
       const owner = await verifyFirebaseCredential(credential, env);
       if (!owner) return json({ error: 'unauthorized' }, 401, headers);
-      return json({ id: owner.id, email: owner.email, name: owner.name, picture: owner.picture }, 200, headers);
+      return json(owner, 200, headers);
+    }
+
+    if (parts[3] === 'auth' && parts[4] === 'verification' && parts.length === 5 && request.method === 'POST') return sendVerification(request, env, headers);
+
+    if (parts[3] === 'admin' && parts[4] === 'overview' && parts.length === 5 && request.method === 'GET') {
+      const owner = await isAuthorized(request, env);
+      if (!owner) return json({ error: 'unauthorized' }, 401, headers);
+      if (!owner.admin) return json({ error: 'forbidden' }, 403, headers);
+      return json(await adminOverview(env, owner), 200, headers);
     }
 
     if (parts[3] === 'owner' && parts[4] === 'shares' && parts.length === 5 && request.method === 'GET') {
@@ -273,11 +356,11 @@ const worker = {
       const windowStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
       await env.SHARES_DB.prepare('INSERT INTO upload_windows (owner_id, window_start, uploads) VALUES (?, ?, 1) ON CONFLICT(owner_id, window_start) DO UPDATE SET uploads = uploads + 1').bind(owner.id, windowStart).run();
       const rate = await env.SHARES_DB.prepare('SELECT uploads FROM upload_windows WHERE owner_id = ? AND window_start = ?').bind(owner.id, windowStart).first<{ uploads: number }>();
-      if ((rate?.uploads ?? 0) > MAX_USER_UPLOADS_PER_HOUR) return json({ error: 'rate_limited' }, 429, headers);
+      if (!owner.admin && (rate?.uploads ?? 0) > MAX_USER_UPLOADS_PER_HOUR) return json({ error: 'rate_limited' }, 429, headers);
       const dayStart = Math.floor(Date.now() / 86_400_000) * 86_400_000;
       await env.SHARES_DB.prepare('INSERT INTO daily_upload_windows (owner_id, window_start, uploads) VALUES (?, ?, 1) ON CONFLICT(owner_id, window_start) DO UPDATE SET uploads = uploads + 1').bind(owner.id, dayStart).run();
       const daily = await env.SHARES_DB.prepare('SELECT uploads FROM daily_upload_windows WHERE owner_id = ? AND window_start = ?').bind(owner.id, dayStart).first<{ uploads: number }>();
-      if ((daily?.uploads ?? 0) > MAX_USER_UPLOADS_PER_DAY) return json({ error: 'daily_rate_limited' }, 429, headers);
+      if (!owner.admin && (daily?.uploads ?? 0) > MAX_USER_UPLOADS_PER_DAY) return json({ error: 'daily_rate_limited' }, 429, headers);
       await env.SHARES_DB.prepare('INSERT INTO global_upload_windows (window_start, uploads) VALUES (?, 1) ON CONFLICT(window_start) DO UPDATE SET uploads = uploads + 1').bind(dayStart).run();
       const globalDaily = await env.SHARES_DB.prepare('SELECT uploads FROM global_upload_windows WHERE window_start = ?').bind(dayStart).first<{ uploads: number }>();
       if ((globalDaily?.uploads ?? 0) > MAX_GLOBAL_UPLOADS_PER_DAY) return json({ error: 'daily_rate_limited' }, 429, headers);
@@ -326,12 +409,12 @@ const worker = {
     if (!blobRoute && request.method === 'DELETE' && parts.length === 4) {
       const owner = await isAuthorized(request, env);
       if (!owner) return json({ error: 'unauthorized' }, 401, headers);
-      const revoked = await env.SHARES_DB.prepare("UPDATE shares SET status = 'revoked' WHERE id = ? AND owner_id = ? AND status = 'active' RETURNING owner_id, size_bytes").bind(id, owner.id).first<{ owner_id: string; size_bytes: number }>();
+      const revoked = await env.SHARES_DB.prepare("UPDATE shares SET status = 'revoked' WHERE id = ? AND (owner_id = ? OR ? = 1) AND status = 'active' RETURNING owner_id, size_bytes").bind(id, owner.id, owner.admin ? 1 : 0).first<{ owner_id: string; size_bytes: number }>();
       if (revoked) {
         let blobDeleted = false;
         try { await env.SHARES_KV.delete(id); blobDeleted = true; } catch { /* The revoked D1 row blocks downloads until expiry cleanup. */ }
         if (blobDeleted) {
-          const removed = await env.SHARES_DB.prepare("DELETE FROM shares WHERE id = ? AND owner_id = ? AND status = 'revoked' RETURNING owner_id, size_bytes").bind(id, owner.id).first<{ owner_id: string; size_bytes: number }>();
+          const removed = await env.SHARES_DB.prepare("DELETE FROM shares WHERE id = ? AND owner_id = ? AND status = 'revoked' RETURNING owner_id, size_bytes").bind(id, revoked.owner_id).first<{ owner_id: string; size_bytes: number }>();
           if (removed) await releaseQuota(env, removed.owner_id, removed.size_bytes);
         }
       }

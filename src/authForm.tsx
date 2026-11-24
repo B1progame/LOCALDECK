@@ -3,6 +3,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, Clock3, Eye, EyeOff, KeyRound, LoaderCircle, Mail, ShieldCheck, Sparkles, UserRound, WandSparkles } from 'lucide-react';
 import { firebaseAuthRequest } from './services/firebaseAuth';
+import { sendVerificationMail } from './services/verificationMail';
 import { rovingKeys } from './a11y';
 import { useProfile } from './profile';
 import { PASSWORD_RULES, passwordProblem } from './services/passwordPolicy';
@@ -53,7 +54,7 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
         const created = await firebaseAuthRequest(apiKey, 'signUp', { email: email.trim(), password, returnSecureToken: true });
         if (!created.idToken) throw new Error('Firebase did not return an account session.');
         await firebaseAuthRequest(apiKey, 'update', { idToken: created.idToken, displayName: name, returnSecureToken: false }).catch(() => undefined);
-        await firebaseAuthRequest(apiKey, 'sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: created.idToken });
+        await sendVerificationMail(apiKey, created.idToken);
         if (!useProfile.getState().name) useProfile.getState().update({ name });
         setMessage(`Welcome, ${name}! We sent a confirmation link to ${email.trim()}. Open it, then sign in here.`);
         setPassword(''); setConfirm(''); setMode('signin');
@@ -62,7 +63,7 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
         if (!result.idToken || !result.email) throw new Error('Email sign-in could not be completed.');
         const account = await firebaseAuthRequest(apiKey, 'lookup', { idToken: result.idToken });
         if (account.users?.[0]?.emailVerified !== true) {
-          await firebaseAuthRequest(apiKey, 'sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: result.idToken });
+          await sendVerificationMail(apiKey, result.idToken);
           throw new Error('Confirm your email first. We just sent you a fresh link.');
         }
         setPassword('');

@@ -55,4 +55,14 @@ CREATE TABLE IF NOT EXISTS storage_state (
   active_uploads INTEGER NOT NULL DEFAULT 0 CHECK (active_uploads >= 0 AND active_uploads <= 3)
 );
 
+CREATE TABLE IF NOT EXISTS verification_mails (
+  owner_id TEXT PRIMARY KEY,
+  sent_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mail_windows (
+  window_start INTEGER PRIMARY KEY,
+  sent INTEGER NOT NULL DEFAULT 0
+);
+
 INSERT OR IGNORE INTO storage_state (id, reserved_bytes, active_uploads) VALUES (1, 0, 0);

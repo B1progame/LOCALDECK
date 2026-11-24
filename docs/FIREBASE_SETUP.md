@@ -98,7 +98,7 @@ Keep **Link accounts that use the same email** (the default). Then signing in wi
 Do these in order. Full HTML for the message bodies is in [`EMAIL_TEMPLATES.md`](EMAIL_TEMPLATES.md).
 
 ### 4a. Email address verification
-1. Click **Email address verification → ✏️**.
+1. Click **Email address verification → ✏️**. To replace this email with your own design, see [`EMAIL_SETUP.md`](EMAIL_SETUP.md).
 2. **Sender name**: `LocalDeck`
 3. **From**: leave `noreply@login-localdeck.firebaseapp.com` (changing it needs your own domain).
 4. **Reply to**: empty, or your address.
@@ -141,6 +141,7 @@ The Worker checks every Firebase sign-in before it allows uploads. It is deploye
 | `FIREBASE_PROJECT_ID` = `login-localdeck` | Worker secret | ✅ exists (its value is hidden, so a real sign-in is the proof) |
 | `ALLOWED_ORIGIN` = `https://b1progame.github.io,http://localhost:5468` | `cloudflare/wrangler.toml` | ✅ |
 | Database tables | created automatically by the Worker | ✅ |
+| Own confirmation email and admin account | [`EMAIL_SETUP.md`](EMAIL_SETUP.md) | ⬜ optional |
 
 Redeploy after changing anything in `cloudflare/`:
 

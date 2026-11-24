@@ -12,3 +12,8 @@ dist/
 .claude/
 .env.local
 .env.*.local
+
+# Keys never belong in the repository
+*service-account*.json
+login-localdeck-*.json
+.dev.vars
