@@ -3,7 +3,7 @@ import { t, tm } from './i18n';
 import React, { useEffect, useState } from 'react';
 import { ArrowDownToLine, Info, LoaderCircle, Plus, RefreshCw } from 'lucide-react';
 import { analyzeFiles } from './services/importer';
-import { aiIsReady, askAbout, kindTag, readProjectText, ruleCheck, scanImported, useAutoScan, withAi } from './autoScan';
+import { askAbout, scanIsOn, kindTag, readProjectText, ruleCheck, scanImported, useAutoScan, withAi } from './autoScan';
 import { tagsWithMark, useContentMarks } from './contentMarks';
 import { ContentNote } from './contentNote';
 import { stopGenerating, useLocalAi } from './localAi/engine';
@@ -50,11 +50,11 @@ function useExplanation(preview: ImportPreview | null): Explained {
       const check = ruleCheck(project, preview);
       if (!active) return;
       setState({ ...NOTHING, check, tags: preview.tags });
-      if (!useAutoScan.getState().auto || !await aiIsReady() || !active) return;
+      if (!useAutoScan.getState().auto || !scanIsOn() || !active) return;
       setState(current => ({ ...current, scanning: true }));
       try {
-        const result = await withAi(`shared:${preview.id}`, async () => { owns = true; try { return await askAbout(project, preview.sourceName, { cancelled: () => !active, background: true }); } finally { owns = false; } });
-        if (active) setState({ check: withOpinion(check, result.found, result.suggestion.description), scanning: false, summary: result.suggestion.description, tags: importantTags(preview.tags, result.suggestion, kindTag(result.suggestion.type || preview.type)), subject: result.suggestion.subject, topic: result.suggestion.topic });
+        const result = await withAi(`shared:${preview.id}`, async () => { owns = true; try { return await askAbout(project, preview.sourceName, { cancelled: () => !active }); } finally { owns = false; } });
+        if (active) setState({ check: result.quick ? { ...check, scanned: 'quick' } : withOpinion(check, result.found, result.suggestion.description), scanning: false, summary: result.suggestion.description, tags: importantTags(preview.tags, result.suggestion, kindTag(result.suggestion.type || preview.type)), subject: result.suggestion.subject, topic: result.suggestion.topic });
       } catch { if (active) setState(current => ({ ...current, scanning: false })); }
     })().catch(() => undefined);
     return () => { active = false; if (owns) stopGenerating(); };
@@ -156,9 +156,9 @@ export function SharedPage({ hash, notify }: { hash: string; notify: (message: s
     {state.kind === 'ready' && (explained.summary || explained.scanning || (marks && explained.check) || engine === 'none') && <section className="panel shared-about" aria-live="polite">
       <h2>{t('What is this?')}</h2>
       {explained.summary && <p>{explained.summary}</p>}
-      {explained.scanning && <p className="local-ai-line"><LoaderCircle size={16} className="spin"/> {t('The local AI is reading this project…')}</p>}
+      {explained.scanning && <p className="local-ai-line"><LoaderCircle size={16} className="spin"/> {t('Reading the project…')}</p>}
       {explained.check && <ContentNote check={explained.check}/>}
-      {engine === 'none' && <p className="muted-text">{t('With a local AI (Settings) LocalDeck also explains what a shared project is.')}</p>}
+      {engine === 'none' && <p className="muted-text">{t('Turn on scanning in Settings, then LocalDeck also explains what a shared project is.')}</p>}
     </section>}
     {state.kind === 'problem' && <div className="shared-error" role="alert">
       <Info size={20}/>

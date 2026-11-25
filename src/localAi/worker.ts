@@ -3,10 +3,22 @@ import { AutoModelForCausalLM, AutoTokenizer, env, InterruptableStoppingCriteria
 import ortModule from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
 import { MODEL, type FromWorker, type ToWorker } from './model';
+import { loadInParts } from './parts';
 
 // Runtime files come from LocalDeck itself. Only the model is loaded from Hugging Face, once, in a fixed version.
 env.allowLocalModels = false;
 env.cacheKey = MODEL.cache;
+// The large file is loaded and kept in parts, so a lost connection does not start it over again.
+const LARGE = /\.onnx_data$/;
+let modelCache: Cache | null = null;
+env.useCustomCache = true;
+env.customCache = {
+  // A file that an older version stored whole is still used.
+  match: async (key: string) => { try { return await modelCache?.match(key); } catch { return undefined; } },
+  put: async (key: string, response: Response) => { if (!LARGE.test(key)) try { await modelCache?.put(key, response); } catch { /* not an address, or no space */ } },
+} as never;
+const plainFetch = globalThis.fetch.bind(globalThis);
+env.fetch = (async (input: string | URL, init?: RequestInit) => LARGE.test(String(input)) && !new Headers(init?.headers).has('range') ? loadInParts(String(input), { cache: modelCache, fetcher: plainFetch }) : plainFetch(input, init)) as never;
 const absolute = (url: string) => new URL(url, self.location.href).href;
 if (env.backends.onnx.wasm) { env.backends.onnx.wasm.wasmPaths = { mjs: absolute(ortModule), wasm: absolute(ortWasm) }; env.backends.onnx.wasm.numThreads = 1; }
 
@@ -30,6 +42,7 @@ async function load(): Promise<void> {
     const loaded = [...files.values()].reduce((sum, file) => sum + file.loaded, 0);
     send({ type: 'progress', loaded, total: Math.max(MODEL.bytes, [...files.values()].reduce((sum, file) => sum + file.total, 0)) });
   };
+  try { modelCache ??= await caches.open(MODEL.cache); } catch { /* private window: works, but loads again next time */ }
   const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<{ features: { has(name: string): boolean } } | null> } }).gpu;
   const adapter = await gpu?.requestAdapter();
   if (!adapter) throw new Error('no-webgpu');

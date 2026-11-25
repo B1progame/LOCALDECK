@@ -5,7 +5,7 @@ export type Rating = 'ok' | '16' | '18';
 export type Reason = 'marked' | 'sexual' | 'violence' | 'drugs' | 'gambling' | 'selfharm' | 'password' | 'ai';
 /** `lesson`: the page teaches about the body ('body') or about anything else ('other'), so such words are its subject.
     `signs`: single words that are too little for a mark, but support what the AI says. `rated`: the local AI was asked about its content. */
-export type ContentCheck = { rating: Rating; reasons: Reason[]; by: 'rules' | 'ai'; checkedAt: number; summary?: string; confirmed?: boolean; lesson?: 'body' | 'other'; signs?: Reason[]; rated?: boolean };
+export type ContentCheck = { rating: Rating; reasons: Reason[]; by: 'rules' | 'ai'; checkedAt: number; summary?: string; confirmed?: boolean; lesson?: 'body' | 'other'; signs?: Reason[]; rated?: boolean; scanned?: 'quick' | 'ai' };
 
 const ORDER: Rating[] = ['ok', '16', '18'];
 export const higher = (a: Rating, b: Rating): Rating => ORDER.indexOf(a) >= ORDER.indexOf(b) ? a : b;
@@ -72,5 +72,5 @@ export function withOpinion(rules: ContentCheck, found: Reason[] | null, summary
   let rating = rules.rating;
   for (const reason of extra) rating = higher(rating, reason === 'sexual' ? '18' : '16');
   const reasons = rating === rules.rating && extra.every(reason => rules.reasons.includes(reason)) ? rules.reasons : [...new Set([...rules.reasons, ...extra, 'ai' as const])];
-  return { ...rules, rating, reasons, by: 'ai', checkedAt: Date.now(), ...(found ? { rated: true } : {}), ...(summary ? { summary } : {}) };
+  return { ...rules, rating, reasons, by: 'ai', scanned: 'ai', checkedAt: Date.now(), ...(found ? { rated: true } : {}), ...(summary ? { summary } : {}) };
 }

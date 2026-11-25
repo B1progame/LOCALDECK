@@ -7,8 +7,9 @@ const TYPES: ContentType[] = ['game', 'learning', 'app', 'tool', 'simulation', '
 
 export type Suggestion = { title: string; type: ContentType | ''; subject: string; topic: string; description: string; tags: string[] };
 /** `found`: what may not be for children, null when the AI was not asked. */
-export type ScanResult = { suggestion: Suggestion; found: Reason[] | null; read: number; total: number };
-export type ProjectText = { title: string; language: string; description: string; headings: string[]; buttons: string[]; text: string; kind?: ContentType | '' };
+/** `quick`: made without a model (quickScan). */
+export type ScanResult = { suggestion: Suggestion; found: Reason[] | null; read: number; total: number; quick?: boolean };
+export type ProjectText = { title: string; language: string; description: string; headings: string[]; buttons: string[]; text: string; kind?: ContentType | ''; intro?: string };
 export type ChatMessage = { role: 'system' | 'user'; content: string };
 export type Ask = (messages: ChatMessage[], maxTokens: number) => Promise<string>;
 
@@ -62,8 +63,9 @@ export function htmlText(source: string): ProjectText {
   // Keeps words of neighbouring elements apart.
   doc.body?.querySelectorAll('*').forEach(element => element.append(' '));
   const parts = [squash(doc.body?.textContent ?? ''), ...new Set([...labels, ...code.flatMap(scriptTexts)])].filter(Boolean);
+  const intro = [...doc.querySelectorAll('p, .subtitle, .lead, header small')].map(element => squash(element.textContent ?? '')).find(entry => entry.length >= 30 && entry.length <= 300 && entry.split(' ').length >= 5 && !/[©{}]|https?:/.test(entry));
   const text = parts.join('\n');
-  return { title, language, description, headings, buttons, text, kind: guessType({ title, headings, text, ...signs }) };
+  return { title, language, description, headings, buttons, text, kind: guessType({ title, headings, text, ...signs }), ...(intro ? { intro } : {}) };
 }
 
 /** Cuts the text at line or sentence ends. Very long projects are read at evenly spread places. */

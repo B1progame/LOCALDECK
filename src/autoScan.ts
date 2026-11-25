@@ -1,13 +1,14 @@
-/* Checks every imported project: at once by rules, then with the local AI when one is chosen in Settings.
-   The AI runs one project after the other in the background. */
+/* Checks every imported project: at once by rules, then described by the quick scan or by the local AI that is chosen
+   in Settings. One project after the other, in the background. */
 import { create } from 'zustand';
 import { useContentMarks } from './contentMarks';
 import { language } from './i18n';
-import { checkLocalAi, generateText, loadLocalAi, useLocalAi } from './localAi/engine';
+import { checkLocalAi, generateText, loadLocalAi, modelUsable, useLocalAi } from './localAi/engine';
 import { checkContent, withOpinion, type ContentCheck } from './services/contentCheck';
 import { db } from './services/database';
 import { getAssets, updateItem } from './services/library';
 import { htmlText, importantTags, isPlaceholderTitle, scriptTexts, suggestDetails, type ProjectText, type ScanResult } from './services/projectScan';
+import { quickScan } from './services/quickScan';
 import { TYPE_LABEL } from './shared';
 import type { ContentType, LibraryItem } from './types';
 
@@ -26,12 +27,10 @@ export function setAutoScan(auto: boolean): void {
   if (!auto) cancelWaiting();
 }
 
-/** True when a scan can start without loading the model from the internet first. */
-export async function aiIsReady(): Promise<boolean> {
-  await checkLocalAi();
-  const { engine, stored, phase } = useLocalAi.getState();
-  return engine === 'browser' || (engine === 'qwen' && (stored || phase === 'ready') && phase !== 'failed' && phase !== 'unsupported');
-}
+/** True unless the person turned scanning off. The quick scan always works. */
+export const scanIsOn = () => useLocalAi.getState().engine !== 'none';
+/** True when a real model can answer without loading it from the internet first. */
+export async function modelIsReady(): Promise<boolean> { await checkLocalAi(); return modelUsable(); }
 
 /* ---------- One task at a time ---------- */
 
@@ -74,15 +73,24 @@ export function languageName(code: string): string {
   try { return new Intl.DisplayNames(['en'], { type: 'language' }).of(code || language()) ?? 'English'; } catch { return 'English'; }
 }
 
-/** Asks the AI about a project. Call it inside withAi. */
-export async function askAbout(project: ReadProject, filename: string, options: { onStep?: (step: number, steps: number) => void; cancelled?: () => boolean; background?: boolean } = {}): Promise<ScanResult> {
-  // A scan in the background must never start a large download, for example after the model was deleted.
-  if (options.cancelled?.() || (options.background && !await aiIsReady())) throw new Error('cancelled');
-  await loadLocalAi();
-  return suggestDetails(project, {
-    filename, language: languageName(project.language), ...options, rate: useContentMarks.getState().on,
-    ask: (messages, maxTokens) => options.cancelled?.() ? Promise.reject(new Error('cancelled')) : generateText(messages, () => undefined, { maxTokens, temperature: 0 }),
-  });
+/** Describes a project: with the model when one is ready, otherwise with the quick scan. Call it inside withAi. */
+export async function askAbout(project: ReadProject, filename: string, options: { onStep?: (step: number, steps: number) => void; cancelled?: () => boolean } = {}): Promise<ScanResult> {
+  if (options.cancelled?.()) throw new Error('cancelled');
+  if (!scanIsOn()) throw new Error('no-ai');
+  // This never starts the large download by itself. That only happens with the button in Settings.
+  if (useLocalAi.getState().engine !== 'instant' && await modelIsReady()) {
+    try {
+      await loadLocalAi();
+      return await suggestDetails(project, {
+        filename, language: languageName(project.language), ...options, rate: useContentMarks.getState().on,
+        ask: (messages, maxTokens) => options.cancelled?.() ? Promise.reject(new Error('cancelled')) : generateText(messages, () => undefined, { maxTokens, temperature: 0 }),
+      });
+    } catch (error) {
+      if (options.cancelled?.() || (error instanceof Error && ['cancelled', 'removed'].includes(error.message))) throw error;
+      console.warn('The model could not answer, the quick scan takes over', error);
+    }
+  }
+  return quickScan(project, { filename, fallback: language() });
 }
 
 /* ---------- Imports ---------- */
@@ -115,15 +123,17 @@ async function describe(id: string): Promise<void> {
   if (!item) return;
   const project = await readItem(item);
   if (!project.text && !project.title) return;
-  const result = await askAbout(project, item.originalFilename, { cancelled: () => cancelled.has(id), background: true });
+  const result = await askAbout(project, item.originalFilename, { cancelled: () => cancelled.has(id) });
   const latest = await db.items.get(id);
   if (!latest) return;
   const { suggestion } = result;
   if (!suggestion.title && !suggestion.description && !suggestion.tags.length) return;
   const details = missingDetails(latest, result);
-  const check = withOpinion(ruleCheck(project, { ...latest, ...details }), result.found, suggestion.description);
+  const rules = ruleCheck(project, { ...latest, ...details });
+  const check: ContentCheck = result.quick ? { ...rules, scanned: 'quick' } : withOpinion(rules, result.found, suggestion.description);
   await updateItem(id, { ...details, contentCheck: { ...check, ...(latest.contentCheck?.confirmed ? { confirmed: true } : {}) } }, { touch: false });
-  changed(latest.title);
+  // The quick scan is done before anyone notices, so it says nothing.
+  changed(result.quick ? undefined : latest.title);
 }
 
 function enqueue(id: string): void {
@@ -134,8 +144,7 @@ function enqueue(id: string): void {
     if (cancelled.delete(id)) return;
     set(state => ({ waiting: state.waiting.filter(entry => entry !== id) }));
     try { await describe(id); }
-    // When the model cannot run, trying it again for every project would only slow the device down.
-    catch (error) { if (useLocalAi.getState().phase === 'failed') cancelWaiting(); else console.warn('Project scan stopped', error); }
+    catch (error) { console.warn('Project scan stopped', error); }
     finally { set(state => state.waiting.length ? { done: state.done + 1 } : { done: 0, total: 0 }); }
   });
 }
@@ -148,7 +157,7 @@ export async function scanImported(item: LibraryItem): Promise<void> {
     // A summary that came with the import, for example from a shared link, stays.
     if (!(item.contentCheck?.by === 'ai')) await updateItem(item.id, { contentCheck: check }, { touch: false });
     changed();
-    if (item.contentCheck?.by === 'ai' || !get().auto || !await aiIsReady()) return;
+    if (item.contentCheck?.by === 'ai' || !get().auto || !scanIsOn()) return;
     enqueue(item.id);
   } catch (error) { console.warn('Project check stopped', error); }
 }
@@ -156,11 +165,11 @@ export async function scanImported(item: LibraryItem): Promise<void> {
 /** Projects that were never checked, or all of them by the AI. */
 export async function scanLibrary(): Promise<number> {
   const items = (await db.items.toArray()).filter(item => /\.html?$/i.test(item.entryFile));
-  const ready = await aiIsReady();
-  const todo = items.filter(item => ready ? item.contentCheck?.by !== 'ai' || (useContentMarks.getState().on && !item.contentCheck.rated) : !item.contentCheck);
+  const ready = await modelIsReady(), on = scanIsOn();
+  const todo = items.filter(item => ready ? item.contentCheck?.by !== 'ai' || (useContentMarks.getState().on && !item.contentCheck.rated) : on ? !item.contentCheck?.scanned && item.contentCheck?.by !== 'ai' : !item.contentCheck);
   for (const item of todo) {
     if (!item.contentCheck) { try { await updateItem(item.id, { contentCheck: ruleCheck(await readItem(item), item) }, { touch: false }); } catch { /* unreadable project */ } }
-    if (ready) enqueue(item.id);
+    if (on) enqueue(item.id);
   }
   changed();
   return todo.length;

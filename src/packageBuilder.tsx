@@ -11,7 +11,6 @@ import { buildProjectPrompt, parseBundle, type BundleFile, type PromptKind } fro
 import { createItem } from './services/library';
 import { askAbout, kindTag, readProjectText, scanImported, useAutoScan, withAi } from './autoScan';
 import { cancelLoading, checkLocalAi, stopGenerating, useLocalAi } from './localAi/engine';
-import { LocalAiStatus } from './localAiSettings';
 import { PhotoStudio } from './photoStudio';
 import { importantTags, MAX_TAGS } from './services/projectScan';
 import { createStoredZip, normalizePackagePath, readZip } from './services/zip';
@@ -67,7 +66,7 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
   const [photo, setPhoto] = useState(false);
   const [reading, setReading] = useState<{ step: number; steps: number } | null>(null);
   const [aiNote, setAiNote] = useState('');
-  const { engine, phase, stored } = useLocalAi();
+  const { engine, phase } = useLocalAi();
   const { active } = useAutoScan();
   const run = useRef(0), ownsAi = useRef(false);
 
@@ -82,7 +81,7 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
     setAiNote(''); setReading({ step: 0, steps: 0 });
     try {
       const project = await readProjectText(projectFiles(), 'index.html');
-      const { suggestion } = await withAi('builder', async () => { ownsAi.current = true; try { return await askAbout(project, htmlName || 'index.html', { cancelled, onStep: (step, steps) => { if (!cancelled()) setReading({ step, steps }); } }); } finally { ownsAi.current = false; } });
+      const { suggestion, quick } = await withAi('builder', async () => { ownsAi.current = true; try { return await askAbout(project, htmlName || 'index.html', { cancelled, onStep: (step, steps) => { if (!cancelled()) setReading({ step, steps }); } }); } finally { ownsAi.current = false; } });
       if (cancelled()) return;
       if (!suggestion.title && !suggestion.description && !suggestion.tags.length) { setAiNote(t('The AI gave no usable answer. Try again.')); return; }
       setMeta(m => {
@@ -90,11 +89,11 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
         const field = type === 'game' || type === 'app' || type === 'tool' ? 'genre' : 'subject';
         return { ...m, type, title: suggestion.title || m.title, [field]: suggestion.subject || m[field], topic: suggestion.topic || m.topic, description: suggestion.description || m.description, language: m.language || project.language, tags: importantTags(m.tags.split(',').map(tag => tag.trim()).filter(Boolean), suggestion, kindTag(type)).join(', ') };
       });
-      setAiNote(t('Filled in by the local AI. A small AI makes mistakes, so check the fields.'));
+      setAiNote(quick ? t('Filled in from the words on the page. Check the fields.') : t('Filled in by the local AI. A small AI makes mistakes, so check the fields.'));
     } catch { if (!cancelled()) setAiNote(t('The AI stopped before it was finished. Try again.')); }
     finally { if (!cancelled()) setReading(null); }
   };
-  const aiReady = engine === 'browser' || (engine === 'qwen' && (stored || phase === 'ready') && phase !== 'failed' && phase !== 'unsupported');
+  const aiReady = engine !== 'none';
 
   /** Fills the whole builder from a set of files (an AI bundle or a ZIP). */
   const loadFiles = async (input: BundleFile[], origin: string) => {
@@ -312,10 +311,9 @@ export function PackageBuilder({ notify, onAdded }: { notify: Notify; onAdded: (
         <div className="pb-step">
           <h3>{step(4, Boolean(meta.title.trim()))} {t('Details')}</h3>
           <div className="pb-ai">
-            {engine === 'none' ? <button type="button" className="button subtle" onClick={() => { go('settings'); window.setTimeout(() => document.getElementById('local-ai')?.scrollIntoView({ block: 'start' }), 450); }}><Sparkles size={15}/> {t('Choose a local AI to fill this in')}</button>
-              : !aiReady && !reading ? <LocalAiStatus compact/>
+            {engine === 'none' ? <button type="button" className="button subtle" onClick={() => { go('settings'); window.setTimeout(() => document.getElementById('local-ai')?.scrollIntoView({ block: 'start' }), 450); }}><Sparkles size={15}/> {t('Turn on scanning to fill this in')}</button>
               : reading ? <><button type="button" className="button" onClick={stopAi}><CircleStop size={15}/> {t('Stop')}</button><span className="muted-text" role="status"><LoaderCircle size={14} className="spin"/> {!reading.steps ? (active && active !== 'builder' ? t('Waiting for another project…') : phase === 'ready' ? t('Reading the project…') : t('Starting the AI…')) : reading.step < reading.steps ? t('Reading part {0} of {1}…', reading.step, reading.steps - 1) : t('Writing name and hashtags…')}</span></>
-              : <button type="button" className="button primary" disabled={!html.trim()} onClick={() => void fillIn()}><Sparkles size={15}/> {t('Fill in with the local AI')}</button>}
+              : <button type="button" className="button primary" disabled={!html.trim()} onClick={() => void fillIn()}><Sparkles size={15}/> {engine === 'instant' ? t('Fill in automatically') : t('Fill in with the local AI')}</button>}
             {!reading && (aiNote || !html.trim()) && engine !== 'none' && aiReady && <span className="muted-text" role="status">{aiNote || t('Add the HTML first.')}</span>}
           </div>
           <div className="pb-fields">
