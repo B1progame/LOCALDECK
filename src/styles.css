@@ -302,11 +302,12 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 .hero-orbit { position: absolute; border: 1px solid var(--accent-line); border-radius: 50%; }
 .orbit-one { width: 260px; height: 260px; animation: orbit 24s linear infinite; }
 .orbit-two { width: 370px; height: 370px; border-style: dashed; opacity: .5; animation: orbit 40s linear infinite reverse; }
-.orbit-one::after { content: ''; position: absolute; top: 28px; left: 34px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 18px var(--accent); }
+/* One ball on the inner ring and one star on the outer one, both exactly on the line. */
+.orbit-one::after { content: ''; position: absolute; top: -5.5px; left: calc(50% - 5px); width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 18px var(--accent); }
 @keyframes orbit { to { transform: rotate(360deg); } }
 .hero-core { width: 132px; height: 132px; overflow: hidden; border-radius: 34px; box-shadow: 0 0 0 1px var(--line-strong), 0 24px 60px rgb(var(--accent-rgb) / .35); }
 .hero-core img { width: 100%; height: 100%; object-fit: cover; }
-.hero-spark { position: absolute; top: 22%; right: 20%; color: var(--accent-2); font-size: 22px; }
+.hero-spark { position: absolute; bottom: -12px; left: calc(50% - 12px); display: grid; place-items: center; width: 24px; height: 24px; color: var(--accent-2); font-size: 22px; line-height: 1; }
 .hero-art:has(.hero-cover-card) { padding: 32px 40px 32px 0; }
 .hero-cover-card { position: relative; align-self: center; justify-self: center; width: min(100%, 380px); aspect-ratio: 16 / 10; overflow: hidden; border-radius: 20px; background-position: center; background-size: cover; box-shadow: 0 30px 70px rgba(0, 0, 0, .5), 0 0 0 1px rgb(255 255 255 / .12); transform: rotate(-3deg); }
 
@@ -1080,8 +1081,8 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 
 /* Empty home hero art: keep the orbits inside the art column */
 .hero-art { overflow: hidden; }
-.orbit-one { width: 210px; height: 210px; }
-.orbit-two { width: 300px; height: 300px; }
+.orbit-one { width: 184px; height: 184px; }
+.orbit-two { width: 240px; height: 240px; border-color: rgb(var(--accent-rgb) / .22); opacity: 1; }
 
 /* Details hero: clip only the background so menus can overflow */
 .details-hero { overflow: visible; }
@@ -1333,7 +1334,6 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 .sa-path { fill: none; stroke: #a78bfa; stroke-opacity: .55; stroke-width: 2; stroke-dasharray: 4 8; stroke-linecap: round; animation: sa-dash 1.2s linear infinite; }
 .sa-path-out { stroke: #c4b5fd; }
 @keyframes sa-dash { to { stroke-dashoffset: -24; } }
-.sa-hex { fill: #ddd6fe; font: 600 9px ui-monospace, 'SF Mono', Consolas, monospace; letter-spacing: .06em; }
 .sa-label { fill: #c7c2e6; font: 600 11px Inter, system-ui, sans-serif; letter-spacing: .01em; }
 .sa-label-strong { fill: #f5f3ff; font-size: 12px; }
 .sa-float-a { animation: sa-float 5s ease-in-out infinite; }
@@ -1411,7 +1411,6 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 
 /* Sharing scene polish */
 .sa-label { font-size: 12px; }
-.sa-hex { font-size: 10px; }
 .sa-path { stroke-width: 2.4; stroke-opacity: .7; }
 /* Mode switch glides: the stage animates its height, forms cross-slide */
 .auth-stage { position: relative; overflow: hidden; margin: -6px; padding: 0; }

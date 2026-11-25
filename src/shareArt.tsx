@@ -4,7 +4,8 @@ import { t } from './i18n';
 import { useEffect, useRef } from 'react';
 import { useStillMotion } from './a11y';
 
-const HEX = ['7f3a', 'c91e', '04bd', 'e27a', '9f10', '5ac3', 'b86d', '31f4', 'd0a9', '6e2c'];
+/** One ball takes this long from the project through the lock to the friend. Lock and pulse keep in step with it. */
+const ROUND = '4.5s';
 
 export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   const svg = useRef<SVGSVGElement>(null);
@@ -33,27 +34,19 @@ export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
         <line x1="0" x2="420" y1="300" y2="300"><animate attributeName="y1" values="300;420" dur="3s" repeatCount="indefinite"/><animate attributeName="y2" values="300;420" dur="3s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;0" dur="3s" repeatCount="indefinite"/></line>
       </g>
 
-      {/* stars */}
-      {[[40, 120, 0], [120, 108, 1.2], [300, 112, .6], [380, 140, 2], [62, 176, 1.6], [356, 196, .3], [256, 124, 2.4], [150, 146, .9]].map(([x, y, d]) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.6" fill="#e9d5ff"><animate attributeName="opacity" values=".15;1;.15" dur="3s" begin={`${d}s`} repeatCount="indefinite"/></circle>)}
+      {/* one star */}
+      <path d="M318 118 l3 9 l9 3 l-9 3 l-3 9 l-3 -9 l-9 -3 l9 -3 z" fill="#e9d5ff"><animate attributeName="opacity" values=".25;1;.25" dur="3.4s" repeatCount="indefinite"/></path>
 
       {/* data paths */}
       <use href="#sa-in" className="sa-path" />
       <use href="#sa-out" className="sa-path sa-path-out" />
 
-      {/* plain project chunks travel in… */}
-      {[0, .9, 1.8].map(begin => <g key={`in-${begin}`}>
-        <rect x="-6" y="-6" width="12" height="12" rx="3" fill="#7dd3fc" filter="url(#sa-glow)" opacity="0">
-          <animateMotion dur="2.7s" begin={`${begin}s`} repeatCount="indefinite" rotate="auto"><mpath href="#sa-in"/></animateMotion>
-          <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.15;.85;1" dur="2.7s" begin={`${begin}s`} repeatCount="indefinite"/>
-        </rect>
-      </g>)}
-      {/* …and leave as encrypted bytes */}
-      {[0, .9, 1.8].map(begin => <g key={`out-${begin}`} opacity="0">
-        <animateMotion dur="2.7s" begin={`${begin + 1.35}s`} repeatCount="indefinite"><mpath href="#sa-out"/></animateMotion>
-        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.15;.85;1" dur="2.7s" begin={`${begin + 1.35}s`} repeatCount="indefinite"/>
-        <circle r="5" fill="#c4b5fd" filter="url(#sa-glow)"/>
-        <text y="-10" textAnchor="middle" className="sa-hex">{HEX[(begin * 10) % HEX.length]}</text>
-      </g>)}
+      {/* one ball: plain on the way in, encrypted on the way out. The lock covers it in between. */}
+      <circle r="6" fill="#7dd3fc" filter="url(#sa-glow)" opacity="0">
+        <animateMotion dur={ROUND} repeatCount="indefinite" path="M92 262 C 130 262, 150 214, 196 212 L 224 212 C 270 214, 290 262, 328 262"/>
+        <animate attributeName="fill" values="#7dd3fc;#7dd3fc;#c4b5fd;#c4b5fd" keyTimes="0;.46;.54;1" dur={ROUND} repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.08;.92;1" dur={ROUND} repeatCount="indefinite"/>
+      </circle>
 
       {/* source: your project */}
       <g className="sa-node sa-float-a">
@@ -79,12 +72,11 @@ export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
 
       {/* the vault: encryption happens here, in your browser */}
       <circle cx="210" cy="204" r="92" fill="url(#sa-core)" filter="url(#sa-soft)">
-        <animate attributeName="r" values="80;98;80" dur="2.7s" repeatCount="indefinite"/>
+        <animate attributeName="r" values="80;80;98;80" keyTimes="0;.36;.5;1" dur={ROUND} repeatCount="indefinite"/>
       </circle>
       <g>
         <animateTransform attributeName="transform" type="rotate" from="0 210 204" to="360 210 204" dur="9s" repeatCount="indefinite"/>
         <circle cx="210" cy="204" r="70" fill="none" stroke="url(#sa-ring)" strokeWidth="2.5"/>
-        <circle cx="280" cy="204" r="4" fill="#f5f3ff" filter="url(#sa-glow)"/>
       </g>
       <g>
         <animateTransform attributeName="transform" type="rotate" from="360 210 204" to="0 210 204" dur="16s" repeatCount="indefinite"/>
@@ -100,17 +92,17 @@ export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
         <rect x="166.5" y="160.5" width="87" height="87" rx="25.5" fill="none" stroke="#fff" strokeOpacity=".35"/>
         {/* padlock */}
         <path d="M196 200 v-8 a14 14 0 0 1 28 0 v8" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round">
-          <animate attributeName="d" values="M196 200 v-8 a14 14 0 0 1 28 0 v8;M196 200 v-8 a14 14 0 0 1 28 0 v8;M196 194 v-8 a14 14 0 0 1 28 0 v-2;M196 200 v-8 a14 14 0 0 1 28 0 v8" keyTimes="0;.55;.7;1" dur="2.7s" repeatCount="indefinite"/>
+          <animate attributeName="d" values="M196 200 v-8 a14 14 0 0 1 28 0 v8;M196 200 v-8 a14 14 0 0 1 28 0 v8;M196 194 v-8 a14 14 0 0 1 28 0 v-2;M196 200 v-8 a14 14 0 0 1 28 0 v8;M196 200 v-8 a14 14 0 0 1 28 0 v8" keyTimes="0;.28;.38;.56;1" dur={ROUND} repeatCount="indefinite"/>
         </path>
         <rect x="189" y="199" width="42" height="32" rx="9" fill="#fff"/>
         <circle cx="210" cy="212" r="4.5" fill="#7c3aed"/>
         <rect x="208" y="214" width="4" height="9" rx="2" fill="#7c3aed"/>
       </g>
-      {/* pulse each time a chunk is encrypted */}
+      {/* one pulse when the ball is encrypted */}
       <rect x="166" y="160" width="88" height="88" rx="26" fill="none" stroke="#c4b5fd" strokeWidth="2">
-        <animate attributeName="opacity" values=".9;0" dur=".9s" repeatCount="indefinite"/>
-        <animateTransform attributeName="transform" type="translate" values="0 0;-73.5 -71.4" dur=".9s" additive="sum" repeatCount="indefinite"/>
-        <animateTransform attributeName="transform" type="scale" values="1;1.35" dur=".9s" additive="sum" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0;0;.9;0;0" keyTimes="0;.49;.5;.7;1" dur={ROUND} repeatCount="indefinite"/>
+        <animateTransform attributeName="transform" type="translate" values="0 0;0 0;-73.5 -71.4;-73.5 -71.4" keyTimes="0;.5;.7;1" dur={ROUND} additive="sum" repeatCount="indefinite"/>
+        <animateTransform attributeName="transform" type="scale" values="1;1;1.35;1.35" keyTimes="0;.5;.7;1" dur={ROUND} additive="sum" repeatCount="indefinite"/>
       </rect>
       <g className="sa-tag"><rect x="133" y="298" width="154" height="22" rx="11" fill="#1e1442" stroke="#a78bfa" strokeOpacity=".45"/><text x="210" y="313" textAnchor="middle" className="sa-label sa-label-strong">{t('Encrypted on your device')}</text></g>
     </svg>
