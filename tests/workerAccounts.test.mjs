@@ -626,3 +626,30 @@ test('a person can delete their account and everything about it', async () => {
   const row = await SHARES_DB.prepare("SELECT email, name, blocked FROM accounts WHERE owner_id = 'firebase:blocked-leaver'").bind().first();
   assert.deepEqual([row.email, row.name, row.blocked], ['', '', 1]);
 });
+
+test('limits count an account by itself and a connection by its network', async () => {
+  const guest = await token({ sub: 'same-school', email: 'same-school@example.com' });
+  const from = (ip, credential) => worker.fetch(new Request(SHARES + '/me', { headers: { Authorization: 'Bearer ' + credential, 'CF-Connecting-IP': ip } }), env);
+  // Many wrong sign-ins from one network …
+  const codes = [];
+  for (let i = 0; i < 245; i++) codes.push((await from(`2001:db8:1:2::${(i + 1).toString(16)}`, 'a.b.c')).status);
+  assert.deepEqual([codes[0], codes[239], codes[244]], [401, 401, 429]);
+  // … block wrong ones from there, but not the people in it, and not other networks.
+  assert.equal((await from('2001:db8:1:2:ffff::1', 'a.b.c')).status, 429);
+  assert.equal((await from('2001:db8:1:2::9', guest)).status, 200);
+  assert.equal((await from('2001:db8:1:3::9', 'a.b.c')).status, 401);
+  // What is stored cannot be found again without the secret.
+  const plain = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('2001:db8:1:2')))).map(value => value.toString(16).padStart(2, '0')).join('');
+  assert.equal((await SHARES_DB.prepare('SELECT COUNT(*) as n FROM auth_windows WHERE client_hash = ?').bind(plain).first()).n, 0);
+});
+
+test('a made-up key number does not make the Worker ask Google again and again', async () => {
+  const before = globalThis.fetch;
+  let asked = 0;
+  globalThis.fetch = async (input, init) => { if (String(input).includes('securetoken@system')) asked++; return before(input, init); };
+  const forged = (await token({ sub: 'forged', email: 'forged@example.com' })).split('.');
+  forged[0] = b64({ alg: 'RS256', kid: 'made-up' });
+  for (let i = 0; i < 20; i++) assert.equal((await call('/me', forged.join('.'))).status, 401);
+  globalThis.fetch = before;
+  assert.ok(asked <= 5, String(asked));
+});

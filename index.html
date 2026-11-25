@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Projects run in frames. A frame may only show LocalDeck itself and the sign-in, so a project cannot open another website in it and send data there. -->
+    <meta http-equiv="Content-Security-Policy" content="frame-src 'self' blob: https://%VITE_FIREBASE_PROJECT_ID%.firebaseapp.com https://accounts.google.com" />
     <meta name="theme-color" content="#0B0C12" />
     <meta name="description" content="A private, offline-first library for learning, games, tools, and HTML projects." />
     <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />

@@ -15,3 +15,23 @@ Report a security issue privately to the repository owner rather than publishing
 - AI Studio's structural inspection always parses HTML locally without executing scripts. Its optional browser-native AI uses only a bounded summary with script/style/template/SVG and embedded browsing contexts removed; there is no cloud AI fallback or API key. Treat model output as advisory. The native model is created only after the user clicks the scan button and may download browser-managed model data to the device.
 - The PDF-to-project helper does not read or upload the selected PDF. It inserts only the filename into a prompt for the user to copy to an external AI chat. That AI provider receives the PDF only if the user attaches it there; provider availability, limits, and costs are outside LOCALDECK.
 - Firebase's Web API key is public project configuration and is used only for Firebase Authentication endpoints. It provides no Worker or Google Cloud privileges. Restrict it to Firebase-related APIs and never expose service-account credentials or unrelated private API keys.
+
+## Review of 25 November 2026
+
+Done with the checklists of Cloudflare's [security-audit skill](https://github.com/cloudflare/security-audit-skill) (commit `c1c8a8c`, guidance mode, no independent second reviewer): browser, sign-in, HTTP, data isolation, availability, cloud settings, supply chain, AI. Only source code and local tests, nothing was tried against the live service.
+
+| Finding | Fixed by |
+|---|---|
+| A project could open another website in its own frame and take data along, although projects have no internet | `frame-src` in `index.html` |
+| Another website could show LocalDeck in a frame and place its own buttons over it | LocalDeck does not start in a frame |
+| Stored codes of IP addresses could be found again by trying all addresses | HMAC with a secret that is not in the database, new every day |
+| One IPv6 connection has many addresses and got around the limits | the limit counts the network (/64) |
+| Many people behind one address (a school) shared one limit for valid sign-ins | valid sign-ins count per account |
+| A made-up key number made the Worker ask Google for keys every time | at most five times a minute |
+| Eight unfinished uploads stopped uploads for everyone | 30, still three per account |
+
+Checked and fine: token checks (signature, project, lifetime, confirmed address), admin rights, SQL parameters, ownership of links, projects and AI connections, encryption, the service worker, output of project and AI texts, packages (`npm audit`), rights of the GitHub workflow.
+
+Not visible in the code, please check once: in Google Cloud the Firebase web key should be limited to the address of the site, and Cloudflare, Google and GitHub should have two-step sign-in.
+
+The sign-in is kept in the browser and renewed every hour (`src/services/session.ts`). "Stay signed in" can be turned off on the sign-in page, then it ends with the tab. Other GitHub Pages of the same account share the browser storage, because they have the same address. A domain of its own would separate them.

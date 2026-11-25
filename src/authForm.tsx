@@ -4,6 +4,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, Clock3, Eye, EyeOff, KeyRound, LoaderCircle, Mail, ShieldCheck, Sparkles, UserRound, WandSparkles } from 'lucide-react';
 import { firebaseAuthRequest } from './services/firebaseAuth';
+import { setStaySignedIn, staysSignedIn, type Credential } from './services/session';
 import { sendVerificationMail } from './services/verificationMail';
 import { rovingKeys } from './a11y';
 import { useProfile } from './profile';
@@ -18,7 +19,7 @@ export const EMAIL_FOR_LINK_KEY = 'localdeck-email-for-signin';
 export function LoginExperience({ apiKey, social, onCredential, error, backHref }: {
   apiKey: string;
   social: (mode: AuthMode) => React.ReactNode;
-  onCredential: (credential: string) => Promise<void>;
+  onCredential: (credential: Credential) => Promise<void>;
   error?: string;
   backHref: string;
 }) {
@@ -31,6 +32,7 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
   const [busy, setBusy] = useState<'' | 'submit' | 'link' | 'reset'>('');
   const [message, setMessage] = useState('');
   const [formError, setFormError] = useState('');
+  const [stay, setStay] = useState(staysSignedIn);
   const rulesMet = PASSWORD_RULES.filter(rule => rule.test(password)).length;
   // Measure the active form so the card height glides instead of snapping when switching modes.
   const inner = useRef<HTMLDivElement>(null);
@@ -69,7 +71,7 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
           throw new Error(t('Confirm your email first. We just sent you a fresh link.'));
         }
         setPassword('');
-        await onCredential(result.idToken);
+        await onCredential({ token: result.idToken, refresh: result.refreshToken });
       }
     } catch (reason) { setFormError(reason instanceof Error ? tm(reason.message) : t('That did not work. Please try again.')); }
     finally { setBusy(''); }
@@ -121,6 +123,7 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
           <h2>{signup ? <>{t('Create your')}<br/><em>{t('free account.')}</em></> : <>{t('Welcome')}<br/><em>{t('back to LocalDeck.')}</em></>}</h2>
           <p>{signup ? t('Only needed for sharing links. Your library itself never leaves this device.') : t('Sign in to create and manage encrypted links. People you send a link to don’t need an account.')}</p>
           {signup && <ul className="auth-perks"><li><Check size={14}/> {t('Encrypted share links')}</li><li><Check size={14}/> {t('Free storage included')}</li><li><Check size={14}/> {t('No ads, no tracking')}</li></ul>}
+          <label className="auth-stay"><input type="checkbox" checked={stay} onChange={event => { setStay(event.target.checked); setStaySignedIn(event.target.checked); }}/><span>{t('Stay signed in on this device')}<small>{t('Turn this off on a shared computer.')}</small></span></label>
           {social(mode)}
           <div className="auth-divider"><span>{signup ? t('or sign up with email') : t('or with email')}</span></div>
           <form onSubmit={event => void submit(event)} className="auth-form">

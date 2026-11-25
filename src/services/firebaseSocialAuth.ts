@@ -18,7 +18,7 @@ import { requestBrandedMail } from './verificationMail';
 
 export type FirebaseSocialProvider = 'google' | 'github' | 'facebook';
 export type FirebaseSocialConfig = { apiKey: string; projectId: string; appId: string };
-export type SocialSignIn = { token?: string; verificationSent?: boolean };
+export type SocialSignIn = { token?: string; refresh?: string; verificationSent?: boolean };
 
 const APP_NAME = 'localdeck-sharing-auth';
 let prepared: Promise<Auth> | null = null;
@@ -58,7 +58,7 @@ async function finishSignIn({ user }: UserCredential): Promise<SocialSignIn> {
     if (!await requestBrandedMail(await user.getIdToken())) await sendEmailVerification(user, { url: `${window.location.origin}${import.meta.env.BASE_URL}#/sharing` });
     return { verificationSent: true };
   }
-  return { token: await user.getIdToken(true) };
+  return { token: await user.getIdToken(true), refresh: user.refreshToken };
 }
 
 /** Must run directly inside the click: nothing may be awaited before the window opens.
@@ -68,3 +68,6 @@ export function openSocialSignIn(auth: Auth, name: FirebaseSocialProvider): Prom
   auth.languageCode = language();
   return signInWithPopup(auth, createProvider(name)).then(finishSignIn);
 }
+
+/** Firebase keeps its own copy of the sign-in until the tab is closed. */
+export async function forgetSocialSignIn(): Promise<void> { await (await prepared)?.signOut(); }

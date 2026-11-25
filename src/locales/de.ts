@@ -1235,7 +1235,6 @@ const messages: Record<string, string> = {
   "What is stored on your device": "Was auf deinem Gerät gespeichert wird",
   "Your projects, collections, history and the keys of your links (browser database).": "Deine Projekte, Sammlungen, dein Verlauf und die Schlüssel deiner Links (Browser-Datenbank).",
   "Settings such as theme, language and view (browser storage).": "Einstellungen wie Design, Sprache und Ansicht (Browser-Speicher).",
-  "Your sign-in, until you close the tab (session storage).": "Deine Anmeldung, bis du den Tab schließt (Sitzungsspeicher).",
   "A copy of the app for offline use, and the model of the local AI if you set it up (browser cache).": "Eine Kopie der App für offline und das Modell der lokalen KI, falls du sie einrichtest (Browser-Cache).",
   "You can delete all of it in your browser under “Site data”. The model can also be deleted in Settings.": "Du kannst alles in deinem Browser unter „Websitedaten“ löschen. Das Modell geht auch in den Einstellungen.",
   "When you open the website": "Wenn du die Website öffnest",
@@ -1262,6 +1261,12 @@ const messages: Record<string, string> = {
   "If you are under 16, ask a parent before you create an account.": "Wenn du unter 16 bist, frag deine Eltern, bevor du ein Konto anlegst.",
   "The account could not be deleted completely. Try again.": "Das Konto konnte nicht ganz gelöscht werden. Versuch es noch einmal.",
   "The sharing service is not reachable. Try again.": "Der Teilen-Dienst ist nicht erreichbar. Versuch es noch einmal.",
+  "Stay signed in on this device": "Auf diesem Gerät angemeldet bleiben",
+  "Turn this off on a shared computer.": "Schalte das auf einem gemeinsamen Computer aus.",
+  "Your sign-in has ended. Please sign in again.": "Deine Anmeldung ist beendet. Melde dich bitte neu an.",
+  "Your sign-in, until you sign out (browser storage). Without “Stay signed in” only until you close the tab.": "Deine Anmeldung, bis du dich abmeldest (Browser-Speicher). Ohne „Angemeldet bleiben“ nur, bis du den Tab schließt.",
+  "LocalDeck does not run inside other websites, to protect your account.": "LocalDeck läuft zum Schutz deines Kontos nicht in anderen Websites.",
+  "Open LocalDeck": "LocalDeck öffnen",
 };
 
 export default messages;

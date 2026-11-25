@@ -1,5 +1,6 @@
 /* Settings: connect an AI over MCP, so it can create and update projects and hand over links. */
 import React, { useCallback, useEffect, useState } from 'react';
+import { authFetch } from './services/session';
 import { Bot, LoaderCircle, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { plural, t } from './i18n';
 import type { Limits } from './services/shareService';
@@ -9,6 +10,7 @@ import { friendlyDate } from './shared';
 type Connection = { id: string; name: string; createdAt: number; lastUsed: number | null; calls: number; projects: number };
 type Data = { enabled: boolean; limits: Limits & { aiPerDay?: number; aiDays?: number }; connections: Connection[] };
 
+/** `token`: the account, null when nobody is signed in. */
 export function AiConnect({ api, token, notify }: { api: string; token: string | null; notify: (message: string, error?: boolean) => void }) {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState('');
@@ -18,7 +20,7 @@ export function AiConnect({ api, token, notify }: { api: string; token: string |
 
   const call = useCallback(async (path = '', method = 'GET', body?: unknown): Promise<Response> => {
     let response: Response;
-    try { response = await fetch(`${api}/api/v1/shares/ai${path}`, { method, headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body) }); }
+    try { response = await authFetch(`${api}/api/v1/shares/ai${path}`, { method, headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body) }); }
     catch { throw new Error(t('The sharing service did not answer.')); }
     if (response.ok) return response;
     const { error: code } = await response.json().catch(() => ({})) as { error?: string };

@@ -3,6 +3,7 @@ import { t, tm } from './i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import type { Auth } from '@firebase/auth';
+import type { Credential } from './services/session';
 import { openSocialSignIn, prepareSocialSignIn, type FirebaseSocialConfig, type FirebaseSocialProvider } from './services/firebaseSocialAuth';
 
 function GoogleLogo() {
@@ -28,7 +29,7 @@ function explain(error: unknown): string {
 
 export function FirebaseSocialButtons({ config, githubEnabled, facebookEnabled, onCredential, verb = 'continue', bare = false }: {
   config: FirebaseSocialConfig; githubEnabled: boolean; facebookEnabled: boolean;
-  onCredential: (credential: string) => Promise<void>; verb?: 'continue' | 'signup'; bare?: boolean;
+  onCredential: (credential: Credential) => Promise<void>; verb?: 'continue' | 'signup'; bare?: boolean;
 }) {
   const auth = useRef<Auth | null>(null);
   const [stage, setStage] = useState<'preparing' | 'ready' | 'failed'>('preparing');
@@ -58,7 +59,7 @@ export function FirebaseSocialButtons({ config, githubEnabled, facebookEnabled, 
       if (!latest()) return;
       setChecking(true);
       if (result.verificationSent) setMessage(t('Check your email and confirm the address. Then come back and choose the same sign-in option again.'));
-      else if (result.token) await onCredential(result.token);
+      else if (result.token) await onCredential({ token: result.token, refresh: result.refresh });
     }).catch(error => { if (latest()) setMessage(explain(error)); }).finally(() => { if (latest()) { setBusy(null); setChecking(false); } });
   };
 

@@ -62,7 +62,7 @@ export function AuthActionPage({ action }: { action: AuthAction }) {
   async function finishLink(address: string) {
     const result = await firebaseAuthRequest(action.apiKey, 'signInWithEmailLink', { email: address, oobCode: action.oobCode });
     if (!result.idToken) throw new Error('missing token');
-    try { localStorage.removeItem('localdeck-email-for-signin'); sessionStorage.setItem('localdeck-pending-credential', result.idToken); } catch { /* ignore */ }
+    try { localStorage.removeItem('localdeck-email-for-signin'); sessionStorage.setItem('localdeck-pending-credential', JSON.stringify({ token: result.idToken, refresh: result.refreshToken })); } catch { /* ignore */ }
     setEmail(address); setState('done');
     window.setTimeout(() => leave('login'), 900);
   }

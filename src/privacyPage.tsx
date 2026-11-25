@@ -24,7 +24,7 @@ export function PrivacyPage() {
     { title: t('What is stored on your device'), list: [
       t('Your projects, collections, history and the keys of your links (browser database).'),
       t('Settings such as theme, language and view (browser storage).'),
-      t('Your sign-in, until you close the tab (session storage).'),
+      t('Your sign-in, until you sign out (browser storage). Without “Stay signed in” only until you close the tab.'),
       t('A copy of the app for offline use, and the model of the local AI if you set it up (browser cache).'),
       t('You can delete all of it in your browser under “Site data”. The model can also be deleted in Settings.'),
     ] },

@@ -19,7 +19,8 @@ export const MAX_KV_BYTES = 900 * MIB;
 export const KV_USED = `SELECT COALESCE(SUM(shares.size_bytes * (CASE WHEN blob_index.store = ${KV_STORE} THEN 2 ELSE 1 END)), 0) as bytes FROM shares LEFT JOIN blob_index ON blob_index.id = shares.id WHERE shares.expires_at > ?1 AND (blob_index.store IS NULL OR blob_index.store = ${KV_STORE})`;
 const PENDING_MS = 15 * 60_000;
 const MAX_PENDING_PER_OWNER = 3;
-const MAX_PENDING = 8;
+/** Unfinished uploads of everyone. Enough that a few accounts cannot keep all others from uploading. */
+const MAX_PENDING = 30;
 
 export const DEFAULTS: Settings = {
   users: { linkMiB: 24, storageMiB: 100, perHour: 5, perDay: 15, days: 3, aiPerDay: 150, aiDays: 60 },

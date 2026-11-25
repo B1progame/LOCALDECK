@@ -23,11 +23,13 @@ interface Env extends MailEnv {
 type GoogleClaims = { sub: string; aud: string | string[]; azp?: string; iss: string; exp: number; iat: number; nbf?: number; email: string; email_verified: boolean; name?: string; picture?: string };
 type GoogleJwk = JsonWebKey & { kid: string };
 type FirebaseClaims = { sub: string; aud: string; iss: string; exp: number; iat: number; auth_time?: number; email?: string; email_verified?: boolean; name?: string; picture?: string; firebase?: { sign_in_provider?: string } };
-const jsonHeaders = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' };
+const jsonHeaders = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
 const idPattern = /^[a-f0-9-]{36}$/i;
 const encoder = new TextEncoder();
 const MAX_IP_READS_PER_HOUR = 200;
 const MAX_IP_AUTH_PER_HOUR = 240;
+/** Requests of one signed-in account. Counted per account, so a school behind one address is not locked out. */
+const MAX_OWNER_PER_HOUR = 1200;
 const MAX_IP_MAILS_PER_HOUR = 8;
 const MAX_MAILS_PER_DAY = 90;
 const MAIL_WAIT_MS = 120_000;
@@ -81,18 +83,43 @@ async function readBounded(request: Request, maxBytes: number): Promise<ArrayBuf
   return output.buffer;
 }
 
-async function clientHash(request: Request, scope = ''): Promise<string> {
+/** One line gives a person many IPv6 addresses, so only the part of the connection counts. */
+function clientAddress(request: Request): string {
   const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
-  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(scope + ip)))).map(value => value.toString(16).padStart(2, '0')).join('');
+  if (!ip.includes(':') || ip.includes('.')) return ip;
+  const [head = '', tail] = ip.split('::');
+  const front = head.split(':').filter(Boolean), back = tail?.split(':').filter(Boolean) ?? [];
+  const groups = tail === undefined ? front : [...front, ...Array<string>(Math.max(0, 8 - front.length - back.length)).fill('0'), ...back];
+  return groups.slice(0, 4).map(group => parseInt(group, 16).toString(16)).join(':');
 }
 
-async function rateLimitIp(env: Env, request: Request, table: 'auth_windows' | 'read_windows', limit: number, scope = ''): Promise<boolean> {
-  const hash = await clientHash(request, scope);
+/** A plain hash of an address can be found again by trying all addresses. With a secret key that is not in the
+    database, the stored code says nothing without the key. It changes every day. */
+async function clientHash(env: Env, text: string): Promise<string> {
+  const secret = `${env.FIREBASE_SERVICE_ACCOUNT ?? ''}|${env.MAIL_RELAY_SECRET ?? ''}|${env.ADMIN_EMAILS ?? ''}|${new Date().toISOString().slice(0, 10)}`;
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return Array.from(new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(text)))).map(value => value.toString(16).padStart(2, '0')).join('');
+}
+
+const rateLimitIp = (env: Env, request: Request, table: 'auth_windows' | 'read_windows', limit: number, scope = '') => rateLimit(env, table, scope + clientAddress(request), limit);
+
+async function rateLimit(env: Env, table: 'auth_windows' | 'read_windows', who: string, limit: number): Promise<boolean> {
+  const hash = await clientHash(env, who);
   const windowStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
   const column = table === 'auth_windows' ? 'attempts' : 'reads';
   await env.SHARES_DB.prepare(`INSERT INTO ${table} (client_hash, window_start, ${column}) VALUES (?, ?, 1) ON CONFLICT(client_hash, window_start) DO UPDATE SET ${column} = ${column} + 1`).bind(hash, windowStart).run();
   const row = await env.SHARES_DB.prepare(`SELECT ${column} as count FROM ${table} WHERE client_hash = ? AND window_start = ?`).bind(hash, windowStart).first<{ count: number }>();
   return (row?.count ?? 0) <= limit;
+}
+
+/** A made-up key number must not make the Worker ask Google again and again. */
+let keyChecks: number[] = [];
+function mayCheckKeys(): boolean {
+  const now = Date.now();
+  keyChecks = keyChecks.filter(time => time > now - 60_000);
+  if (keyChecks.length >= 5) return false;
+  keyChecks.push(now);
+  return true;
 }
 
 async function getGoogleKeys(fresh = false): Promise<GoogleJwk[]> {
@@ -120,7 +147,7 @@ async function verifyGoogleCredential(token: string, env: Env): Promise<Owner | 
     const now = Math.floor(Date.now() / 1000);
     if (!Number.isFinite(claims.exp) || claims.exp <= now || !Number.isFinite(claims.iat) || claims.iat > now + 300 || claims.iat < now - 7200 || (claims.nbf !== undefined && claims.nbf > now + 300)) return null;
     // Google replaces its keys regularly. Look again before refusing, so the first sign-in after a change works.
-    const jwk = (await getGoogleKeys()).find(key => key.kid === header.kid) ?? (await getGoogleKeys(true)).find(key => key.kid === header.kid);
+    const jwk = (await getGoogleKeys()).find(key => key.kid === header.kid) ?? (mayCheckKeys() ? (await getGoogleKeys(true)).find(key => key.kid === header.kid) : undefined);
     if (!jwk) return null;
     const publicKey = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
     const rawSignature = b64url(parts[2]);
@@ -162,7 +189,7 @@ async function verifyFirebaseToken(token: string, env: Env): Promise<(FirebaseCl
     if (claims.iss !== `https://securetoken.google.com/${projectId}` || claims.aud !== projectId) return null;
     const now = Math.floor(Date.now() / 1000);
     if (!Number.isFinite(claims.exp) || claims.exp <= now || !Number.isFinite(claims.iat) || claims.iat > now + 300 || claims.iat < now - 3600 || (claims.auth_time !== undefined && (!Number.isFinite(claims.auth_time) || claims.auth_time > now + 300))) return null;
-    const jwk = (await getFirebaseKeys()).find(key => key.kid === header.kid) ?? (await getFirebaseKeys(true)).find(key => key.kid === header.kid);
+    const jwk = (await getFirebaseKeys()).find(key => key.kid === header.kid) ?? (mayCheckKeys() ? (await getFirebaseKeys(true)).find(key => key.kid === header.kid) : undefined);
     if (!jwk) return null;
     const publicKey = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
     const rawSignature = b64url(parts[2]);
@@ -186,11 +213,15 @@ class RateLimited extends Error {}
 async function isAuthorized(request: Request, env: Env): Promise<Owner | null> {
   const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') ?? '';
   if (!token || token.length > 8192) return null;
-  if (!await rateLimitIp(env, request, 'auth_windows', MAX_IP_AUTH_PER_HOUR)) throw new RateLimited();
+  let owner: Owner | null = null;
   try {
     const claims = decodeJson<{ iss?: string }>(token.split('.')[1] ?? '');
-    return claims.iss === `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}` ? verifyFirebaseCredential(token, env) : verifyGoogleCredential(token, env);
-  } catch { return null; }
+    owner = await (claims.iss === `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}` ? verifyFirebaseCredential(token, env) : verifyGoogleCredential(token, env));
+  } catch { owner = null; }
+  // A valid sign-in counts for its account, a wrong one for the address it came from.
+  const allowed = owner ? await rateLimit(env, 'auth_windows', `owner:${owner.id}`, MAX_OWNER_PER_HOUR) : await rateLimitIp(env, request, 'auth_windows', MAX_IP_AUTH_PER_HOUR);
+  if (!allowed) throw new RateLimited();
+  return owner;
 }
 
 const SCHEMA_VERSION = '5';

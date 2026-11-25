@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Ban, ChevronDown, LoaderCircle, RefreshCw, RotateCcw, Save, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { language, plural, t } from './i18n';
+import { authFetch } from './services/session';
 import type { Limits as ShareLimits } from './services/shareService';
 import { EmptyState, PageHeading, bytes, friendlyDate, go } from './shared';
 
@@ -195,17 +196,18 @@ type Actions = { account: (account: Account, change: { blocked?: boolean; limits
 const TABS = ['overview', 'accounts', 'links', 'limits', 'log'] as const;
 type Tab = typeof TABS[number];
 
-export function AdminPage({ api, session, notify }: { api: string; session: { token: string; admin?: boolean } | null; notify: Notify }) {
+export function AdminPage({ api, session, notify }: { api: string; session: { email: string; token: string; admin?: boolean } | null; notify: Notify }) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>('overview');
-  const token = session?.admin ? session.token : '';
+  // The account, not the token: a renewed sign-in must not load everything again.
+  const token = session?.admin ? session.email : '';
   const loading = useRef(0);
 
   const call = useCallback(async (path: string, method = 'GET', body?: unknown): Promise<Response> => {
     let response: Response;
-    try { response = await fetch(`${api}/api/v1/shares${path}`, { method, headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body) }); }
+    try { response = await authFetch(`${api}/api/v1/shares${path}`, { method, headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body) }); }
     catch { throw new Error(t('The sharing service did not answer.')); }
     if (response.ok) return response;
     throw new Error(response.status === 401 || response.status === 403 ? t('This account is not an admin, or the sign-in expired.') : response.status === 429 ? t('Too many requests. Wait a little, then refresh.') : response.status === 404 ? t('The Worker does not know this yet. Deploy it once with “npx wrangler deploy”.') : t('That did not work. Please try again.'));

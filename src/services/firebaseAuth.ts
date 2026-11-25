@@ -1,5 +1,5 @@
 import { language } from '../i18n';
-type FirebaseAuthResponse = { idToken?: string; email?: string; displayName?: string; users?: Array<{ email?: string; emailVerified?: boolean; displayName?: string }>; error?: { message?: string } };
+type FirebaseAuthResponse = { idToken?: string; refreshToken?: string; email?: string; displayName?: string; users?: Array<{ email?: string; emailVerified?: boolean; displayName?: string }>; error?: { message?: string } };
 
 function messageFor(raw: string): string {
   // Firebase sends either a bare code or "CODE : details"; compare the code, keep the details for policy errors.
