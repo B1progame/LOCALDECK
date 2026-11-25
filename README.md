@@ -115,6 +115,8 @@ Put `index.html` at the root of a ZIP and add an optional `localdeck.json` next 
 
 More detail: [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [Sharing setup](docs/SHARING.md) · [Branded emails](docs/EMAIL_TEMPLATES.md) · [Design system](docs/DESIGN_SYSTEM.md) · [Deployment](docs/DEPLOYMENT.md)
 
+- No cookies and no tracking. What is stored and who is contacted is on the [privacy page](https://b1progame.github.io/LOCALDECK/#/privacy) ([details](docs/PRIVACY.md)).
+
 ## 🗂️ Where things live
 
 ```text

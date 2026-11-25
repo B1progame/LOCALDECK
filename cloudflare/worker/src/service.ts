@@ -308,4 +308,24 @@ export async function removeAccountShares(env: StoreEnv, admin: Owner, id: strin
   return rows.results.length;
 }
 
+/** A person deletes their account: links, AI connections and everything stored about them.
+    At most 6 links per call, so one request stays within the limits of the free plan. Returns how many are left.
+    An account that an admin blocked keeps its number and nothing else, so the block cannot be undone this way. */
+export async function deleteAccount(env: StoreEnv, owner: Owner): Promise<number> {
+  const db = env.SHARES_DB;
+  const rows = await db.prepare('SELECT id FROM shares WHERE owner_id = ? LIMIT 7').bind(owner.id).all<{ id: string }>();
+  for (const row of rows.results.slice(0, 6)) await removeShare(env, row.id, owner.id);
+  if (rows.results.length > 6) return (await db.prepare('SELECT COUNT(*) as left FROM shares WHERE owner_id = ?').bind(owner.id).first<{ left: number }>())?.left ?? 0;
+  await db.batch([
+    db.prepare('DELETE FROM ai_tokens WHERE owner_id = ?').bind(owner.id),
+    db.prepare('DELETE FROM upload_windows WHERE owner_id = ?').bind(owner.id),
+    db.prepare("DELETE FROM daily_upload_windows WHERE owner_id IN (?1, 'ai:' || ?1)").bind(owner.id),
+    db.prepare('DELETE FROM verification_mails WHERE owner_id = ?').bind(owner.id.replace(/^firebase:/, '')),
+    db.prepare("UPDATE admin_log SET target = 'deleted account' WHERE target IN (?, ?)").bind(owner.email, owner.id),
+    db.prepare('DELETE FROM accounts WHERE owner_id = ? AND blocked = 0').bind(owner.id),
+    db.prepare("UPDATE accounts SET email = '', name = '', provider = '', limits = NULL, sign_ins = 0, uploads = 0, bytes = 0, downloads = 0 WHERE owner_id = ? AND blocked = 1").bind(owner.id),
+  ]);
+  return 0;
+}
+
 export async function logShareRemoval(env: StoreEnv, admin: Owner, id: string): Promise<void> { await log(env, admin, 'delete_link', id); }

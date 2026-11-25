@@ -1,5 +1,5 @@
 import {
-  changeAccount, changeSettings, cleanup, countDownload, limitsFor, logShareRemoval, overview, partKey, partSize, pendingShare, readSettings,
+  changeAccount, changeSettings, cleanup, countDownload, deleteAccount, limitsFor, logShareRemoval, overview, partKey, partSize, pendingShare, readSettings,
   recordSignIn, removeAccountShares, removeShare, reserve, SCHEMA, SINGLE_BYTES, PART_BYTES, MIB, BOUNDS, storePart, usageFor, type Owner,
 } from './service.ts';
 import { createConnection, listConnections, removeConnection } from './ai.ts';
@@ -357,7 +357,6 @@ const worker = {
   async handle(request: Request, env: Env): Promise<Response> {
     const path = new URL(request.url).pathname;
     if (path === '/mcp' || path.startsWith('/mcp/')) {
-      // No CORS headers: AI services call this from their servers, and no cookie or browser login is involved.
       const token = path.startsWith('/mcp/') ? path.slice('/mcp/'.length).replace(/\/$/, '') : request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') ?? '';
       return handleMcp(request, env, token, email => isAdminEmail(email, env), () => rateLimitIp(env, request, 'auth_windows', MAX_IP_AUTH_PER_HOUR, 'mcp:'));
     }
@@ -382,6 +381,12 @@ const worker = {
       if (!owner) return json({ error: 'unauthorized' }, 401, headers);
       const settings = await readSettings(env);
       return json({ admin: owner.admin, ...await limitsFor(env, owner, settings), usage: await usageFor(env, owner), open: settings.service.open || owner.admin }, 200, headers);
+    }
+
+    if (parts[3] === 'me' && parts.length === 4 && request.method === 'DELETE') {
+      const owner = await isAuthorized(request, env);
+      if (!owner) return json({ error: 'unauthorized' }, 401, headers);
+      return json({ left: await deleteAccount(env, owner) }, 200, headers);
     }
 
     if (parts[3] === 'owner' && parts[4] === 'shares' && parts.length === 5 && request.method === 'GET') {

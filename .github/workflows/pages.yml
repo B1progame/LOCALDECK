@@ -29,6 +29,8 @@ jobs:
       - run: npm run build
         env:
           VITE_SHARE_API_BASE: ${{ vars.VITE_SHARE_API_BASE }}
+          VITE_OPERATOR_NAME: ${{ vars.VITE_OPERATOR_NAME }}
+          VITE_OPERATOR_CONTACT: ${{ vars.VITE_OPERATOR_CONTACT }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}

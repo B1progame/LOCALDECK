@@ -44,6 +44,8 @@ import { ITEMS_CHANGED, readProjectText, ruleCheck, scanImported } from './autoS
 import { asksFirst, setContentMarks, useContentMarks } from './contentMarks';
 import { ContentNote } from './contentNote';
 import { PhotoStudio } from './photoStudio';
+import { PrivacyPage } from './privacyPage';
+import { deleteAccount } from './services/deleteAccount';
 import { DEFAULT_ACCOUNT, getAccount, uploadShare, type ShareAccount } from './services/shareService';
 import { sendVerificationMail } from './services/verificationMail';
 import { rovingKeys, useBackgroundMotion, useConnection, useReturnFocus } from './a11y';
@@ -81,7 +83,7 @@ function routeFromHash(): AppRoute {
   const [path, query = ''] = raw.split('?');
   if (path.startsWith('shared/')) return { page: 'shared', sharedHash: raw };
   if (path.startsWith('item/')) { try { return { page: 'item', itemId: decodeURIComponent(path.slice(5)) }; } catch { return { page: 'library' }; } }
-  const valid = new Set<Page>(['home','library','favorites','recent','learning','games','collections','import','studio','storage','sharing','admin','login','settings']);
+  const valid = new Set<Page>(['home','library','favorites','recent','learning','games','collections','import','studio','storage','sharing','admin','login','settings','privacy']);
   return { page: valid.has(path as Page) ? path as Page : 'home', ...(path === 'collections' && new URLSearchParams(query).has('collection') ? { collectionId: new URLSearchParams(query).get('collection') ?? undefined } : {}) };
 }
 
@@ -227,7 +229,7 @@ function App() {
     return result;
   }, [items, currentPage, query, route.collectionId, sort]);
 
-  const pageTitle = currentPage === 'item' ? items.find(x => x.id === route.itemId)?.title ?? t('Project') : currentPage === 'collections' && route.collectionId ? collections.find(x => x.id === route.collectionId)?.name ?? t('Collection') : ({ home:t('Home'), library:t('All items'), favorites:t('Favorites'), recent:t('Recently opened'), learning:t('Learning hub'), games:t('Games & apps'), collections:t('Collections'), import:t('Import center'), studio:t('AI studio'), storage:t('Storage & backups'), sharing:t('Shared links'), admin:t('Admin'), login:t('Sign in'), settings:t('Settings'), shared:t('Shared project') } as Record<string,string>)[currentPage];
+  const pageTitle = currentPage === 'item' ? items.find(x => x.id === route.itemId)?.title ?? t('Project') : currentPage === 'collections' && route.collectionId ? collections.find(x => x.id === route.collectionId)?.name ?? t('Collection') : ({ home:t('Home'), library:t('All items'), favorites:t('Favorites'), recent:t('Recently opened'), learning:t('Learning hub'), games:t('Games & apps'), collections:t('Collections'), import:t('Import center'), studio:t('AI studio'), storage:t('Storage & backups'), sharing:t('Shared links'), admin:t('Admin'), login:t('Sign in'), settings:t('Settings'), privacy:t('Privacy'), shared:t('Shared project') } as Record<string,string>)[currentPage];
 
   const openProject = (item: LibraryItem) => { if (asksFirst(item.contentCheck) && !window.confirm(t('“{0}” may be for adults only (18+). Open it anyway?', item.title))) return; setPlaying(item); };
   useEffect(() => { void demosEnabled().then(async on => { setDemosOn(on); if (on) { await syncDemos(); await refresh(); } }).catch(() => undefined); }, [refresh]);
@@ -442,6 +444,7 @@ function App() {
           {currentPage === 'studio' && <StudioPage items={items} notify={notify} onAdded={refresh} />}
           {currentPage === 'storage' && <StoragePage items={items} storage={storage} integrity={integrity} busy={busy} backup={performBackup} restore={() => restoreInput.current?.click()} requestPersistent={requestPersistentStorage} checkIntegrity={checkIntegrity} repair={runRepair} />}
           {currentPage === 'sharing' && <SharingPage notify={notify} />}
+          {currentPage === 'privacy' && <PrivacyPage/>}
           {currentPage === 'admin' && <AdminPage api={(import.meta.env.VITE_SHARE_API_BASE??'').replace(/\/$/,'')} session={getShareSession()} notify={notify} />}
           {currentPage === 'login' && <SharingPage notify={notify} loginOnly />}
           {currentPage === 'settings' && <SettingsPage notify={notify} appearance={appearance} setAppearance={setAppearance} demosOn={demosOn} busy={busy} onDemos={value => void toggleDemos(value)} reducedMotion={reducedMotion} onMotion={async value => { setReducedMotion(value); await db.settings.put({ id:'reduced-motion', value, updatedAt:Date.now() }); }} />}
@@ -610,6 +613,7 @@ function SettingsPage({notify,appearance,setAppearance,demosOn,busy,onDemos,redu
       <div className="setting-row"><span><b>{t('Protected sharing accounts')}</b><small>{t('Google, verified email, GitHub, or Facebook sign-in can manage links. The Worker validates each signed identity token.')}</small></span><Cloud size={18} className="settings-secure"/></div>
     </div></section>
     <section className="settings-section"><h2>{t('About')}</h2><div className="settings-list">
+      <a className="setting-row setting-link" href="#/privacy"><span><b>{t('Privacy')}</b><small>{t('What LocalDeck stores, where, and whom it contacts.')}</small></span><ShieldCheck size={18}/><ArrowRight size={15}/></a>
       <a className="setting-row setting-link" href="https://github.com/B1progame/LOCALDECK" target="_blank" rel="noopener noreferrer"><span><b>{t('LocalDeck on GitHub')}</b><small>{t('Browse the source code and follow project updates.')}</small></span><Code2 size={18}/><ArrowRight size={15}/></a>
     </div></section>
   </>;
@@ -681,6 +685,13 @@ function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boo
     try{const response=await fetch(`${api}/api/v1/shares/${encodeURIComponent(id)}`,{method:'DELETE',headers:{Authorization:`Bearer ${session.token}`}});if(!response.ok)throw new Error(response.status===401?t('Your Google sign-in expired. Sign in again.'):t('Could not delete this link.'));setShares(list=>list.filter(share=>share.id!==id));void forgetShare(id).catch(()=>undefined);notify(t('Share link deleted.'));}
     catch(err){setError(safeError(err));}
   };
+  const removeAccount=async()=>{
+    if(!session||!window.confirm(t('Delete your account {0}? All your links stop working at once and your AI connections end. This cannot be undone. Projects in this browser stay.',session.email)))return;
+    setLoading(true);setError('');
+    try{const signedOut=await deleteAccount(api,session.token,firebaseApiKey);signOut();notify(signedOut?t('Your account and everything stored about it were deleted.'):t('Your links and data were deleted. To remove the sign-in too, sign in once more and delete the account again.'));}
+    catch(err){setError(safeError(err));}
+    finally{setLoading(false);}
+  };
   const signOut=()=>{sessionStorage.removeItem(SHARE_SESSION_KEY);setSession(null);setShares([]);setLoaded(false);setError('');notify(t('Signed out of sharing.'));};
   const loginCard=<section className={`share-login-card beam ${loginOnly?'share-login-card-full':''}`}>
     <div className="share-login-art"><ShareArt/></div>
@@ -701,7 +712,7 @@ function SharingPage({notify,loginOnly=false}:{notify:(message:string,error?:boo
   if(loginOnly&&firebaseConfigured&&api)return <div className="login-page-wrap"><a className="login-brand" href="#/home"><img src={`${base}icon-192.png`} alt=""/> LocalDeck</a><LanguagePicker/><LoginExperience apiKey={firebaseApiKey} backHref="#/sharing" error={error} onCredential={credential=>signIn(credential,'firebase')} social={mode=><FirebaseSocialButtons bare verb={mode==='signup'?'signup':'continue'} config={{apiKey:firebaseApiKey,projectId:firebaseProjectId,appId:firebaseAppId}} githubEnabled={firebaseGithubEnabled} facebookEnabled={firebaseFacebookEnabled} onCredential={credential=>signIn(credential,'firebase')}/>}/></div>;
   if(loginOnly)return <div className="login-page-wrap"><a className="login-brand" href="#/home"><img src={`${base}icon-192.png`} alt=""/> LocalDeck</a>{loginCard}</div>;
   return <><PageHeading eyebrow={t('Private sharing')} title={t('Shared links')} description={t('Sign in to create and manage your encrypted links. Anyone with a link can open it without an account.')}/>
-    {session&&<AccountProfileOffer account={session} notify={notify}/>}{!session?loginCard:<section className="share-manager panel"><div className="share-manager-heading"><span className="share-manager-icon"><Cloud size={19}/></span><div><h2>{t('Your encrypted links')}</h2><p>{session.admin&&<span className="admin-badge"><ShieldCheck size={12}/> {t('Admin')}</span>}{t('Signed in as {0}. Link data is encrypted before upload.', session.email)}</p></div><div className="share-session-actions"><button className="button" disabled={loading} onClick={()=>void load(session)}>{loading?<LoaderCircle size={15} className="spin"/>:<Activity size={15}/>} {t('Refresh')}</button><button className="button subtle" onClick={signOut}>{t('Sign out')}</button></div></div><div className="share-quota-note"><ShieldCheck size={16}/><span>{t('Your limits: {0} MiB storage · {1} MiB per link · {2} uploads per hour, {3} per day · links stay online for {4} days.', account.limits.storageMiB, account.limits.linkMiB, account.limits.perHour, account.limits.perDay, account.limits.days)}</span></div>{error&&<p className="dialog-error" role="alert">{error}</p>}{loaded&&<ShareList shares={shares} onDelete={id=>void remove(id)}/>}{!loaded&&!loading&&<p className="share-setup-hint">{t('Your share list will load after sign-in. You can sign out at any time.')}</p>}</section>}
+    {session&&<AccountProfileOffer account={session} notify={notify}/>}{!session?loginCard:<section className="share-manager panel"><div className="share-manager-heading"><span className="share-manager-icon"><Cloud size={19}/></span><div><h2>{t('Your encrypted links')}</h2><p>{session.admin&&<span className="admin-badge"><ShieldCheck size={12}/> {t('Admin')}</span>}{t('Signed in as {0}. Link data is encrypted before upload.', session.email)}</p></div><div className="share-session-actions"><button className="button" disabled={loading} onClick={()=>void load(session)}>{loading?<LoaderCircle size={15} className="spin"/>:<Activity size={15}/>} {t('Refresh')}</button><button className="button subtle" onClick={signOut}>{t('Sign out')}</button><button className="button danger-button" disabled={loading} onClick={()=>void removeAccount()}>{t('Delete account')}</button></div></div><div className="share-quota-note"><ShieldCheck size={16}/><span>{t('Your limits: {0} MiB storage · {1} MiB per link · {2} uploads per hour, {3} per day · links stay online for {4} days.', account.limits.storageMiB, account.limits.linkMiB, account.limits.perHour, account.limits.perDay, account.limits.days)}</span></div>{error&&<p className="dialog-error" role="alert">{error}</p>}{loaded&&<ShareList shares={shares} onDelete={id=>void remove(id)}/>}{!loaded&&!loading&&<p className="share-setup-hint">{t('Your share list will load after sign-in. You can sign out at any time.')}</p>}</section>}
     {session?.admin&&<a className="panel admin-link" href="#/admin"><span className="share-manager-icon"><ShieldCheck size={19}/></span><span><b>{t('Admin page')}</b><small>{t('Statistics, limits, accounts and all links')}</small></span><ArrowRight size={17}/></a>}
   </>;
 }

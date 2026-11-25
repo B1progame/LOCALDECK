@@ -391,7 +391,7 @@ test('wrong input is explained to the AI', async () => {
   assert.match((await tool(url, 'update_project', { project_id: id, edits: [{ path: 'index.html', find: 'aa', replace: 'c' }] })).text, /2 times/);
   assert.match((await tool(url, 'update_project', { project_id: id, edits: [{ path: 'index.html', find: 'zz', replace: 'c' }] })).text, /does not appear/);
   assert.match((await tool(url, 'update_project', { project_id: id, remove: ['index.html'] })).text, /cannot be removed/);
-  assert.equal((await tool(url, 'nonsense')).isError, true);
+  assert.equal((await rpc(url, 'tools/call', { name: 'nonsense' })).body.error.code, -32602);
 });
 
 test('limits, the admin switch and blocking apply to AI connections', async () => {
@@ -551,4 +551,78 @@ test('problems in a project are named so the AI can fix them', async () => {
   const fixed = (await tool(url, 'update_project', { project_id: id, files: [{ path: 'index.html', content: goodPage('<a href="https://example.com">ok</a><script src="app.js"></script>') }, { path: 'app.js', content: 'let state = {};' }, { path: 'cover.svg', content: '<svg xmlns="http://www.w3.org/2000/svg"/>' }] })).text;
   assert.ok(!fixed.includes('Problems'), fixed);
   assert.match((await tool(url, 'check_project', { project_id: id })).text, /No problems/);
+});
+
+const post = (url, body, headers = {}) => worker.fetch(new Request(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) }), env);
+
+test('MCP works for clients in a browser and answers in JSON-RPC when something is wrong', async () => {
+  const guest = await token({ sub: 'mcp-web', email: 'mcp-web@example.com' });
+  const { url } = await newConnection(guest);
+  const check = await worker.fetch(new Request(url, { method: 'OPTIONS', headers: { Origin: 'https://inspector.example', 'Access-Control-Request-Method': 'POST' } }), env);
+  assert.deepEqual([check.status, check.headers.get('access-control-allow-origin')], [204, '*']);
+  assert.match(check.headers.get('access-control-allow-headers'), /mcp-protocol-version/);
+  const ping = await post(url, { jsonrpc: '2.0', id: 1, method: 'ping' }, { Origin: 'https://inspector.example' });
+  assert.deepEqual([ping.status, ping.headers.get('access-control-allow-origin'), ping.headers.get('access-control-allow-credentials')], [200, '*', null]);
+  const wrong = await post('https://share.example/mcp/ld_' + 'x'.repeat(43), { jsonrpc: '2.0', id: 1, method: 'ping' });
+  assert.deepEqual([wrong.status, wrong.headers.get('www-authenticate'), (await wrong.json()).error.code], [401, 'Bearer realm="LocalDeck"', -32001]);
+  for (const body of ['{', 'null', '1', '"x"', JSON.stringify({ jsonrpc: '1.0', id: 1, method: 'ping' }), JSON.stringify({ jsonrpc: '2.0', id: {}, method: 'ping' }), JSON.stringify({ jsonrpc: '2.0', id: 1 }), '[]']) { const answer = await post(url, body); assert.equal(answer.status, 400, body); assert.ok((await answer.json()).error.code, body); }
+  assert.equal((await post(url, { jsonrpc: '2.0', id: 7, result: {} })).status, 202);
+  const unknown = await (await post(url, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'nonsense' } })).json();
+  assert.equal(unknown.error.code, -32602);
+  // The announced length is not trusted.
+  const lying = await worker.fetch(new Request(url, { method: 'POST', body: new ReadableStream({ start(controller) { for (let i = 0; i < 8; i++) controller.enqueue(new Uint8Array(1024 * 1024).fill(32)); controller.close(); } }), duplex: 'half' }), env);
+  assert.equal(lying.status, 413);
+  const broken = { ...env, SHARES_DB: { ...SHARES_DB, prepare: sql => { if (/ai_tokens/.test(sql)) throw new Error('D1_ERROR'); return SHARES_DB.prepare(sql); } } };
+  const down = await worker.fetch(new Request(url, { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'ping' }) }), broken);
+  assert.deepEqual([down.status, (await down.json()).error.code], [503, -32603]);
+});
+
+test('several messages at once are answered like one by one', async () => {
+  const guest = await token({ sub: 'mcp-batch', email: 'mcp-batch@example.com' });
+  const { url } = await newConnection(guest);
+  const answer = await post(url, [{ jsonrpc: '2.0', id: 1, method: 'ping' }, { jsonrpc: '2.0', method: 'notifications/initialized' }, { jsonrpc: '2.0', id: 'b', method: 'tools/list' }, { jsonrpc: '2.0', id: 3, method: 'no/such' }]);
+  assert.deepEqual((await answer.json()).map(entry => [entry.id, Boolean(entry.result), entry.error?.code]), [[1, true, undefined], ['b', true, undefined], [3, false, -32601]]);
+  assert.equal((await post(url, [{ jsonrpc: '2.0', method: 'notifications/initialized' }])).status, 202);
+  assert.equal((await post(url, Array.from({ length: 11 }, (_, id) => ({ jsonrpc: '2.0', id, method: 'ping' })))).status, 400);
+});
+
+test('small mistakes of an AI are understood', async () => {
+  const guest = await token({ sub: 'mcp-kind', email: 'mcp-kind@example.com' });
+  const { url } = await newConnection(guest);
+  const raw = await (await post(url, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_project', arguments: { title: 'Kind', type: 'quiz', subject: 'Bio', tags: ['#Biologie', ' # Zelle '], files: { './index.html': 'one\r\ntwo\r\none', '/cover.svg': '<svg/>' } } } })).json();
+  const data = raw.result.structuredContent;
+  assert.deepEqual([raw.result.isError, data.title, data.version, data.link.includes('#/shared/')], [false, 'Kind', 1, true]);
+  const read = JSON.parse((await tool(url, 'read_project', { project_id: data.project_id })).text);
+  assert.deepEqual([read.type, read.subject, read.tags, read.files.map(file => file.path).sort()], ['quiz', 'Bio', ['Biologie', 'Zelle'], ['cover.svg', 'index.html', 'localdeck.json']]);
+  assert.equal((await tool(url, 'update_project', { project_id: data.project_id, edits: [{ path: './index.html', find: 'one\ntwo', replace: 'eins\nzwei' }] })).isError, false);
+  assert.equal((await tool(url, 'read_project', { project_id: data.project_id, path: '/index.html' })).text, 'eins\r\nzwei\r\none');
+  assert.equal((await tool(url, 'update_project', { project_id: data.project_id, files: [{ path: 'a.txt', content: 'x x x', encoding: 'utf-8' }] })).isError, false);
+  assert.match((await tool(url, 'update_project', { project_id: data.project_id, edits: [{ path: 'a.txt', find: 'x', replace: 'y' }] })).text, /"all": true/);
+  assert.equal((await tool(url, 'update_project', { project_id: data.project_id, edits: [{ path: 'a.txt', find: 'x', replace: '$&' , all: true }] })).isError, false);
+  assert.equal((await tool(url, 'read_project', { project_id: data.project_id, path: 'a.txt' })).text, '$& $& $&');
+  assert.match((await tool(url, 'create_project', { title: 'x', files: [{ path: 'a/../../b', content: 'x' }] })).text, /Unsafe/);
+});
+
+test('a person can delete their account and everything about it', async () => {
+  const guest = await token({ sub: 'leaving', email: 'leaving@example.com' }), other = await token({ sub: 'staying', email: 'staying@example.com' });
+  await signIn(guest); await signIn(other);
+  const { url } = await newConnection(guest);
+  for (let i = 0; i < 8; i++) await tool(url, 'create_project', { title: 'P' + i, files: [{ path: 'index.html', content: 'x' }] });
+  const kept = idOf((await tool((await newConnection(other)).url, 'create_project', { title: 'Keep', files: [{ path: 'index.html', content: 'x' }] })).text);
+  assert.equal((await call('/me', undefined, { method: 'DELETE' })).status, 401);
+  let left = 1, calls = 0;
+  while (left && calls < 5) { left = (await (await call('/me', guest, { method: 'DELETE' })).json()).left; calls++; }
+  assert.deepEqual([left, calls], [0, 2]);
+  const rows = async (sql, ...values) => (await SHARES_DB.prepare(sql).bind(...values).first()).n;
+  for (const table of ['shares', 'ai_tokens', 'accounts', 'upload_windows']) assert.equal(await rows(`SELECT COUNT(*) as n FROM ${table} WHERE owner_id = ?`, 'firebase:leaving'), 0, table);
+  assert.equal(await rows("SELECT COUNT(*) as n FROM daily_upload_windows WHERE owner_id LIKE '%leaving'"), 0);
+  assert.equal((await post(url, { jsonrpc: '2.0', id: 1, method: 'ping' })).status, 401);
+  assert.equal((await call(`/${kept}`)).status, 200);
+  // A block stays, but nothing personal does.
+  const bad = await token({ sub: 'blocked-leaver', email: 'blocked-leaver@example.com' });
+  await signIn(bad);
+  await SHARES_DB.prepare("UPDATE accounts SET blocked = 1 WHERE owner_id = 'firebase:blocked-leaver'").bind().run();
+  await call('/me', bad, { method: 'DELETE' });
+  const row = await SHARES_DB.prepare("SELECT email, name, blocked FROM accounts WHERE owner_id = 'firebase:blocked-leaver'").bind().first();
+  assert.deepEqual([row.email, row.name, row.blocked], ['', '', 1]);
 });

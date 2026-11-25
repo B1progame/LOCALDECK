@@ -146,7 +146,7 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
       </div>
       </motion.div>
       <div className="share-login-foot"><span><ShieldCheck size={14}/> {t('Encrypted before upload')}</span><span><Clock3 size={14}/> {t('Links expire by themselves')}</span></div>
-      <p className="auth-privacy">{t('The operator of this sharing service sees your name, email address and usage, but never your projects.')}</p>
+      <p className="auth-privacy">{t('The operator of this sharing service sees your name, email address and usage, but never your projects.')} <a href="#/privacy">{t('Privacy')}</a></p>
     </div>
   </section>;
 }

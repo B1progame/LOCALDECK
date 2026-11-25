@@ -25,6 +25,8 @@ const encoder = new TextEncoder(), decoder = new TextDecoder();
 
 /** An error whose text is meant for the AI. */
 export class AiError extends Error {}
+/** Why a known connection may not be used right now. */
+export type Refusal = { message: string; status: 403 | 429 };
 
 /* ---------- Encoding and keys ---------- */
 
@@ -66,35 +68,42 @@ export async function removeConnection(env: AiEnv, owner: Owner, id: string): Pr
   return Boolean(await env.SHARES_DB.prepare('DELETE FROM ai_tokens WHERE id = ? AND owner_id = ? RETURNING id').bind(id, owner.id).first());
 }
 
-/** Null: unknown token. A text: the connection exists but may not be used right now. */
-export async function connect(env: AiEnv, token: string, isAdmin: (email: string) => boolean): Promise<Connection | string | null> {
+/** Null: unknown token. */
+export async function connect(env: AiEnv, token: string, isAdmin: (email: string) => boolean): Promise<Connection | Refusal | null> {
   if (!/^ld_[A-Za-z0-9_-]{43}$/.test(token)) return null;
   const row = await env.SHARES_DB.prepare('SELECT ai_tokens.id, ai_tokens.owner_id as ownerId, accounts.email, accounts.name, accounts.provider FROM ai_tokens JOIN accounts ON accounts.owner_id = ai_tokens.owner_id WHERE ai_tokens.hash = ?').bind(await hash(token)).first<{ id: string; ownerId: string; email: string; name: string; provider: string }>();
   if (!row) return null;
   const owner: Owner = { id: row.ownerId, email: row.email, name: row.name, picture: '', provider: row.provider, admin: row.provider === 'google.com' && isAdmin(row.email) };
   const settings = await readSettings(env);
-  if (!settings.service.ai && !owner.admin) return 'AI connections are switched off by the operator of this LocalDeck service.';
+  if (!settings.service.ai && !owner.admin) return { status: 403, message: 'AI connections are switched off by the operator of this LocalDeck service.' };
   const { limits, blocked } = await limitsFor(env, owner, settings);
-  if (blocked) return 'This LocalDeck account is blocked.';
+  if (blocked) return { status: 403, message: 'This LocalDeck account is blocked.' };
   const calls = await env.SHARES_DB.prepare('INSERT INTO upload_windows (owner_id, window_start, uploads) VALUES (?, ?, 1) ON CONFLICT(owner_id, window_start) DO UPDATE SET uploads = uploads + 1 RETURNING uploads').bind(`ai-calls:${row.id}`, hourStart()).first<{ uploads: number }>();
-  if ((calls?.uploads ?? 0) > MAX_CALLS_PER_HOUR) return 'Too many requests in this hour. Try again later.';
+  if ((calls?.uploads ?? 0) > MAX_CALLS_PER_HOUR) return { status: 429, message: 'Too many requests in this hour. Try again later.' };
   await env.SHARES_DB.prepare('UPDATE ai_tokens SET last_used = ?, calls = calls + 1 WHERE id = ?').bind(Date.now(), row.id).run();
   return { id: row.id, owner, limits, key: await tokenKey(token) };
 }
 
 /* ---------- Files ---------- */
 
+/** "./index.html" and "/index.html" mean the file in the main folder. */
+export function cleanPath(path: string): string {
+  try { return normalizePackagePath(path.trim().replace(/^(?:\.?\/)+/, '')); } catch { throw new AiError(`Unsafe file path: ${path}. Use relative paths such as assets/logo.svg.`); }
+}
+
 type FileInput = { path?: unknown; content?: unknown; encoding?: unknown };
 
 export function readFiles(value: unknown): ProjectFile[] {
   if (value === undefined) return [];
+  // { "index.html": "…" } is clear enough.
+  if (value && typeof value === 'object' && !Array.isArray(value)) value = Object.entries(value).map(([path, content]) => ({ path, content }));
   if (!Array.isArray(value)) throw new AiError('"files" must be a list of { path, content }.');
   return (value as FileInput[]).map(file => {
     if (typeof file?.path !== 'string' || typeof file.content !== 'string') throw new AiError('Every file needs a "path" and a "content" text.');
     let path: string;
-    try { path = normalizePackagePath(file.path.trim()); } catch { throw new AiError(`Unsafe file path: ${file.path}. Use relative paths such as assets/logo.svg.`); }
+    path = cleanPath(file.path);
     if (path.length > 200) throw new AiError(`The path is too long: ${path.slice(0, 60)}…`);
-    if (file.encoding === undefined || file.encoding === 'utf8') return { path, data: encoder.encode(file.content) };
+    if (file.encoding === undefined || /^(utf-?8|text)$/i.test(String(file.encoding))) return { path, data: encoder.encode(file.content) };
     if (file.encoding !== 'base64') throw new AiError('"encoding" must be "utf8" or "base64".');
     try { return { path, data: fromBase64(file.content.replace(/^data:[^,]*,/, '').replace(/\s+/g, '')) }; } catch { throw new AiError(`${path} is not valid base64.`); }
   });
@@ -117,7 +126,7 @@ export function readDetails(input: Record<string, unknown>): Details {
   }
   if (input.tags !== undefined) {
     if (!Array.isArray(input.tags) || !input.tags.every(tag => typeof tag === 'string')) throw new AiError('"tags" must be a list of texts.');
-    details.tags = (input.tags as string[]).slice(0, 10).map(tag => tag.trim().slice(0, 40)).filter(Boolean);
+    details.tags = (input.tags as string[]).slice(0, 10).map(tag => tag.replace(/^[\s#]+/, '').trim().slice(0, 40)).filter(Boolean);
   }
   return details;
 }
@@ -228,13 +237,13 @@ async function load(env: AiEnv, connection: Connection, id: string): Promise<{ r
   return { row, store: blob.store, sealed, raw, files };
 }
 
-export type Edit = { path: string; find: string; replace: string };
+export type Edit = { path: string; find: string; replace: string; all: boolean };
 export function readEdits(value: unknown): Edit[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > 50) throw new AiError('"edits" must be a list of at most 50 { path, find, replace }.');
   return (value as Array<Record<string, unknown>>).map(edit => {
     if (typeof edit?.path !== 'string' || typeof edit.find !== 'string' || !edit.find || typeof edit.replace !== 'string') throw new AiError('Every edit needs "path", "find" and "replace" texts.');
-    return { path: edit.path, find: edit.find, replace: edit.replace };
+    return { path: cleanPath(edit.path), find: edit.find, replace: edit.replace, all: edit.all === true };
   });
 }
 
@@ -260,14 +269,19 @@ async function saveVersion(env: AiEnv, connection: Connection, row: Row, next: {
 
 export async function updateProject(env: AiEnv, connection: Connection, id: string, change: { files: ProjectFile[]; edits: Edit[]; remove: string[]; details: Details }): Promise<ProjectInfo> {
   const { row, store: oldStore, sealed, raw, files } = await load(env, connection, id);
-  for (const path of change.remove) { if (path === 'index.html') throw new AiError('index.html cannot be removed.'); if (!files.delete(path)) throw new AiError(`There is no file ${path} to remove.`); }
+  for (const path of change.remove.map(cleanPath)) { if (path === 'index.html') throw new AiError('index.html cannot be removed.'); if (!files.delete(path)) throw new AiError(`There is no file ${path} to remove.`); }
   for (const file of change.files) files.set(file.path, file.data);
   for (const edit of change.edits) {
     const current = files.get(edit.path);
     if (!current) throw new AiError(`There is no file ${edit.path}. Use read_project to see the files.`);
-    const text = decoder.decode(current), count = text.split(edit.find).length - 1;
-    if (count !== 1) throw new AiError(count ? `"find" appears ${count} times in ${edit.path}. Make it longer so it appears once.` : `"find" does not appear in ${edit.path}. Read the file again and copy the text exactly.`);
-    files.set(edit.path, encoder.encode(text.replace(edit.find, () => edit.replace)));
+    const text = decoder.decode(current);
+    // An AI sees and writes plain line ends, the file may have the ones of Windows.
+    const windows = !text.includes(edit.find) && text.includes('\r\n');
+    const find = windows ? edit.find.replace(/\r?\n/g, '\r\n') : edit.find, replace = windows ? edit.replace.replace(/\r?\n/g, '\r\n') : edit.replace;
+    const parts = text.split(find), count = parts.length - 1;
+    if (!count) throw new AiError(`"find" does not appear in ${edit.path}. Read the file again and copy the text exactly.`);
+    if (count > 1 && !edit.all) throw new AiError(`"find" appears ${count} times in ${edit.path}. Make it longer so it appears once, or set "all": true to replace every one.`);
+    files.set(edit.path, encoder.encode(parts.join(replace)));
   }
   const title = applyDetails(files, change.details);
   const zip = await pack(files);
@@ -292,6 +306,7 @@ const READ_CHARS = 100_000;
 export async function readProject(env: AiEnv, connection: Connection, id: string, path?: string, offset = 0): Promise<string> {
   const { row, sealed, files } = await load(env, connection, id);
   if (path) {
+    path = cleanPath(path);
     const data = files.get(path);
     if (!data) throw new AiError(`There is no file ${path}. Files: ${[...files.keys()].join(', ')}`);
     if (!TEXT.test(path)) return `${path} is a binary file with ${data.length} bytes.`;
@@ -300,7 +315,9 @@ export async function readProject(env: AiEnv, connection: Connection, id: string
     const end = Math.min(text.length, offset + READ_CHARS);
     return `${text.slice(offset, end)}${end < text.length ? `\n\n[Characters ${offset} to ${end} of ${text.length}. Call read_project again with offset ${end} for the rest.]` : ''}`;
   }
-  return JSON.stringify({ project_id: row.id, title: sealed.title, version: row.version, link: link(env, row.id, sealed.key), expires: row.expiresAt, files: [...files].map(([name, data]) => ({ path: name, bytes: data.length })) }, null, 2);
+  let details: Record<string, unknown> = {};
+  try { const { type, subject, topic, description, tags, language } = JSON.parse(decoder.decode(files.get(MANIFEST))) as Details; details = { type, subject, topic, description, tags, language }; } catch { /* broken manifest: the list of files is still useful */ }
+  return JSON.stringify({ project_id: row.id, title: sealed.title, ...details, version: row.version, link: link(env, row.id, sealed.key), expires: row.expiresAt, files: [...files].map(([name, data]) => ({ path: name, bytes: data.length })) }, null, 2);
 }
 
 export async function checkStored(env: AiEnv, connection: Connection, id: string): Promise<string[]> {
