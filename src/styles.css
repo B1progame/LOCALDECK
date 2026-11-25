@@ -1795,3 +1795,7 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 
 .framed-note { padding: 32px; color: var(--text); font-size: 15px; }
 .framed-note a { color: var(--accent); }
+
+.admin-visits { margin-bottom: 22px; }
+.admin-visits h2 { margin-bottom: 12px; font-size: 17px; }
+.admin-visits > .muted-text { margin-top: 10px; font-size: 13px; }

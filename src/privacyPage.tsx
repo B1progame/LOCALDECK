@@ -16,7 +16,7 @@ export function PrivacyPage() {
   const sections: Array<{ title: string; text?: string[]; list?: string[]; contact?: boolean }> = [
     { title: t('In short'), list: [
       t('LocalDeck works without an account. Your projects stay in this browser.'),
-      t('LocalDeck sets no cookies. There is no advertising, no tracking and no statistics about visitors of the website.'),
+      t('LocalDeck sets no cookies. There is no advertising and no tracking. Visitors are only counted, without knowing who they are.'),
       t('That is why there is no cookie banner. What is saved on your device is only what the app needs to work.'),
       t('An account is only needed for creating shared links and for connecting an AI.'),
     ] },
@@ -29,6 +29,11 @@ export function PrivacyPage() {
       t('You can delete all of it in your browser under “Site data”. The model can also be deleted in Settings.'),
     ] },
     { title: t('When you open the website'), text: [t('The website is hosted by GitHub Pages. GitHub sees your IP address and which files you load, as every web server does.')] },
+    { title: t('Counting visitors'), text: [
+      t('To know how many people use LocalDeck, the sharing service on Cloudflare counts how often the site is opened. Nothing is stored on your device for this and no identifier is sent.'),
+      t('So that nobody is counted twice, it makes a code from your IP address and browser type. The code changes every day, cannot be turned back into your address and is deleted after the day. Only the numbers stay. Pages and projects are not recorded.'),
+      t('You can turn this off in Settings. “Do Not Track” and “Global Privacy Control” of your browser are respected.'),
+    ] },
     { title: t('When you sign in'), text: [
       t('The sign-in page loads the sign-in of Google Firebase (apis.google.com and firebaseapp.com). Google sees your IP address then and may set its own cookies on its own pages. GitHub or Facebook are contacted only when you choose them.'),
       t('The sharing service runs on Cloudflare. It stores your name, email address, sign-in method, the times of your sign-ins and how much you use. The operator can see that. It never sees your password.'),
@@ -44,7 +49,7 @@ export function PrivacyPage() {
       t('Connected AI: the company behind that AI sees what it writes for you. Its projects are stored encrypted. The server can read them only while it handles a request.'),
     ] },
     { title: t('Companies outside the EU'), text: [t('GitHub, Google, Cloudflare and Hugging Face are companies from the USA and may process data there.')] },
-    { title: t('Why this is allowed'), text: [t('Accounts, links and AI connections: to provide what you asked for (Art. 6(1)(b) GDPR). Protection against abuse and limits: legitimate interest (Art. 6(1)(f) GDPR).')] },
+    { title: t('Why this is allowed'), text: [t('Accounts, links and AI connections: to provide what you asked for (Art. 6(1)(b) GDPR). Protection against abuse, limits and counting visitors: legitimate interest (Art. 6(1)(f) GDPR).')] },
     { title: t('Your rights'), list: [
       t('You can delete your account and everything stored about it yourself: Shared links, then Delete account.'),
       t('You can ask what is stored about you, have it corrected or deleted, receive it, or object to its use.'),

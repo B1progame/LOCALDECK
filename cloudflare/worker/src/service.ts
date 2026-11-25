@@ -52,6 +52,8 @@ export const SCHEMA = [
   'CREATE TABLE IF NOT EXISTS auth_windows ( client_hash TEXT NOT NULL, window_start INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (client_hash, window_start) )',
   'CREATE TABLE IF NOT EXISTS read_windows ( client_hash TEXT NOT NULL, window_start INTEGER NOT NULL, reads INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (client_hash, window_start) )',
   'CREATE TABLE IF NOT EXISTS verification_mails ( owner_id TEXT PRIMARY KEY, sent_at INTEGER NOT NULL )',
+  'CREATE TABLE IF NOT EXISTS visitors ( day INTEGER NOT NULL, hash TEXT NOT NULL, opens INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (day, hash) )',
+  'CREATE TABLE IF NOT EXISTS visit_days ( day INTEGER PRIMARY KEY, visitors INTEGER NOT NULL DEFAULT 0, opens INTEGER NOT NULL DEFAULT 0 )',
   'CREATE TABLE IF NOT EXISTS mail_windows ( window_start INTEGER PRIMARY KEY, sent INTEGER NOT NULL DEFAULT 0 )',
 ];
 
@@ -120,6 +122,23 @@ async function windowCount(env: StoreEnv, table: 'upload_windows' | 'daily_uploa
 export async function usageFor(env: StoreEnv, owner: Owner): Promise<{ bytes: number; links: number; hour: number; day: number }> {
   const row = await env.SHARES_DB.prepare("SELECT COUNT(*) as links, COALESCE(SUM(size_bytes), 0) as bytes FROM shares WHERE owner_id = ? AND status = 'active' AND expires_at > ?").bind(owner.id, nowIso()).first<{ links: number; bytes: number }>();
   return { bytes: row?.bytes ?? 0, links: row?.links ?? 0, hour: await windowCount(env, 'upload_windows', owner.id, hourStart()), day: await windowCount(env, 'daily_upload_windows', owner.id, dayStart()) };
+}
+
+/* ---------- Visitors ---------- */
+
+/** More than this is not a person any more, and it keeps the table small. */
+const MAX_OPENS_PER_VISITOR = 50, MAX_VISITORS_PER_DAY = 20_000;
+
+/** `hash` is a code for one day that nobody can turn back into an address. Only the numbers of a day are kept. */
+export async function recordVisit(env: StoreEnv, hash: string): Promise<void> {
+  const db = env.SHARES_DB, day = dayStart();
+  const seen = await db.prepare('UPDATE visitors SET opens = opens + 1 WHERE day = ?1 AND hash = ?2 RETURNING opens').bind(day, hash).first<{ opens: number }>();
+  if (seen) {
+    if (seen.opens <= MAX_OPENS_PER_VISITOR) await db.prepare('UPDATE visit_days SET opens = opens + 1 WHERE day = ?').bind(day).run();
+    return;
+  }
+  const added = await db.prepare('INSERT INTO visitors (day, hash) SELECT ?1, ?2 WHERE COALESCE((SELECT visitors FROM visit_days WHERE day = ?1), 0) < ?3 ON CONFLICT(day, hash) DO NOTHING RETURNING day').bind(day, hash, MAX_VISITORS_PER_DAY).first();
+  if (added) await db.prepare('INSERT INTO visit_days (day, visitors, opens) VALUES (?, 1, 1) ON CONFLICT(day) DO UPDATE SET visitors = visitors + 1, opens = opens + 1').bind(day).run();
 }
 
 /* ---------- Uploads ---------- */
@@ -228,6 +247,9 @@ export async function cleanup(env: StoreEnv): Promise<void> {
   for (const table of ['upload_windows', 'auth_windows', 'read_windows']) await db.prepare(`DELETE FROM ${table} WHERE window_start < ?`).bind(old).run();
   for (const table of ['daily_upload_windows', 'global_upload_windows', 'mail_windows']) await db.prepare(`DELETE FROM ${table} WHERE window_start < ?`).bind(week).run();
   await db.prepare('DELETE FROM verification_mails WHERE sent_at < ?').bind(old).run();
+  // The codes of visitors are only needed on their day, the numbers stay.
+  await db.prepare('DELETE FROM visitors WHERE day < ?').bind(dayStart()).run();
+  await db.prepare('DELETE FROM visit_days WHERE day < ?').bind(Date.now() - 400 * 86_400_000).run();
   await db.prepare('DELETE FROM daily_stats WHERE day < ?').bind(Date.now() - 400 * 86_400_000).run();
   await db.prepare('DELETE FROM admin_log WHERE id <= (SELECT MAX(id) FROM admin_log) - 500').run();
   // Personal data of people who have not signed in for half a year is not kept. Blocked accounts stay blocked.
@@ -257,6 +279,7 @@ export async function overview(env: StoreEnv, owner: Owner): Promise<unknown> {
   const people = await db.prepare('SELECT COUNT(*) as accounts, COALESCE(SUM(last_seen > ?), 0) as week, COALESCE(SUM(blocked), 0) as blocked FROM accounts').bind(Date.now() - 7 * 86_400_000).first<{ accounts: number; week: number; blocked: number }>();
   const uploads = await db.prepare('SELECT uploads FROM global_upload_windows WHERE window_start = ?').bind(today).first<{ uploads: number }>();
   const days = await db.prepare('SELECT day, uploads, bytes, downloads, sign_ins as signIns, accounts FROM daily_stats WHERE day > ? ORDER BY day').bind(today - 30 * 86_400_000).all<Record<string, number>>();
+  const visits = await db.prepare('SELECT day, visitors, opens FROM visit_days WHERE day > ? ORDER BY day').bind(today - 30 * 86_400_000).all<{ day: number; visitors: number; opens: number }>();
   const accounts = await db.prepare(`SELECT ids.owner_id as id, accounts.email, accounts.name, accounts.provider, accounts.first_seen as firstSeen, accounts.last_seen as lastSeen, COALESCE(accounts.sign_ins, 0) as signIns, COALESCE(accounts.uploads, 0) as uploads, COALESCE(accounts.bytes, 0) as uploadedBytes, COALESCE(accounts.downloads, 0) as downloads, COALESCE(accounts.blocked, 0) as blocked, accounts.limits,
       (SELECT COUNT(*) FROM shares WHERE shares.owner_id = ids.owner_id AND status = 'active' AND expires_at > ?1) as links,
       (SELECT COALESCE(SUM(size_bytes), 0) FROM shares WHERE shares.owner_id = ids.owner_id AND status = 'active' AND expires_at > ?1) as bytes
@@ -271,7 +294,7 @@ export async function overview(env: StoreEnv, owner: Owner): Promise<unknown> {
   return {
     totals: { links: totals?.links ?? 0, owners: new Set(shares.results.map(share => share.ownerId)).size, bytes: totals?.bytes ?? 0, limitBytes: settings.service.totalMiB * MIB, uploadsToday: uploads?.uploads ?? 0, uploadsLimit: settings.service.perDay, accounts: people?.accounts ?? 0, activeWeek: people?.week ?? 0, blocked: people?.blocked ?? 0 },
     ai, databases: (await usage(env)).map(({ name, bytes, projects, capBytes }) => ({ name, bytes, projects, capBytes })), kv: { bytes: kv?.bytes ?? 0, capBytes: MAX_KV_BYTES },
-    settings, defaults: DEFAULTS, bounds: BOUNDS, days: days.results,
+    settings, defaults: DEFAULTS, bounds: BOUNDS, days: days.results, visits: visits.results,
     accounts: accounts.results.map(account => { let limits: unknown = null; try { limits = account.limits ? JSON.parse(account.limits) : null; } catch { /* broken override */ } return { ...account, limits, blocked: Boolean(account.blocked), mine: account.id === owner.id }; }),
     shares: shares.results.map(share => ({ ...share, ai: Boolean(share.ai), mine: share.ownerId === owner.id })),
     log: entries.results,

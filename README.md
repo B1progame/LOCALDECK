@@ -109,13 +109,13 @@ Put `index.html` at the root of a ZIP and add an optional `localdeck.json` next 
 
 ## 🔐 Privacy & security
 
-- The library, files and history are stored in **IndexedDB on this device**. There's no account, no analytics and no tracking.
+- The library, files and history are stored in **IndexedDB on this device**. There's no account and no tracking. Visits are only counted, without cookies or identifiers.
 - Imported HTML runs in an **opaque sandbox**, served by the service worker with a CSP `sandbox` header. Without the service worker, single-file projects run from an isolated `blob:` URL.
 - Sharing is **opt-in**. ZIPs are AES-GCM encrypted in the browser, and the key stays in the link's `#fragment`. The optional Cloudflare Worker stores only ciphertext, and only for 3 days.
 
 More detail: [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [Sharing setup](docs/SHARING.md) · [Branded emails](docs/EMAIL_TEMPLATES.md) · [Design system](docs/DESIGN_SYSTEM.md) · [Deployment](docs/DEPLOYMENT.md)
 
-- No cookies and no tracking. What is stored and who is contacted is on the [privacy page](https://b1progame.github.io/LOCALDECK/#/privacy) ([details](docs/PRIVACY.md)).
+- No cookies. What is stored and who is contacted is on the [privacy page](https://b1progame.github.io/LOCALDECK/#/privacy) ([details](docs/PRIVACY.md)).
 
 ## 🗂️ Where things live
 

@@ -4,7 +4,7 @@
 
 | Tab | What it does |
 |---|---|
-| Overview | Accounts, active links, storage, how full the three databases are, uploads of today, and 30 days of uploads, downloads, sign-ins and data |
+| Overview | Visitors per day and how often the site was opened ([how it counts](PRIVACY.md#counting-visitors)). Accounts, active links, storage, how full the three databases are, uploads of today, and 30 days of uploads, downloads, sign-ins and data |
 | Accounts | First and last sign-in, uploads, downloads, storage. Own limits, block, delete all links |
 | Links | All active links with owner, size, downloads and expiry. Delete any link |
 | Limits | Size per link, storage, uploads per hour and day, and days online, for everyone and for admins. Total storage. Pause uploads. Allow or stop AI connections ([`AI_CONNECTION.md`](AI_CONNECTION.md)) |

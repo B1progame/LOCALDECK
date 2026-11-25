@@ -667,3 +667,41 @@ test('sign-ins are limited: wrong ones per network, real ones per account', asyn
   assert.deepEqual([real[0], real.at(-1)], [200, 429]);
   assert.equal((await from('203.0.113.1', second)).status, 200);
 });
+
+const visit = (ip, agent = 'Mozilla/5.0 Firefox', headers = { Origin: 'https://example.pages.dev' }) => worker.fetch(new Request(SHARES + '/visit', { method: 'POST', headers: { 'CF-Connecting-IP': ip, 'User-Agent': agent, ...headers } }), env);
+const visitDay = async () => SHARES_DB.prepare('SELECT visitors, opens FROM visit_days').bind().first();
+
+test('visitors are counted once a day without keeping anything about them', async () => {
+  assert.equal((await visit('192.0.2.1')).status, 204);
+  await visit('192.0.2.1'); await visit('192.0.2.1'); await visit('192.0.2.2'); await visit('192.0.2.2', 'Mozilla/5.0 Chrome');
+  const { visitors, opens } = await visitDay();
+  assert.deepEqual([visitors, opens], [3, 5]);
+  const rows = (await SHARES_DB.prepare('SELECT * FROM visitors').bind().all()).results;
+  assert.deepEqual(Object.keys(rows[0]).sort(), ['day', 'hash', 'opens']);
+  assert.ok(!/192\.0\.2|Mozilla|Firefox/.test(JSON.stringify(rows)));
+});
+
+test('programs, other websites and endless reloads do not change the numbers', async () => {
+  const before = await visitDay();
+  await visit('192.0.2.9', 'Googlebot/2.1'); await visit('192.0.2.9', 'HeadlessChrome'); await visit('192.0.2.9', '');
+  await visit('192.0.2.9', 'Mozilla/5.0', {});
+  assert.equal((await visit('192.0.2.9', 'Mozilla/5.0', { Origin: 'https://evil.example' })).status, 403);
+  assert.deepEqual({ ...(await visitDay()) }, { ...before });
+  for (let i = 0; i < 70; i++) assert.equal((await visit('192.0.2.50')).status, 204);
+  const after = await visitDay();
+  assert.deepEqual([after.visitors - before.visitors, after.opens - before.opens], [1, 50]);
+  for (let i = 0; i < 420; i++) await visit('192.0.2.60', 'Agent ' + i);
+  assert.ok((await visitDay()).visitors - after.visitors <= 400);
+});
+
+test('the codes are deleted after their day, the numbers stay and only admins see them', async () => {
+  const yesterday = Math.floor(Date.now() / 86_400_000) * 86_400_000 - 86_400_000;
+  await SHARES_DB.prepare("INSERT INTO visitors (day, hash) VALUES (?, 'old')").bind(yesterday).run();
+  await SHARES_DB.prepare('INSERT INTO visit_days (day, visitors, opens) VALUES (?, 7, 9)').bind(yesterday).run();
+  let done; await worker.scheduled({}, env, { waitUntil(promise) { done = promise; } }); await done;
+  assert.equal((await SHARES_DB.prepare("SELECT COUNT(*) as n FROM visitors WHERE hash = 'old'").bind().first()).n, 0);
+  const boss = await token({ sub: 'visit-boss', email: 'admin@example.com' }), guest = await token({ sub: 'visit-guest', email: 'visit-guest@example.com' });
+  const data = await (await call('/admin/overview', boss)).json();
+  assert.deepEqual(data.visits.find(entry => entry.day === yesterday), { day: yesterday, visitors: 7, opens: 9 });
+  assert.equal((await call('/admin/overview', guest)).status, 403);
+});

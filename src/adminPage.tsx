@@ -16,6 +16,7 @@ type Share = { id: string; ownerId: string; owner: string | null; createdAt: str
 type Overview = {
   totals: { links: number; bytes: number; limitBytes: number; uploadsToday: number; uploadsLimit: number; accounts: number; activeWeek: number; blocked: number };
   ai: { connections: number; projects: number; bytes: number; changes: number };
+  visits?: Array<{ day: number; visitors: number; opens: number }>;
   databases?: Array<{ name: string; bytes: number; projects: number; capBytes: number }>; kv?: { bytes: number; capBytes: number };
   settings: Settings; defaults: Settings; bounds: Record<string, [number, number]>; days: Day[]; accounts: Account[]; shares: Share[]; log: Array<{ at: number; admin: string; action: string; target: string }>;
 };
@@ -32,7 +33,7 @@ const providerName = (provider: string | null) => provider ? PROVIDERS[provider]
 /* ---------- Charts ---------- */
 
 /** One measure per day for the last 30 days. One series, so the title names it and no legend is needed. */
-function DayChart({ title, days, value, format = number }: { title: string; days: Day[]; value: (day: Day) => number; format?: (value: number) => string }) {
+function DayChart<T extends { day: number }>({ title, days, value, format = number }: { title: string; days: T[]; value: (day: T) => number; format?: (value: number) => string }) {
   const [active, setActive] = useState<number | null>(null);
   const series = useMemo(() => {
     const today = Math.floor(Date.now() / DAY) * DAY;
@@ -196,6 +197,14 @@ type Actions = { account: (account: Account, change: { blocked?: boolean; limits
 const TABS = ['overview', 'accounts', 'links', 'limits', 'log'] as const;
 type Tab = typeof TABS[number];
 
+function visitNumbers(days: Array<{ day: number; visitors: number; opens: number }> = []) {
+  const today = Math.floor(Date.now() / DAY) * DAY, now = days.find(entry => entry.day === today);
+  const best = days.reduce<{ day: number; visitors: number } | null>((found, entry) => !found || entry.visitors > found.visitors ? entry : found, null);
+  // Days before the first visit do not pull the average down.
+  const first = days.length ? Math.min(...days.map(entry => entry.day)) : today, span = Math.max(1, Math.round((today - first) / DAY) + 1);
+  return { today: now?.visitors ?? 0, opensToday: now?.opens ?? 0, average: Math.round(days.reduce((sum, entry) => sum + entry.visitors, 0) / span), best: best?.visitors ?? 0, bestDay: best?.day ?? 0 };
+}
+
 export function AdminPage({ api, session, notify }: { api: string; session: { email: string; token: string; admin?: boolean } | null; notify: Notify }) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState('');
@@ -254,6 +263,7 @@ export function AdminPage({ api, session, notify }: { api: string; session: { em
     const next = TABS[(TABS.indexOf(tab) + step + TABS.length) % TABS.length]!;
     setTab(next); document.getElementById(`admin-tab-${next}`)?.focus();
   };
+  const visits = visitNumbers(data?.visits);
   return <div className="admin-page">
     {heading}
     {error && <p className="dialog-error" role="alert">{error}</p>}
@@ -262,6 +272,16 @@ export function AdminPage({ api, session, notify }: { api: string; session: { em
       <div className="admin-tabs" role="tablist" aria-label={t('Admin')} onKeyDown={tabKeys}>{TABS.map(id => <button key={id} id={`admin-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="admin-panel" tabIndex={tab === id ? 0 : -1} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{names[id]}{counts[id] !== undefined && <small>{number(counts[id]!)}</small>}</button>)}</div>
       <div id="admin-panel" role="tabpanel" aria-labelledby={`admin-tab-${tab}`}>
         {tab === 'overview' && <>
+          {data.visits && <section className="admin-visits"><h2>{t('Visitors')}</h2>
+            <dl className="admin-stats">
+              <div><dt>{t('Today')}</dt><dd>{number(visits.today)}</dd></div>
+              <div><dt>{t('Per day')}</dt><dd>{number(visits.average)} <small>{t('average, 30 days')}</small></dd></div>
+              <div><dt>{t('Best day')}</dt><dd>{number(visits.best)} <small>{visits.bestDay ? shortDay(visits.bestDay) : ''}</small></dd></div>
+              <div><dt>{t('Opened today')}</dt><dd>{number(visits.opensToday)}</dd></div>
+            </dl>
+            <div className="admin-charts"><DayChart title={t('Visitors per day')} days={data.visits} value={byVisitors}/><DayChart title={t('Times opened')} days={data.visits} value={byOpens}/></div>
+            <p className="muted-text">{t('Counted once per day, device and connection, without cookies. A person with two devices counts twice. Who turned counting off or is offline is missing.')}</p>
+          </section>}
           <dl className="admin-stats">
             <div><dt>{t('Accounts')}</dt><dd>{number(totals.accounts)} <small>{t('{0} this week', number(totals.activeWeek))}</small></dd></div>
             <div><dt>{t('Active links')}</dt><dd>{number(totals.links)}</dd></div>
@@ -291,6 +311,8 @@ export function AdminPage({ api, session, notify }: { api: string; session: { em
   </div>;
 }
 
+const byVisitors = (day: { visitors: number }) => day.visitors;
+const byOpens = (day: { opens: number }) => day.opens;
 const byUploads = (day: Day) => day.uploads;
 const byDownloads = (day: Day) => day.downloads;
 const bySignIns = (day: Day) => day.signIns;

@@ -1,6 +1,6 @@
 import {
   changeAccount, changeSettings, cleanup, countDownload, deleteAccount, limitsFor, logShareRemoval, overview, partKey, partSize, pendingShare, readSettings,
-  recordSignIn, removeAccountShares, removeShare, reserve, SCHEMA, SINGLE_BYTES, PART_BYTES, MIB, BOUNDS, storePart, usageFor, type Owner,
+  recordSignIn, recordVisit, removeAccountShares, removeShare, reserve, SCHEMA, SINGLE_BYTES, PART_BYTES, MIB, BOUNDS, storePart, usageFor, type Owner,
 } from './service.ts';
 import { createConnection, listConnections, removeConnection } from './ai.ts';
 import { readBlob } from './blobs.ts';
@@ -33,6 +33,8 @@ const MAX_OWNER_PER_HOUR = 1200;
 /** Sign-ins that the Worker refuses, per connection, and real sign-ins of one account. */
 const MAX_WRONG_SIGN_INS_PER_HOUR = 30;
 const MAX_SIGN_INS_PER_HOUR = 40;
+/** Opening the site from one connection. A school has many people behind one address. */
+const MAX_VISITS_PER_HOUR = 400;
 const MAX_IP_MAILS_PER_HOUR = 8;
 const MAX_MAILS_PER_DAY = 90;
 const MAIL_WAIT_MS = 120_000;
@@ -227,7 +229,7 @@ async function isAuthorized(request: Request, env: Env): Promise<Owner | null> {
   return owner;
 }
 
-const SCHEMA_VERSION = '5';
+const SCHEMA_VERSION = '6';
 let schemaReady = false;
 /** Only the finished result is shared between requests. A shared in-flight promise would belong to the
     request that started it, and Workers can fail every other request that waits on it.
@@ -406,6 +408,15 @@ const worker = {
     if (parts[3] === 'auth' && parts[4] === 'google' && parts.length === 5 && request.method === 'POST') return signIn(request, env, headers, verifyGoogleCredential);
     if (parts[3] === 'auth' && parts[4] === 'firebase' && parts.length === 5 && request.method === 'POST') return signIn(request, env, headers, verifyFirebaseCredential);
     if (parts[3] === 'auth' && parts[4] === 'verification' && parts.length === 5 && request.method === 'POST') return sendVerification(request, env, headers);
+
+    if (parts[3] === 'visit' && parts.length === 4 && request.method === 'POST') {
+      // Only the website itself counts. The answer is always the same, a visit must never be a problem for a visitor.
+      if (origin && await rateLimitIp(env, request, 'read_windows', MAX_VISITS_PER_HOUR, 'visit:')) {
+        const agent = (request.headers.get('User-Agent') ?? '').slice(0, 300);
+        if (agent && !/bot|crawl|spider|headless|lighthouse|preview/i.test(agent)) await recordVisit(env, await clientHash(env, `visitor:${clientAddress(request)}|${agent}`));
+      }
+      return response(null, 204, headers);
+    }
 
     if (parts[3] === 'admin' && parts.length > 4) return admin(request, env, headers, parts.slice(4));
 

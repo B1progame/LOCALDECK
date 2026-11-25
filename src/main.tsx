@@ -46,6 +46,7 @@ import { ContentNote } from './contentNote';
 import { PhotoStudio } from './photoStudio';
 import { PrivacyPage } from './privacyPage';
 import { deleteAccount } from './services/deleteAccount';
+import { countVisit, countsVisits, setCountsVisits } from './services/visit';
 import { authFetch, freshToken, getShareSession, keepSignedIn, saveShareSession, signOutHere, useSession, type Credential } from './services/session';
 import { DEFAULT_ACCOUNT, getAccount, uploadShare, type ShareAccount } from './services/shareService';
 import { sendVerificationMail } from './services/verificationMail';
@@ -90,6 +91,8 @@ function App() {
   const [, setSubjects] = useState<Awaited<ReturnType<typeof getSubjects>>>([]);
   useSession();
   useEffect(() => keepSignedIn(import.meta.env.VITE_FIREBASE_API_KEY ?? ''), []);
+  // Not while developing: only the published site counts.
+  useEffect(() => import.meta.env.DEV ? undefined : countVisit((import.meta.env.VITE_SHARE_API_BASE ?? '').replace(/\/$/, '')), []);
   const [query, setQuery] = useState('');
   const [photoItem, setPhotoItem] = useState<LibraryItem | null>(null);
   const nextQuery = useRef('');
@@ -578,6 +581,7 @@ function StoragePage({items,storage,integrity,busy,backup,restore,requestPersist
 function SettingsPage({notify,appearance,setAppearance,demosOn,busy,onDemos,reducedMotion,onMotion}:{notify:(message:string,error?:boolean)=>void;appearance:Appearance;setAppearance:(next:Partial<Appearance>)=>void;demosOn:boolean;busy:boolean;onDemos:(value:boolean)=>void;reducedMotion:boolean;onMotion:(value:boolean)=>void}) {
   const [backgroundMotion, setBackgroundMotion] = useBackgroundMotion();
   const { on: contentMarks } = useContentMarks();
+  const [counting, setCounting] = useState(countsVisits);
   const customAccent = appearance.accent && !ACCENTS.includes(appearance.accent) ? appearance.accent : null;
   return <><PageHeading title={t('Settings')} description={t('Tune how LocalDeck looks and behaves in this browser.')}/>
     <section className="settings-section" id="profile"><h2>{t('Profile')}</h2><div className="settings-list"><ProfileSettings notify={notify} account={getShareSession()}/></div></section>
@@ -602,6 +606,7 @@ function SettingsPage({notify,appearance,setAppearance,demosOn,busy,onDemos,redu
       <label className="setting-row"><span><b>{t('Reduce motion')}</b><small>{t('Use simple fades instead of movement, even when your system allows animation.')}</small></span><input type="checkbox" checked={reducedMotion} onChange={event=>onMotion(event.target.checked)}/></label>
     </div></section>
     <section className="settings-section"><h2>{t('Privacy & security')}</h2><div className="settings-list">
+      {import.meta.env.VITE_SHARE_API_BASE && <label className="setting-row"><span><b>{t('Count my visit')}</b><small>{t('Helps to know how many people use LocalDeck. One number per day, without cookies, name or identifier.')}</small></span><input type="checkbox" checked={counting} onChange={event=>{setCounting(event.target.checked);setCountsVisits(event.target.checked);}}/></label>}
       <label className="setting-row"><span><b>{t('Show 16+ and 18+ marks')}</b><small>{t('Marks projects that may not be for children and asks before an 18+ project is opened or imported. It is a hint from an automatic check on this device and can be wrong.')}</small></span><input type="checkbox" checked={contentMarks} onChange={event=>setContentMarks(event.target.checked)}/></label>
       <div className="setting-row"><span><b>{t('Project isolation')}</b><small>{t('Imported HTML opens in an opaque sandbox. Its scripts cannot read LocalDeck\'s IndexedDB or page.')}</small></span><ShieldCheck size={18} className="settings-secure"/></div>
       <div className="setting-row"><span><b>{t('Protected sharing accounts')}</b><small>{t('Google, verified email, GitHub, or Facebook sign-in can manage links. The Worker validates each signed identity token.')}</small></span><Cloud size={18} className="settings-secure"/></div>
