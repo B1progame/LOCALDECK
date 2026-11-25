@@ -54,6 +54,26 @@ export async function loadInParts(url: string, options: Options): Promise<Respon
   return new Response(stream, { status: 200, headers: { 'content-length': String(total) } });
 }
 
+/** The whole file as blobs that stay on the disk of the browser. Needs memory for one part only. */
+export async function loadBlobs(url: string, options: Options & { signal?: AbortSignal; onProgress?: (loaded: number, total: number) => void }): Promise<Blob[]> {
+  const { cache, size = PART_BYTES, signal, onProgress } = options, blobs: Blob[] = [];
+  let total = await knownSize(url, cache), loaded = 0;
+  for (let index = 0; index === 0 || index * size < total; index++) {
+    if (signal?.aborted) throw new Error('cancelled');
+    const saved = async () => { try { const blob = await (await cache?.match(partKey(url, index)))?.blob(); return blob && blob.size === Math.min(size, total - index * size) ? blob : null; } catch { return null; } };
+    let blob = total ? await saved() : null;
+    if (!blob) {
+      const part = await loadPart(url, index, total, options);
+      total = part.total;
+      blob = await saved() ?? new Blob([part.bytes as Uint8Array<ArrayBuffer>]);
+    }
+    blobs.push(blob);
+    loaded += blob.size;
+    onProgress?.(loaded, total);
+  }
+  return blobs;
+}
+
 /** How much of the large files is already in the cache, from 0 to 1. A file that was stored whole counts, too. */
 export async function storedShare(cache: PartCache, size = PART_BYTES): Promise<number> {
   const urls = (await cache.keys?.() ?? []).map(request => request.url);

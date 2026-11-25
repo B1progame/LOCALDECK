@@ -23,6 +23,7 @@
     "@radix-ui/react-switch": "^1.4.1",
     "@radix-ui/react-tabs": "^1.2.1",
     "@radix-ui/react-tooltip": "^1.4.1",
+    "@wllama/wllama": "2.3.7",
     "dexie": "^4.4.7",
     "lucide-react": "^1.78.0",
     "motion": "^14.14.0",

@@ -1,6 +1,6 @@
 /* Sign-in / create-account screen for sharing. The two modes look clearly different and animate between each other. */
 import { t, tm } from './i18n';
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, Clock3, Eye, EyeOff, KeyRound, LoaderCircle, Mail, ShieldCheck, Sparkles, UserRound, WandSparkles } from 'lucide-react';
 import { firebaseAuthRequest, WRONG_LOGIN } from './services/firebaseAuth';
@@ -15,6 +15,17 @@ import { ShareArt } from './shareArt';
 
 export type AuthMode = 'signin' | 'signup';
 export const EMAIL_FOR_LINK_KEY = 'localdeck-email-for-signin';
+
+const PHONE = '(max-width: 640px)';
+function usePhone(): boolean {
+  const [phone, setPhone] = useState(() => matchMedia(PHONE).matches);
+  useEffect(() => {
+    const query = matchMedia(PHONE), change = () => setPhone(query.matches);
+    query.addEventListener('change', change);
+    return () => query.removeEventListener('change', change);
+  }, []);
+  return phone;
+}
 
 
 export function LoginExperience({ apiKey, social, onCredential, error, backHref }: {
@@ -34,6 +45,11 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
   const [message, setMessage] = useState('');
   const [formError, setFormError] = useState('');
   const [stay, setStay] = useState(staysSignedIn);
+  const phone = usePhone();
+  const [step, setStep] = useState<'start' | 'email'>('start');
+  const title = useRef<HTMLHeadingElement>(null);
+  /** On a phone the email form is a screen of its own. */
+  const open = (next: 'start' | 'email') => { setStep(next); setFormError(''); setMessage(''); window.setTimeout(() => { title.current?.focus({ preventScroll: true }); window.scrollTo(0, 0); }, 0); };
   const rulesMet = PASSWORD_RULES.filter(rule => rule.test(password)).length;
   // Measure the active form so the card height glides instead of snapping when switching modes.
   const inner = useRef<HTMLDivElement>(null);
@@ -43,7 +59,7 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
     const observer = new ResizeObserver(() => setHeight(el.offsetHeight));
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [phone]);
 
   /** The waiting time after too many tries, as a message. */
   const mustWait = (action: string) => { const left = waitFor(action); return left ? t('Too many tries. Wait {0} and try again.', left > 90 ? t('{0} minutes', Math.ceil(left / 60)) : t('{0} seconds', left)) : ''; };
@@ -113,6 +129,52 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
   };
 
   const signup = mode === 'signup';
+  const stayRow = <label className="auth-stay"><input type="checkbox" checked={stay} onChange={event => { setStay(event.target.checked); setStaySignedIn(event.target.checked); }}/><span>{t('Stay signed in on this device')}<small>{t('Turn this off on a shared computer.')}</small></span></label>;
+  const form = <form onSubmit={event => void submit(event)} className="auth-form">
+      {signup && <label className="email-auth-field"><span>{t('Username')}</span><span className="auth-input"><UserRound size={16}/><input value={username} onChange={e => setUsername(e.target.value)} autoComplete="nickname" placeholder={t('How LocalDeck greets you')} required minLength={2} maxLength={30}/></span></label>}
+      <label className="email-auth-field"><span>{t('Email address')}</span><span className="auth-input"><Mail size={16}/><input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required maxLength={254}/></span></label>
+      <label className="email-auth-field"><span className="auth-label-row">{t('Password')}{!signup && <button type="button" className="text-button" disabled={Boolean(busy)} onClick={() => void reset()}>{t('Forgot?')}</button>}</span>
+        <span className="auth-input"><KeyRound size={16}/><input type={show ? 'text' : 'password'} autoComplete={signup ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} required minLength={signup ? 12 : 1} maxLength={128} placeholder={signup && !phone ? t('12+ characters, A–z and a symbol') : ''}/><button type="button" className="icon-button auth-eye" onClick={() => setShow(v => !v)} aria-label={show ? t('Hide password') : t('Show password')}>{show ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
+      {signup && <>
+        <div className={`auth-meter s${password ? Math.min(5, rulesMet + (rulesMet === PASSWORD_RULES.length && password.length >= 16 ? 1 : 0)) : 0}`} aria-hidden="true"><span><i/><i/><i/><i/><i/></span></div>
+        <ul className="pw-rules" aria-label={t('Password requirements')}>{PASSWORD_RULES.map(rule => { const ok = rule.test(password); return <li key={rule.id} className={ok ? 'ok' : ''}>{ok ? <Check size={13} aria-hidden="true"/> : <span className="pw-dot" aria-hidden="true"/>}{t(rule.label)}<span className="visually-hidden">{ok ? t(' (done)') : t(' (missing)')}</span></li>; })}</ul>
+        <label className="email-auth-field"><span>{t('Repeat password')}</span><span className={`auth-input ${confirm && confirm !== password ? 'mismatch' : confirm ? 'match' : ''}`}><KeyRound size={16}/><input type={show ? 'text' : 'password'} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} required maxLength={128}/>{confirm && confirm === password && <Check size={16} className="auth-ok"/>}</span></label>
+        {confirm && confirm !== password && <p className="field-hint error" role="alert">{t('The passwords don’t match yet.')}</p>}
+      </>}
+      <button className="button primary auth-submit" disabled={Boolean(busy)}>{busy === 'submit' ? <LoaderCircle size={16} className="spin"/> : signup ? <Sparkles size={16}/> : <ShieldCheck size={16}/>} {busy === 'submit' ? t('Please wait…') : signup ? t('Create free account') : t('Sign in')} {!busy && <ArrowRight size={16}/>}</button>
+    </form>;
+  const magic = !signup && <button type="button" className="auth-magic" disabled={Boolean(busy)} onClick={() => void sendLink()}>{busy === 'link' ? <LoaderCircle size={15} className="spin"/> : <WandSparkles size={15}/>} {t('Email me a sign-in link instead')}</button>;
+  const notes = <>
+          {formError && <p className="dialog-error" role="alert">{formError}</p>}
+          {error && <p className="dialog-error" role="alert">{error}</p>}
+          {message && <p className="email-auth-message" role="status">{message}</p>}
+  </>;
+  const hint = <p className="auth-switch-hint">{signup ? <>{t('Already have an account?')} <button type="button" className="text-button" onClick={() => switchMode('signin')}>{t('Sign in')}</button></> : <>{t('New here?')} <button type="button" className="text-button" onClick={() => switchMode('signup')}>{t('Create a free account')}</button></>}</p>;
+  const privacy = <p className="auth-privacy">{t('The operator of this sharing service sees your name, email address and usage, but never your projects.')} <a href="#/privacy">{t('Privacy')}</a></p>;
+
+  if (phone) return <section className={`auth-phone mode-${mode} step-${step}`}>
+    <div className="auth-phone-art"><ShareArt mode={mode}/></div>
+    <div className="auth-sheet">
+      <motion.div key={`${mode}-${step}`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', bounce: 0, visualDuration: .35 }}>
+        {step === 'start' ? <>
+          <h1 ref={title} tabIndex={-1}>{signup ? t('Create your free account') : t('Welcome back')}</h1>
+          <p>{signup ? t('Only needed for sharing links. Your library itself never leaves this device.') : t('Sign in to share projects as encrypted links.')}</p>
+          {social(mode)}
+          <button type="button" className="button primary auth-email-open" onClick={() => open('email')}><Mail size={17}/> {signup ? t('Sign up with email') : t('Continue with email')}</button>
+          {notes}
+          {stayRow}
+          {hint}
+          {privacy}
+        </> : <>
+          <div className="auth-sheet-head"><button type="button" className="icon-button" onClick={() => open('start')} aria-label={t('Back')}><ArrowLeft size={19}/></button><h1 ref={title} tabIndex={-1}>{signup ? t('Sign up with email') : t('Sign in with email')}</h1></div>
+          {form}
+          {magic}
+          {notes}
+          {hint}
+        </>}
+      </motion.div>
+    </div>
+  </section>;
   return <section className={`share-login-card share-login-card-full auth-card beam mode-${mode}`}>
     <div className="share-login-art auth-art">
       <ShareArt mode={mode}/>
@@ -135,33 +197,19 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
           <h2>{signup ? <>{t('Create your')}<br/><em>{t('free account.')}</em></> : <>{t('Welcome')}<br/><em>{t('back to LocalDeck.')}</em></>}</h2>
           <p>{signup ? t('Only needed for sharing links. Your library itself never leaves this device.') : t('Sign in to create and manage encrypted links. People you send a link to don’t need an account.')}</p>
           {signup && <ul className="auth-perks"><li><Check size={14}/> {t('Encrypted share links')}</li><li><Check size={14}/> {t('Free storage included')}</li><li><Check size={14}/> {t('No ads, no tracking')}</li></ul>}
-          <label className="auth-stay"><input type="checkbox" checked={stay} onChange={event => { setStay(event.target.checked); setStaySignedIn(event.target.checked); }}/><span>{t('Stay signed in on this device')}<small>{t('Turn this off on a shared computer.')}</small></span></label>
+          {stayRow}
           {social(mode)}
           <div className="auth-divider"><span>{signup ? t('or sign up with email') : t('or with email')}</span></div>
-          <form onSubmit={event => void submit(event)} className="auth-form">
-            {signup && <label className="email-auth-field"><span>{t('Username')}</span><span className="auth-input"><UserRound size={16}/><input value={username} onChange={e => setUsername(e.target.value)} autoComplete="nickname" placeholder={t('How LocalDeck greets you')} required minLength={2} maxLength={30}/></span></label>}
-            <label className="email-auth-field"><span>{t('Email address')}</span><span className="auth-input"><Mail size={16}/><input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required maxLength={254}/></span></label>
-            <label className="email-auth-field"><span className="auth-label-row">{t('Password')}{!signup && <button type="button" className="text-button" disabled={Boolean(busy)} onClick={() => void reset()}>{t('Forgot?')}</button>}</span>
-              <span className="auth-input"><KeyRound size={16}/><input type={show ? 'text' : 'password'} autoComplete={signup ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} required minLength={signup ? 12 : 1} maxLength={128} placeholder={signup ? t('12+ characters, A–z and a symbol') : ''}/><button type="button" className="icon-button auth-eye" onClick={() => setShow(v => !v)} aria-label={show ? t('Hide password') : t('Show password')}>{show ? <EyeOff size={16}/> : <Eye size={16}/>}</button></span></label>
-            {signup && <>
-              <div className={`auth-meter s${password ? Math.min(5, rulesMet + (rulesMet === PASSWORD_RULES.length && password.length >= 16 ? 1 : 0)) : 0}`} aria-hidden="true"><span><i/><i/><i/><i/><i/></span></div>
-              <ul className="pw-rules" aria-label={t('Password requirements')}>{PASSWORD_RULES.map(rule => { const ok = rule.test(password); return <li key={rule.id} className={ok ? 'ok' : ''}>{ok ? <Check size={13} aria-hidden="true"/> : <span className="pw-dot" aria-hidden="true"/>}{t(rule.label)}<span className="visually-hidden">{ok ? t(' (done)') : t(' (missing)')}</span></li>; })}</ul>
-              <label className="email-auth-field"><span>{t('Repeat password')}</span><span className={`auth-input ${confirm && confirm !== password ? 'mismatch' : confirm ? 'match' : ''}`}><KeyRound size={16}/><input type={show ? 'text' : 'password'} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} required maxLength={128}/>{confirm && confirm === password && <Check size={16} className="auth-ok"/>}</span></label>
-              {confirm && confirm !== password && <p className="field-hint error" role="alert">{t('The passwords don’t match yet.')}</p>}
-            </>}
-            <button className="button primary auth-submit" disabled={Boolean(busy)}>{busy === 'submit' ? <LoaderCircle size={16} className="spin"/> : signup ? <Sparkles size={16}/> : <ShieldCheck size={16}/>} {busy === 'submit' ? t('Please wait…') : signup ? t('Create free account') : t('Sign in')} {!busy && <ArrowRight size={16}/>}</button>
-          </form>
-          {!signup && <button type="button" className="auth-magic" disabled={Boolean(busy)} onClick={() => void sendLink()}>{busy === 'link' ? <LoaderCircle size={15} className="spin"/> : <WandSparkles size={15}/>} {t('Email me a sign-in link instead')}</button>}
-          {formError && <p className="dialog-error" role="alert">{formError}</p>}
-          {error && <p className="dialog-error" role="alert">{error}</p>}
-          {message && <p className="email-auth-message" role="status">{message}</p>}
-          <p className="auth-switch-hint">{signup ? <>{t('Already have an account?')} <button type="button" className="text-button" onClick={() => switchMode('signin')}>{t('Sign in')}</button></> : <>{t('New here?')} <button type="button" className="text-button" onClick={() => switchMode('signup')}>{t('Create a free account')}</button></>}</p>
+          {form}
+          {magic}
+          {notes}
+          {hint}
         </motion.div>
       </AnimatePresence>
       </div>
       </motion.div>
       <div className="share-login-foot"><span><ShieldCheck size={14}/> {t('Encrypted before upload')}</span><span><Clock3 size={14}/> {t('Links expire by themselves')}</span></div>
-      <p className="auth-privacy">{t('The operator of this sharing service sees your name, email address and usage, but never your projects.')} <a href="#/privacy">{t('Privacy')}</a></p>
+      {privacy}
     </div>
   </section>;
 }

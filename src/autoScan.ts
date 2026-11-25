@@ -9,6 +9,7 @@ import { db } from './services/database';
 import { getAssets, updateItem } from './services/library';
 import { htmlText, importantTags, isPlaceholderTitle, scriptTexts, suggestDetails, type ProjectText, type ScanResult } from './services/projectScan';
 import { quickScan } from './services/quickScan';
+import { smallDetails } from './services/smallScan';
 import { TYPE_LABEL } from './shared';
 import type { ContentType, LibraryItem } from './types';
 
@@ -81,9 +82,10 @@ export async function askAbout(project: ReadProject, filename: string, options: 
   if (useLocalAi.getState().engine !== 'instant' && await modelIsReady()) {
     try {
       await loadLocalAi();
+      const ask = (messages: Parameters<typeof generateText>[0], maxTokens: number) => options.cancelled?.() ? Promise.reject(new Error('cancelled')) : generateText(messages, () => undefined, { maxTokens, temperature: 0 });
+      if (useLocalAi.getState().engine === 'small') return await smallDetails(project, { filename, fallback: language(), ask, ...options });
       return await suggestDetails(project, {
-        filename, language: languageName(project.language), ...options, rate: useContentMarks.getState().on,
-        ask: (messages, maxTokens) => options.cancelled?.() ? Promise.reject(new Error('cancelled')) : generateText(messages, () => undefined, { maxTokens, temperature: 0 }),
+        filename, language: languageName(project.language), ...options, rate: useContentMarks.getState().on, ask,
       });
     } catch (error) {
       if (options.cancelled?.() || (error instanceof Error && ['cancelled', 'removed'].includes(error.message))) throw error;

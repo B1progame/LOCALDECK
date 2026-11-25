@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Check, CircleStop, LoaderCircle, ScanText, X } from 'lucide-react';
 import { t } from './i18n';
 import { askAbout, kindTag, readItem, ruleCheck, useAutoScan, withAi } from './autoScan';
-import { cancelLoading, stopGenerating, useLocalAi } from './localAi/engine';
+import { cancelLoading, isModel, stopGenerating, useLocalAi } from './localAi/engine';
 import { ContentNote } from './contentNote';
 import { LocalAiStatus } from './localAiSettings';
 import { withOpinion, type ContentCheck } from './services/contentCheck';
@@ -29,7 +29,7 @@ export function ProjectScanPanel({ item }: { item: LibraryItem }) {
   useEffect(() => () => { run.current = -1; if (owns.current) { cancelLoading(); stopGenerating(); } }, []);
   if (engine === 'none') return null;
   const working = step !== null;
-  const model = engine === 'browser' || engine === 'qwen';
+  const model = engine === 'browser' || isModel(engine);
 
   const scan = async () => {
     const id = ++run.current;
@@ -72,7 +72,7 @@ export function ProjectScanPanel({ item }: { item: LibraryItem }) {
     <div className="panel-title-row"><h2 ref={heading} tabIndex={-1}>{draft ? found?.quick ? t('Suggestion of the quick scan') : t('Suggestion of the local AI') : model ? t('Local AI') : t('Quick scan')}</h2>{found && draft && <span className="muted-text">{found.read < found.total ? t('{0} of {1} parts read', found.read, found.total) : t('Whole project read')}</span>}</div>
     {!draft && <>
       <p className="muted-text">{t('Reads the whole HTML of this project on your device and suggests name, type, subject, topic, description and hashtags. Nothing changes before you save.')}</p>
-      {engine === 'qwen' && phase !== 'ready' && !working && <div className="scan-model"><LocalAiStatus compact/></div>}
+      {isModel(engine) && phase !== 'ready' && !working && <div className="scan-model"><LocalAiStatus compact/></div>}
       {working
         ? <div className="scan-run"><p role="status"><LoaderCircle size={16} className="spin"/> {!step.steps ? (active && active !== key ? t('Waiting for another project…') : phase === 'ready' ? t('Reading the project…') : t('Starting the AI…')) : step.step < step.steps ? t('Reading part {0} of {1}…', step.step, step.steps - 1) : t('Writing name and hashtags…')}</p><div className={`progress-bar ${step.steps > 1 ? 'determinate' : 'indeterminate'}`} aria-hidden="true"><i style={step.steps > 1 ? { width: `${Math.round(step.step / (step.steps + 1) * 100)}%` } : undefined}/></div><button type="button" className="button" onClick={stop}><CircleStop size={15}/> {t('Stop')}</button></div>
         : inBackground ? <p className="local-ai-line" role="status"><LoaderCircle size={16} className="spin"/> {active === item.id ? t('The local AI is reading this project…') : t('This project is waiting for the local AI…')}</p>

@@ -1236,7 +1236,6 @@ const messages: Record<string, string> = {
   "Continue loading": "Seguir cargando",
   "Quick scan": "Escaneo rápido",
   "Nothing to load, works on every device": "Nada que cargar, funciona en todo dispositivo",
-  "Better texts, loaded once, {0}": "Mejores textos, se carga una vez, {0}",
   "Projects are not described": "Los proyectos no se describen",
   "LocalDeck reads every project you import and every shared link you open, on your device. It explains what it is and adds name, subject and hashtags. The quick scan needs no AI and no download. An AI writes better texts. Your projects never leave the device.": "LocalDeck lee cada proyecto que importas y cada enlace compartido que abres, en tu dispositivo. Explica qué es y añade nombre, asignatura y hashtags. El escaneo rápido no necesita IA ni descarga. Una IA escribe mejores textos. Tus proyectos nunca salen del dispositivo.",
   "Filled in from the words on the page. Check the fields.": "Rellenado con las palabras de la página. Revisa los campos.",
@@ -1245,6 +1244,17 @@ const messages: Record<string, string> = {
   "Suggestion of the quick scan": "Propuesta del escaneo rápido",
   "Taken from the words on the page. Check the fields, change what is wrong, then save.": "Sacado de las palabras de la página. Revisa los campos, corrige lo que esté mal y guarda.",
   "Turn on scanning in Settings, then LocalDeck also explains what a shared project is.": "Activa el escaneo en Ajustes y LocalDeck también explicará qué es un proyecto compartido.",
+  "Create your free account": "Crea tu cuenta gratis",
+  "Welcome back": "Hola de nuevo",
+  "Sign in to share projects as encrypted links.": "Inicia sesión para compartir proyectos con enlaces cifrados.",
+  "Sign up with email": "Registrarse con correo",
+  "Continue with email": "Continuar con correo",
+  "This browser is too old for the model. Update it, then try again.": "Este navegador es demasiado antiguo para el modelo. Actualízalo y vuelve a intentarlo.",
+  "Use {0}, it needs no graphics chip": "Usar {0}, no necesita chip gráfico",
+  "For every device, takes longer, loaded once, {0}": "Para cualquier dispositivo, más lento, se carga una vez, {0}",
+  "Best texts, needs a graphics chip, loaded once, {0}": "Los mejores textos, necesita chip gráfico, se carga una vez, {0}",
+  "It runs on the processor and needs no graphics chip. A project takes about a minute on a computer and a few minutes on a phone, so keep the page open. It reads the beginning and a part of the middle. It is a small model and makes mistakes, so check its suggestions. The model files come from Hugging Face, which sees your IP address while they load.": "Funciona con el procesador y no necesita chip gráfico. Un proyecto tarda más o menos un minuto en un ordenador y unos minutos en un móvil, así que deja la página abierta. Lee el principio y una parte del medio. Es un modelo pequeño y comete errores, revisa sus propuestas. Los archivos del modelo vienen de Hugging Face, que ve tu dirección IP mientras se cargan.",
+  "Choose where this project belongs. It can be in several collections.": "Elige dónde va este proyecto. Puede estar en varias colecciones.",
 };
 
 export default messages;

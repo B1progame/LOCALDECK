@@ -7,6 +7,15 @@ export const MODEL = {
   bytes: 489_000_000,
 };
 
+/** For devices without a usable graphics chip. Runs with the processor. */
+export const SMALL = {
+  name: 'Qwen3 0.6B',
+  url: 'https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_K_M.gguf',
+  revision: '50968a4468ef4233ed78cd7c3de230dd1d61a56b',
+  cache: 'localdeck-ai-small',
+  bytes: 396_705_472,
+};
+
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 export type ToWorker = { type: 'load' } | { type: 'generate'; id: number; messages: ChatMessage[]; maxTokens: number; temperature: number } | { type: 'stop' };
 export type FromWorker =

@@ -5,8 +5,8 @@ import path from 'node:path';
 
 function localdeckPrecache() {
   let emitted: string[] = [];
-  // Only the local AI needs these (about 27 MB). The service worker keeps them on first use, not for everyone.
-  const onDemand = /ort-wasm|^assets\/worker-/;
+  // Only the local AI needs these (about 29 MB). The service worker keeps them on first use, not for everyone.
+  const onDemand = /ort-wasm|^assets\/(worker|small|wllama)-/;
   return {
     name: 'localdeck-offline-shell',
     apply: 'build' as const,
