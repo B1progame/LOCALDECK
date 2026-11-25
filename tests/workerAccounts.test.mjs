@@ -653,3 +653,17 @@ test('a made-up key number does not make the Worker ask Google again and again',
   globalThis.fetch = before;
   assert.ok(asked <= 5, String(asked));
 });
+
+test('sign-ins are limited: wrong ones per network, real ones per account', async () => {
+  const from = (ip, credential) => worker.fetch(new Request(SHARES + '/auth/firebase', { method: 'POST', headers: { 'CF-Connecting-IP': ip }, body: JSON.stringify({ credential }) }), env);
+  const wrong = [];
+  for (let i = 0; i < 32; i++) wrong.push((await from('192.0.2.77', 'a.b.c')).status);
+  assert.deepEqual([wrong[0], wrong[29], wrong[31]], [401, 401, 429]);
+  const first = await token({ sub: 'often', email: 'often@example.com' }), second = await token({ sub: 'other-one', email: 'other-one@example.com' });
+  // People on that network can still sign in.
+  assert.equal((await from('192.0.2.77', first)).status, 200);
+  const real = [];
+  for (let i = 0; i < 41; i++) real.push((await from(`203.0.113.${i}`, first)).status);
+  assert.deepEqual([real[0], real.at(-1)], [200, 429]);
+  assert.equal((await from('203.0.113.1', second)).status, 200);
+});

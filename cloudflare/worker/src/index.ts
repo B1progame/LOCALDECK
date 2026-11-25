@@ -30,6 +30,9 @@ const MAX_IP_READS_PER_HOUR = 200;
 const MAX_IP_AUTH_PER_HOUR = 240;
 /** Requests of one signed-in account. Counted per account, so a school behind one address is not locked out. */
 const MAX_OWNER_PER_HOUR = 1200;
+/** Sign-ins that the Worker refuses, per connection, and real sign-ins of one account. */
+const MAX_WRONG_SIGN_INS_PER_HOUR = 30;
+const MAX_SIGN_INS_PER_HOUR = 40;
 const MAX_IP_MAILS_PER_HOUR = 8;
 const MAX_MAILS_PER_DAY = 90;
 const MAIL_WAIT_MS = 120_000;
@@ -246,12 +249,13 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
 }
 
 async function signIn(request: Request, env: Env, headers: Headers, verify: (token: string, env: Env) => Promise<Owner | null>): Promise<Response> {
-  if (!await rateLimitIp(env, request, 'auth_windows', MAX_IP_AUTH_PER_HOUR)) return json({ error: 'rate_limited' }, 429, headers);
+  if (!await rateLimitIp(env, request, 'auth_windows', MAX_IP_AUTH_PER_HOUR, 'sign-in:')) return json({ error: 'rate_limited' }, 429, headers);
   let credential = '';
   try { const body = await readJson(request); credential = typeof body.credential === 'string' ? body.credential : ''; }
   catch { return json({ error: 'invalid_request' }, 400, headers); }
   const owner = await verify(credential, env);
-  if (!owner) return json({ error: 'unauthorized' }, 401, headers);
+  if (!owner) return await rateLimitIp(env, request, 'auth_windows', MAX_WRONG_SIGN_INS_PER_HOUR, 'wrong-sign-in:') ? json({ error: 'unauthorized' }, 401, headers) : json({ error: 'rate_limited' }, 429, headers);
+  if (!await rateLimit(env, 'auth_windows', `sign-in:${owner.id}`, MAX_SIGN_INS_PER_HOUR)) return json({ error: 'rate_limited' }, 429, headers);
   // The statistics must never keep someone from signing in.
   const allowed = await recordSignIn(env, owner).catch(error => { console.error('sign_in_not_recorded', error); return true; });
   return allowed ? json(owner, 200, headers) : json({ error: 'blocked' }, 403, headers);

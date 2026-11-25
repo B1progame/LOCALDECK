@@ -3,7 +3,8 @@ import { t, tm } from './i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, Clock3, Eye, EyeOff, KeyRound, LoaderCircle, Mail, ShieldCheck, Sparkles, UserRound, WandSparkles } from 'lucide-react';
-import { firebaseAuthRequest } from './services/firebaseAuth';
+import { firebaseAuthRequest, WRONG_LOGIN } from './services/firebaseAuth';
+import { mailSent, rightPassword, waitFor, wrongPassword } from './services/loginGuard';
 import { setStaySignedIn, staysSignedIn, type Credential } from './services/session';
 import { sendVerificationMail } from './services/verificationMail';
 import { rovingKeys } from './a11y';
@@ -44,6 +45,9 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
     return () => observer.disconnect();
   }, []);
 
+  /** The waiting time after too many tries, as a message. */
+  const mustWait = (action: string) => { const left = waitFor(action); return left ? t('Too many tries. Wait {0} and try again.', left > 90 ? t('{0} minutes', Math.ceil(left / 60)) : t('{0} seconds', left)) : ''; };
+
   const switchMode = (next: AuthMode) => { setMode(next); setFormError(''); setMessage(''); setPassword(''); setConfirm(''); };
 
   const submit = async (event: React.FormEvent) => {
@@ -63,7 +67,10 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
         setMessage(t('Welcome, {0}! We sent a confirmation link to {1}. Open it, then sign in here.', name, email.trim()));
         setPassword(''); setConfirm(''); setMode('signin');
       } else {
-        const result = await firebaseAuthRequest(apiKey, 'signInWithPassword', { email: email.trim(), password, returnSecureToken: true });
+        const blocked = mustWait('password');
+        if (blocked) { setFormError(blocked); return; }
+        const result = await firebaseAuthRequest(apiKey, 'signInWithPassword', { email: email.trim(), password, returnSecureToken: true }).catch((reason: unknown) => { if (reason instanceof Error && reason.message === WRONG_LOGIN) wrongPassword(); throw reason; });
+        rightPassword();
         if (!result.idToken || !result.email) throw new Error(t('Email sign-in could not be completed.'));
         const account = await firebaseAuthRequest(apiKey, 'lookup', { idToken: result.idToken });
         if (account.users?.[0]?.emailVerified !== true) {
@@ -80,9 +87,12 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
   const sendLink = async () => {
     setFormError(''); setMessage('');
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setFormError(t('Enter your email address first.')); return; }
+    const blocked = mustWait('link');
+    if (blocked) { setFormError(blocked); return; }
     setBusy('link');
     try {
       await firebaseAuthRequest(apiKey, 'sendOobCode', { requestType: 'EMAIL_SIGNIN', email: email.trim(), continueUrl: `${location.origin}${import.meta.env.BASE_URL}`, canHandleCodeInApp: true });
+      mailSent('link');
       try { localStorage.setItem(EMAIL_FOR_LINK_KEY, email.trim()); } catch { /* the link page will ask for the email */ }
       setMessage(t('Sign-in link sent to {0}. Open it on this device and you’re signed in, no password needed.', email.trim()));
     } catch (reason) {
@@ -94,8 +104,10 @@ export function LoginExperience({ apiKey, social, onCredential, error, backHref 
   const reset = async () => {
     setFormError(''); setMessage('');
     if (!email.trim()) { setFormError(t('Enter your email address first.')); return; }
+    const blocked = mustWait('reset');
+    if (blocked) { setFormError(blocked); return; }
     setBusy('reset');
-    try { await firebaseAuthRequest(apiKey, 'sendOobCode', { requestType: 'PASSWORD_RESET', email: email.trim() }); setMessage(t('If an account uses that address, a password reset link is on its way.')); }
+    try { await firebaseAuthRequest(apiKey, 'sendOobCode', { requestType: 'PASSWORD_RESET', email: email.trim() }); mailSent('reset'); setMessage(t('If an account uses that address, a password reset link is on its way.')); }
     catch (reason) { setFormError(reason instanceof Error ? tm(reason.message) : t('Could not send a reset link.')); }
     finally { setBusy(''); }
   };

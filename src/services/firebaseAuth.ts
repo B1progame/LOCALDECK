@@ -1,11 +1,13 @@
 import { language } from '../i18n';
 type FirebaseAuthResponse = { idToken?: string; refreshToken?: string; email?: string; displayName?: string; users?: Array<{ email?: string; emailVerified?: boolean; displayName?: string }>; error?: { message?: string } };
 
+export const WRONG_LOGIN = 'The email or password is incorrect.';
+
 function messageFor(raw: string): string {
   // Firebase sends either a bare code or "CODE : details"; compare the code, keep the details for policy errors.
   const code = raw.split(' : ')[0]!.trim();
   if (code === 'EMAIL_EXISTS') return 'Could not create the account. If you already registered this address, try signing in or resetting your password.';
-  if (code === 'INVALID_LOGIN_CREDENTIALS' || code === 'EMAIL_NOT_FOUND' || code === 'INVALID_PASSWORD') return 'The email or password is incorrect.';
+  if (code === 'INVALID_LOGIN_CREDENTIALS' || code === 'EMAIL_NOT_FOUND' || code === 'INVALID_PASSWORD') return WRONG_LOGIN;
   if (code === 'WEAK_PASSWORD') return 'Choose a stronger password: 12+ characters with an uppercase letter, a lowercase letter and a symbol.';
   if (code === 'PASSWORD_DOES_NOT_MEET_REQUIREMENTS') {
     const details = raw.match(/\[(.*)\]/)?.[1];

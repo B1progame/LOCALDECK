@@ -1215,6 +1215,9 @@ const messages: Record<string, string> = {
   "Your sign-in, until you sign out (browser storage). Without “Stay signed in” only until you close the tab.": "Tu inicio de sesión, hasta que cierres sesión (almacenamiento del navegador). Sin «Seguir conectado», solo hasta que cierres la pestaña.",
   "LocalDeck does not run inside other websites, to protect your account.": "Para proteger tu cuenta, LocalDeck no se abre dentro de otras webs.",
   "Open LocalDeck": "Abrir LocalDeck",
+  "Too many tries. Wait {0} and try again.": "Demasiados intentos. Espera {0} e inténtalo de nuevo.",
+  "{0} minutes": "{0} minutos",
+  "{0} seconds": "{0} segundos",
 };
 
 export default messages;
