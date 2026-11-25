@@ -361,7 +361,6 @@ const messages: Record<string, string> = {
   "Forgot password?": "Password dimenticata?",
   "Email verification and password resets are sent by Firebase. No custom domain or mail server is needed. This email login is a separate share account from Google sign-in.": "Firebase invia conferme e nuove password. Non servono dominio né server di posta. Questo account email è separato da quello Google.",
   "Sharing is not connected to a Cloudflare Worker yet.": "La condivisione non è ancora collegata a un Worker Cloudflare.",
-  "Could not reach the LocalDeck sharing service. It may be offline, or this site’s address is not allowed by the Worker.": "Il servizio di condivisione non è raggiungibile. Forse è spento o questo indirizzo non è consentito.",
   "The sharing service is not finished setting up (its database tables are missing). Run the D1 schema step in docs/SHARING.md.": "Il servizio non è completo (mancano le tabelle). Esegui il passo D1 di docs/SHARING.md.",
   "Too many sign-in attempts. Please wait and try again.": "Troppi tentativi. Aspetta un attimo e riprova.",
   "Google could not verify this account for sharing.": "Google non ha potuto verificare questo account.",
@@ -898,7 +897,6 @@ const messages: Record<string, string> = {
   "Too many requests": "Troppe richieste",
   "Your network opened a lot of shares in the last hour. Wait a little, then try again.": "Dalla tua rete sono stati aperti molti link nell’ultima ora. Aspetta un attimo e riprova.",
   "The sharing service did not answer": "Il servizio di condivisione non ha risposto",
-  "Check your internet connection, then try again. The link itself is still fine.": "Controlla internet e riprova. Il link è a posto.",
   "The sharing service has a problem": "Il servizio di condivisione ha un problema",
   "This is usually over in a moment. The link itself is still fine, so try again.": "Di solito passa subito. Il link è a posto, riprova.",
   "The provider did not share an email address. Add an email to that account and allow LocalDeck to use it.": "Il fornitore non ha condiviso un’email. Aggiungine una a quell’account e permetti a LocalDeck di usarla.",
@@ -1271,6 +1269,8 @@ const messages: Record<string, string> = {
   "Questions and privacy": "Domande e privacy",
   "Found a bug?": "Hai trovato un errore?",
   "Report it on GitHub": "Segnalalo su GitHub",
+  "Could not reach the LocalDeck sharing service. Check your internet connection. The free service may also have reached its limit for today, then it works again tomorrow.": "Il servizio di condivisione di LocalDeck non è raggiungibile. Controlla la connessione. Forse il servizio gratuito ha anche raggiunto il limite di oggi, allora domani funziona di nuovo.",
+  "Check your internet connection, then try again. The free service may also have reached its limit for today, then it works again tomorrow. The link itself is still fine.": "Controlla la connessione e riprova. Forse il servizio gratuito ha anche raggiunto il limite di oggi, allora domani funziona di nuovo. Il link in sé è a posto.",
 };
 
 export default messages;

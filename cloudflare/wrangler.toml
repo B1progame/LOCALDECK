@@ -23,6 +23,15 @@ binding = "SHARES_KV"
 id = "5a3acea628dd43fa956ead4900871c4b"
 preview_id = "cca8b6d1388c464da7f6b4cb64e96539"
 
+# One address may send 300 requests a minute. Checked before anything else, without the database.
+[[ratelimits]]
+name = "FLOOD"
+namespace_id = "5401"
+
+  [ratelimits.simple]
+  limit = 300
+  period = 60
+
 [triggers]
 crons = ["17 * * * *"]
 

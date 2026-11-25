@@ -52,4 +52,4 @@ Same skill and way of working: source code and local tests only, nothing was tri
 
 Checked and fine: token checks, admin rights on every request, ownership of links, parts, projects and connections, SQL parameters, CORS, the mail relay, the local test admin (this computer only, not in the published site), the service worker, the text that goes to the small AI and what comes back, packages (`npm audit`: 0), no secrets in the repository or its history.
 
-Known and accepted: the free plan has 100,000 requests a day, so someone can still use those up. The number of visitors can be faked. A sign-in is valid for up to an hour after an account was disabled in Firebase. The small model is loaded from a fixed version, its files are not checked again with a checksum.
+Known: the free plan has 100,000 requests a day. One address may send 300 a minute, but only a domain of its own can stop a flood completely, see [CLOUDFLARE_LIMITS.md](CLOUDFLARE_LIMITS.md). The number of visitors can be faked. A sign-in is valid for up to an hour after an account was disabled in Firebase. The small model is loaded from a fixed version, its files are not checked again with a checksum.

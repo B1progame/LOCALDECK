@@ -10,6 +10,8 @@ import { sendVerificationLink, type MailEnv } from './verificationMail.ts';
 interface Env extends MailEnv {
   /** Comma-separated Google addresses with admin rights. Stored as a Worker secret, never in the repository. */
   ADMIN_EMAILS?: string;
+  /** Counts requests of one address inside Cloudflare, without the database. */
+  FLOOD?: { limit(options: { key: string }): Promise<{ success: boolean }> };
   SHARES_KV: KVNamespace;
   SHARES_DB: D1Database;
   /** More room for projects. The service also runs without them. */
@@ -376,6 +378,11 @@ async function sendVerification(request: Request, env: Env, headers: Headers): P
 const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
+      // First of all and without the database, so a flood from one address costs as little as possible.
+      if (env.FLOOD) {
+        const { success } = await env.FLOOD.limit({ key: clientAddress(request) }).catch(() => ({ success: true }));
+        if (!success) return response('{"error":"rate_limited"}', 429, cors(request, env), { ...jsonHeaders, 'retry-after': '60' });
+      }
       // Existing tables keep working when this check fails, so a short database outage must not stop the request here.
       if (request.method !== 'OPTIONS') await ensureSchema(env).catch(error => console.error('schema_check_failed', error));
       if (request.method !== 'GET') return await worker.handle(request, env);

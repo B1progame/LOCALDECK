@@ -746,3 +746,14 @@ test('an AI cannot blow a project up with edits', async () => {
   const many = await change([{ path: 'index.html', find: 'b', replace: 'c' }]);
   assert.match(many.content[0].text, /at least 100 times/);
 });
+
+test('a flood from one address is refused before the database is asked', async () => {
+  const asked = [];
+  const target = { ...env, FLOOD: { async limit({ key }) { asked.push(key); return { success: false }; } }, SHARES_DB: { prepare() { throw new Error('the database was asked'); } } };
+  const response = await worker.fetch(new Request(`${SHARES}/me`, { headers: { 'CF-Connecting-IP': '2001:db8:1:2:3:4:5:6', Origin: 'https://example.pages.dev' } }), target);
+  assert.deepEqual([response.status, response.headers.get('retry-after'), response.headers.get('access-control-allow-origin')], [429, '60', 'https://example.pages.dev']);
+  assert.deepEqual(asked, ['2001:db8:1:2']);
+  // A problem with the counter itself must not stop anyone.
+  const broken = { ...env, FLOOD: { async limit() { throw new Error('down'); } } };
+  assert.equal((await worker.fetch(new Request(`${SHARES}/me`), broken)).status, 401);
+});

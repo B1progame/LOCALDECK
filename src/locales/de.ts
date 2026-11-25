@@ -361,7 +361,6 @@ const messages: Record<string, string> = {
   "Forgot password?": "Passwort vergessen?",
   "Email verification and password resets are sent by Firebase. No custom domain or mail server is needed. This email login is a separate share account from Google sign-in.": "Bestätigungen und neue Passwörter verschickt Firebase. Du brauchst keine eigene Domain und keinen Mailserver. Diese E-Mail-Anmeldung ist ein eigenes Konto, getrennt von der Google-Anmeldung.",
   "Sharing is not connected to a Cloudflare Worker yet.": "Das Teilen ist noch nicht mit einem Cloudflare Worker verbunden.",
-  "Could not reach the LocalDeck sharing service. It may be offline, or this site’s address is not allowed by the Worker.": "Der Teilen-Dienst von LocalDeck ist nicht erreichbar. Er ist vielleicht offline, oder die Adresse dieser Seite ist dort nicht erlaubt.",
   "The sharing service is not finished setting up (its database tables are missing). Run the D1 schema step in docs/SHARING.md.": "Der Teilen-Dienst ist noch nicht fertig eingerichtet (die Datenbanktabellen fehlen). Führe den D1-Schritt aus docs/SHARING.md aus.",
   "Too many sign-in attempts. Please wait and try again.": "Zu viele Anmeldeversuche. Warte kurz und versuch es dann noch einmal.",
   "Google could not verify this account for sharing.": "Google konnte dieses Konto nicht bestätigen.",
@@ -950,7 +949,6 @@ const messages: Record<string, string> = {
   "Too many requests": "Zu viele Anfragen",
   "Your network opened a lot of shares in the last hour. Wait a little, then try again.": "Aus deinem Netz wurden in der letzten Stunde viele Links geöffnet. Warte kurz und versuch es dann noch einmal.",
   "The sharing service did not answer": "Der Teilen-Dienst hat nicht geantwortet",
-  "Check your internet connection, then try again. The link itself is still fine.": "Prüfe dein Internet und versuch es noch einmal. Der Link selbst ist in Ordnung.",
   "The sharing service has a problem": "Der Teilen-Dienst hat ein Problem",
   "This is usually over in a moment. The link itself is still fine, so try again.": "Das ist meist gleich vorbei. Der Link selbst ist in Ordnung, versuch es noch einmal.",
   "The provider did not share an email address. Add an email to that account and allow LocalDeck to use it.": "Der Anbieter hat keine E-Mail-Adresse weitergegeben. Hinterlege dort eine und erlaube LocalDeck, sie zu benutzen.",
@@ -1323,6 +1321,8 @@ const messages: Record<string, string> = {
   "Questions and privacy": "Fragen und Datenschutz",
   "Found a bug?": "Einen Fehler gefunden?",
   "Report it on GitHub": "Auf GitHub melden",
+  "Could not reach the LocalDeck sharing service. Check your internet connection. The free service may also have reached its limit for today, then it works again tomorrow.": "Der Teilen-Dienst von LocalDeck ist nicht erreichbar. Prüf dein Internet. Vielleicht hat der kostenlose Dienst auch sein Limit für heute erreicht, dann geht es morgen wieder.",
+  "Check your internet connection, then try again. The free service may also have reached its limit for today, then it works again tomorrow. The link itself is still fine.": "Prüf dein Internet und versuch es noch einmal. Vielleicht hat der kostenlose Dienst auch sein Limit für heute erreicht, dann geht es morgen wieder. Der Link selbst ist in Ordnung.",
 };
 
 export default messages;
