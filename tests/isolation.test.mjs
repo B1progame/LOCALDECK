@@ -44,3 +44,31 @@ test('the service worker sandboxes every project file except PDFs', async () => 
   }
   assert.equal((await serve('notes.pdf', 'application/pdf')).headers.get('Content-Security-Policy'), null);
 });
+
+test('a page that is made to be slow does not stop the app or the service', async () => {
+  const { diagnoseCompatibility } = await import('../src/services/importer.ts');
+  const { checkContent } = await import('../src/services/contentCheck.ts');
+  const { checkProject } = await import('../cloudflare/worker/src/guide.ts');
+  const fast = (name, run) => { const start = performance.now(); run(); assert.ok(performance.now() - start < 2500, `${name}: ${Math.round(performance.now() - start)} ms`); };
+  const fill = (unit, bytes) => unit.repeat(Math.floor(bytes / unit.length));
+  for (const unit of ['url( ', 'url(', 'url("', "url('a", 'src="', '@import "', '<script id="localdeck-manifest" type="application/json"', '<script id="localdeck-manifest" type="application/json">']) fast(unit, () => diagnoseCompatibility(fill(unit, 600_000)));
+  fast('password', () => checkContent({ top: '', text: '', source: fill('<input ', 3_000_000) }));
+  for (const unit of ['<img ', '<meta ', '<html ', '<input ', '<img src="x">', '<img src="/x">\n']) fast(unit, () => checkProject(new Map([['index.html', new TextEncoder().encode(fill(unit, 200_000))]])));
+});
+
+test('what the checks find stays the same', async () => {
+  const { diagnoseCompatibility } = await import('../src/services/importer.ts');
+  const { checkProject } = await import('../cloudflare/worker/src/guide.ts');
+  const report = diagnoseCompatibility('<style>a{background:url(one.png)} b{background:url( "two.png" )} c{background:url(\'three.png\')} d{background:url(https://x.example/y.png)}</style>', ['index.html', 'one.png'], 'index.html').findings.join(' ');
+  assert.match(report, /1 remote file reference detected/);
+  assert.match(report, /two\.png/); assert.match(report, /three\.png/); assert.doesNotMatch(report, /one\.png/);
+  const found = checkProject(new Map([['index.html', new TextEncoder().encode('<!doctype html><html lang="de"><img alt="a" src="https://x.example/a.png"><input type="password"><script src="missing.js"></script>')]])).join('\n');
+  for (const part of [/internet/, /password/, /"missing\.js" is not in the project/, /viewport/]) assert.match(found, part);
+});
+
+test('the code of the admin page is not loaded by everyone', async () => {
+  const main = await readFile('src/main.tsx', 'utf8'), config = await readFile('vite.config.ts', 'utf8');
+  assert.doesNotMatch(main, /^import \{ AdminPage \}/m);
+  assert.match(main, /lazy\(\(\) => import\('\.\/adminPage'\)/);
+  assert.match(config, /onDemand = .*adminPage/);
+});

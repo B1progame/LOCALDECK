@@ -87,6 +87,8 @@ export function guide(topic: string | undefined, input: Record<string, unknown>,
 
 const decoder = new TextDecoder();
 const SCAN_BYTES = 200_000, SCAN_TOTAL = 800_000;
+/** Enough to fix, and looking up the line of every problem takes time. */
+const MAX_FOUND = 60;
 const line = (text: string, index: number) => text.slice(0, index).split('\n').length;
 
 /** Problems that a person would notice. Looks at the start of every text file, so it stays quick. */
@@ -99,7 +101,7 @@ export function checkProject(files: Map<string, Uint8Array>): string[] {
     const part = data.subarray(0, Math.min(SCAN_BYTES, budget));
     budget -= part.length;
     const text = decoder.decode(part), script = /\.m?js$/i.test(path), page = /\.html?$/i.test(path), style = /\.css$/i.test(path);
-    if (page || /\.svg$/i.test(path)) add(path, text, /<(?:script|link|img|iframe|audio|video|source|embed|image|use)\b[^>]*?\s(?:src|href|xlink:href)\s*=\s*["']?(?:https?:)?\/\//i, 'loads something from the internet. It is blocked, put the file into the project.');
+    if (page || /\.svg$/i.test(path)) add(path, text, /<(?:script|link|img|iframe|audio|video|source|embed|image|use)\b[^<>]*?\s(?:src|href|xlink:href)\s*=\s*["']?(?:https?:)?\/\//i, 'loads something from the internet. It is blocked, put the file into the project.');
     if (page || style) add(path, text, /@import\s+(?:url\()?["']?(?:https?:)?\/\/|url\(\s*["']?(?:https?:)?\/\//i, 'loads a style, font or image from the internet. It is blocked.');
     if (page || script) {
       add(path, text, /\bfetch\(\s*["'`]https?:|new\s+WebSocket\(|new\s+EventSource\(|importScripts\(\s*["']https?:|from\s+["']https?:/i, 'contacts the internet. It is blocked.');
@@ -108,11 +110,12 @@ export function checkProject(files: Map<string, Uint8Array>): string[] {
       add(path, text, /serviceWorker\.register/, 'registers a service worker. It is not available.');
     }
     if (page) {
-      if (!/<meta[^>]+name\s*=\s*["']?viewport/i.test(text)) found.push(`${path} has no viewport meta tag, so it looks tiny on phones.`);
-      if (!/<html[^>]+lang\s*=/i.test(text)) found.push(`${path} has no lang attribute on <html>.`);
-      if (/<input[^>]+type\s*=\s*["']?password/i.test(text)) found.push(`${path} asks for a password. Projects must not collect passwords.`);
+      if (!/<meta[^<>]+name\s*=\s*["']?viewport/i.test(text)) found.push(`${path} has no viewport meta tag, so it looks tiny on phones.`);
+      if (!/<html[^<>]+lang\s*=/i.test(text)) found.push(`${path} has no lang attribute on <html>.`);
+      if (/<input[^<>]+type\s*=\s*["']?password/i.test(text)) found.push(`${path} asks for a password. Projects must not collect passwords.`);
       const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
-      for (const match of text.matchAll(/<(?:script|link|img|audio|video|source|iframe)\b[^>]*?\s(?:src|href)\s*=\s*["']([^"'#?]+)/gi)) {
+      for (const match of text.matchAll(/<(?:script|link|img|audio|video|source|iframe)\b[^<>]*?\s(?:src|href)\s*=\s*["']([^"'#?<>]+)/gi)) {
+        if (found.length >= MAX_FOUND) break;
         const target = match[1]!.trim();
         if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)|[${]/i.test(target)) continue;
         if (target.startsWith('/')) { found.push(`${path}:${line(text, match.index)} "${target}" starts with "/". Use a relative path.`); continue; }

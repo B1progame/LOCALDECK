@@ -66,6 +66,9 @@ export function saveShareSession(credential: Credential, profile: { email: strin
   return session;
 }
 
+/** The server says this account is no admin (any more). */
+export function dropAdmin(): void { const { session } = useSession.getState(); if (session?.admin) store({ ...session, admin: false }); }
+
 export function signOutHere(ended = false): void { store(null); useSession.setState({ ended }); }
 
 let apiKey = '';

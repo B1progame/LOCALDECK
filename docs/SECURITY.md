@@ -35,3 +35,21 @@ Checked and fine: token checks (signature, project, lifetime, confirmed address)
 Not visible in the code, please check once: in Google Cloud the Firebase web key should be limited to the address of the site, and Cloudflare, Google and GitHub should have two-step sign-in.
 
 The sign-in is kept in the browser and renewed every hour (`src/services/session.ts`). "Stay signed in" can be turned off on the sign-in page, then it ends with the tab. Other GitHub Pages of the same account share the browser storage, because they have the same address. A domain of its own would separate them.
+
+## Second review of 25 November 2026
+
+Same skill and way of working: source code and local tests only, nothing was tried against the live service. Read again: the whole Worker, sign-in, sessions, admin, MCP, the parts that read imported or shared projects, the new local AI and the GitHub workflow.
+
+| Finding | How bad | Fixed by |
+|---|---|---|
+| A shared link could be made so that opening it froze the page of the person (a 128 KB file took 15 seconds, larger ones never ended) | Medium | Limited search patterns in `src/services/importer.ts`, `contentCheck.ts` and `projectPhoto.ts` |
+| A person with an AI connection could make a small edit blow a project up to more than the memory of the Worker, which also ends other requests | Medium | The size is calculated before the text is built, at most 5,000 replacements |
+| Requests above a limit were refused but still counted in the database. The free plan has a number of writes a day for everyone, so one connection could have used them up | Medium | Above the limit nothing is written any more |
+| The check of AI projects could be made slow the same way (seconds of computing time) | Low | Limited search patterns, at most 60 problems are looked up |
+| A blocked account could finish an upload that it had started before | Low | Blocked accounts are checked for every part |
+| The admin page could be opened by everyone. It was empty and the Worker refused, but it and its code were there | Low | Only admins load it, for everyone else the address leads to the start page and the Worker answers 404 |
+| The build in GitHub had the rights that only publishing needs | Low | Rights per job |
+
+Checked and fine: token checks, admin rights on every request, ownership of links, parts, projects and connections, SQL parameters, CORS, the mail relay, the local test admin (this computer only, not in the published site), the service worker, the text that goes to the small AI and what comes back, packages (`npm audit`: 0), no secrets in the repository or its history.
+
+Known and accepted: the free plan has 100,000 requests a day, so someone can still use those up. The number of visitors can be faked. A sign-in is valid for up to an hour after an account was disabled in Firebase. The small model is loaded from a fixed version, its files are not checked again with a checksum.

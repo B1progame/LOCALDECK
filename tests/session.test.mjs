@@ -103,3 +103,13 @@ test('a sign-in without renewal ends with its token, and broken storage signs no
   assert.equal(S.getShareSession(), null);
   assert.throws(() => S.tokenEnd('nonsense'));
 });
+
+test('a session that the server does not accept as admin loses the admin page', async () => {
+  const { dropAdmin, useSession } = await import('../src/services/session.ts');
+  const before = useSession.getState().session;
+  useSession.setState({ session: { token: 'a.b.c', exp: Math.floor(Date.now() / 1000) + 3000, email: 'a@example.com', name: '', picture: '', admin: true } });
+  dropAdmin();
+  assert.equal(useSession.getState().session.admin, false);
+  assert.equal(useSession.getState().session.email, 'a@example.com');
+  useSession.setState({ session: before });
+});

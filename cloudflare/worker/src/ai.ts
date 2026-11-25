@@ -267,6 +267,14 @@ async function saveVersion(env: AiEnv, connection: Connection, row: Row, next: {
   return version;
 }
 
+const MAX_REPLACEMENTS = 5000;
+/** Counts up to `max`. */
+function occurrences(text: string, find: string, max: number): number {
+  let count = 0;
+  for (let at = text.indexOf(find); at >= 0 && count < max; at = text.indexOf(find, at + find.length)) count++;
+  return count;
+}
+
 export async function updateProject(env: AiEnv, connection: Connection, id: string, change: { files: ProjectFile[]; edits: Edit[]; remove: string[]; details: Details }): Promise<ProjectInfo> {
   const { row, store: oldStore, sealed, raw, files } = await load(env, connection, id);
   for (const path of change.remove.map(cleanPath)) { if (path === 'index.html') throw new AiError('index.html cannot be removed.'); if (!files.delete(path)) throw new AiError(`There is no file ${path} to remove.`); }
@@ -278,10 +286,14 @@ export async function updateProject(env: AiEnv, connection: Connection, id: stri
     // An AI sees and writes plain line ends, the file may have the ones of Windows.
     const windows = !text.includes(edit.find) && text.includes('\r\n');
     const find = windows ? edit.find.replace(/\r?\n/g, '\r\n') : edit.find, replace = windows ? edit.replace.replace(/\r?\n/g, '\r\n') : edit.replace;
-    const parts = text.split(find), count = parts.length - 1;
+    const count = occurrences(text, find, edit.all ? MAX_REPLACEMENTS + 1 : 100);
     if (!count) throw new AiError(`"find" does not appear in ${edit.path}. Read the file again and copy the text exactly.`);
-    if (count > 1 && !edit.all) throw new AiError(`"find" appears ${count} times in ${edit.path}. Make it longer so it appears once, or set "all": true to replace every one.`);
-    files.set(edit.path, encoder.encode(parts.join(replace)));
+    if (count > 1 && !edit.all) throw new AiError(`"find" appears ${count === 100 ? 'at least 100' : count} times in ${edit.path}. Make it longer so it appears once, or set "all": true to replace every one.`);
+    if (count > MAX_REPLACEMENTS) throw new AiError(`"find" appears more than ${MAX_REPLACEMENTS} times in ${edit.path}. Send the whole file instead.`);
+    // Before the text is built: a short "find" and a long "replace" could become larger than the memory.
+    const length = text.length + count * (replace.length - find.length);
+    if (length > MAX_PROJECT_BYTES) throw tooLarge(length);
+    files.set(edit.path, encoder.encode(text.split(find).join(replace)));
   }
   const title = applyDetails(files, change.details);
   const zip = await pack(files);

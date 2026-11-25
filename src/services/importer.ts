@@ -35,10 +35,11 @@ function validManifest(value: unknown): ProjectManifest | null {
 }
 
 function parseEmbeddedManifest(html: string): { manifest: ProjectManifest | null; warning?: string } {
-  const match = html.match(/<script\b(?=[^>]*\bid\s*=\s*["']localdeck-manifest["'])(?=[^>]*\btype\s*=\s*["']application\/json["'])[^>]*>([\s\S]*?)<\/script\s*>/i);
-  if (!match) return { manifest: null };
+  const tag = /<script\b(?=[^<>]*\bid\s*=\s*["']localdeck-manifest["'])(?=[^<>]*\btype\s*=\s*["']application\/json["'])[^<>]*>/i.exec(html);
+  const rest = tag ? html.slice(tag.index + tag[0].length) : '', end = rest.search(/<\/script\s{0,20}>/i);
+  if (!tag || end < 0) return { manifest: null };
   try {
-    const parsed = validManifest(JSON.parse(match[1]));
+    const parsed = validManifest(JSON.parse(rest.slice(0, end)));
     return parsed ? { manifest: parsed } : { manifest: null, warning: 'The embedded LocalDeck manifest did not match the supported metadata format.' };
   } catch { return { manifest: null, warning: 'The embedded LocalDeck manifest contains invalid JSON.' }; }
 }
@@ -49,7 +50,8 @@ export function diagnoseCompatibility(entryHtml: string, packagePaths: string[] 
   const localPaths = new Set(packagePaths.map(path => path.toLocaleLowerCase('en-US')));
   const references = new Set<string>();
   for (const match of entryHtml.matchAll(/\b(?:src|href|poster|data)\s*=\s*(["'])(.*?)\1/gi)) references.add(match[2].trim());
-  for (const match of entryHtml.matchAll(/url\(\s*(["']?)(.*?)\1\s*\)/gi)) references.add(match[2].trim());
+  // Limited lengths: a page that is made to be slow must not stop the app when someone opens its link.
+  for (const match of entryHtml.matchAll(/url\(\s{0,20}(?:"([^"\n]{0,1000})"|'([^'\n]{0,1000})'|([^"'()\s]{1,1000}))\s{0,20}\)/gi)) references.add((match[1] ?? match[2] ?? match[3] ?? '').trim());
   for (const match of entryHtml.matchAll(/@import\s+(?:url\()?\s*(["'])(.*?)\1\s*\)?/gi)) references.add(match[2].trim());
   const external = [...references].filter(ref => /^https?:\/\//i.test(ref) || ref.startsWith('//'));
   if (external.length) concerns++;

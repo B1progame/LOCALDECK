@@ -112,9 +112,9 @@ async function rateLimit(env: Env, table: 'auth_windows' | 'read_windows', who: 
   const hash = await clientHash(env, who);
   const windowStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
   const column = table === 'auth_windows' ? 'attempts' : 'reads';
-  await env.SHARES_DB.prepare(`INSERT INTO ${table} (client_hash, window_start, ${column}) VALUES (?, ?, 1) ON CONFLICT(client_hash, window_start) DO UPDATE SET ${column} = ${column} + 1`).bind(hash, windowStart).run();
-  const row = await env.SHARES_DB.prepare(`SELECT ${column} as count FROM ${table} WHERE client_hash = ? AND window_start = ?`).bind(hash, windowStart).first<{ count: number }>();
-  return (row?.count ?? 0) <= limit;
+  // Above the limit nothing is written any more: the database allows a number of writes a day for everyone together.
+  const row = await env.SHARES_DB.prepare(`INSERT INTO ${table} (client_hash, window_start, ${column}) VALUES (?1, ?2, 1) ON CONFLICT(client_hash, window_start) DO UPDATE SET ${column} = ${column} + 1 WHERE ${column} < ?3 RETURNING ${column} as count`).bind(hash, windowStart, limit).first<{ count: number }>();
+  return row !== null && row !== undefined;
 }
 
 /** A made-up key number must not make the Worker ask Google again and again. */
@@ -266,7 +266,8 @@ async function signIn(request: Request, env: Env, headers: Headers, verify: (tok
 async function admin(request: Request, env: Env, headers: Headers, parts: string[]): Promise<Response> {
   const owner = await isAuthorized(request, env);
   if (!owner) return json({ error: 'unauthorized' }, 401, headers);
-  if (!owner.admin) return json({ error: 'forbidden' }, 403, headers);
+  // For everyone else there is no such address.
+  if (!owner.admin) return json({ error: 'not_found' }, 404, headers);
   const [area, rawId, action] = parts;
   if (area === 'overview' && parts.length === 1 && request.method === 'GET') return json(await overview(env, owner), 200, headers);
   let body: Record<string, unknown> = {};
@@ -330,6 +331,7 @@ async function upload(request: Request, env: Env, headers: Headers): Promise<Res
 async function uploadPart(request: Request, env: Env, headers: Headers, id: string, part: number): Promise<Response> {
   const owner = await isAuthorized(request, env);
   if (!owner) return json({ error: 'unauthorized' }, 401, headers);
+  if ((await limitsFor(env, owner, await readSettings(env))).blocked) return json({ error: 'blocked' }, 403, headers);
   const pending = await pendingShare(env, owner, id);
   if (!pending || !Number.isSafeInteger(part) || part < 1 || part >= pending.parts) return json({ error: 'share_unavailable' }, 404, headers);
   const expected = partSize(pending.size, pending.parts, part);

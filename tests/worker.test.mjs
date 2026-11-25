@@ -9,8 +9,8 @@ function authDb() {
   return { prepare(sql) {
     let key;
     return { bind(hash, windowStart) { key = `${hash}:${windowStart}`; return this; },
-      async run() { counts.set(key, (counts.get(key) ?? 0) + 1); },
-      async first() { return { attempts: counts.get(key) ?? 0 }; },
+      async run() {},
+      async first() { counts.set(key, (counts.get(key) ?? 0) + 1); return { count: counts.get(key) }; },
     };
   } };
 }

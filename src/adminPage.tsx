@@ -3,9 +3,9 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Ban, ChevronDown, LoaderCircle, RefreshCw, RotateCcw, Save, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { language, plural, t } from './i18n';
-import { authFetch } from './services/session';
+import { authFetch, dropAdmin } from './services/session';
 import type { Limits as ShareLimits } from './services/shareService';
-import { EmptyState, PageHeading, bytes, friendlyDate, go } from './shared';
+import { EmptyState, PageHeading, bytes, friendlyDate } from './shared';
 
 type Limits = Required<ShareLimits>;
 type Service = { totalMiB: number; perDay: number; open: boolean; ai: boolean };
@@ -219,6 +219,8 @@ export function AdminPage({ api, session, notify }: { api: string; session: { em
     try { response = await authFetch(`${api}/api/v1/shares${path}`, { method, headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body) }); }
     catch { throw new Error(t('The sharing service did not answer.')); }
     if (response.ok) return response;
+    // The rights are checked by the server on every request. Without them the page goes away.
+    if (path === '/admin/overview' && [401, 403, 404].includes(response.status)) dropAdmin();
     throw new Error(response.status === 401 || response.status === 403 ? t('This account is not an admin, or the sign-in expired.') : response.status === 429 ? t('Too many requests. Wait a little, then refresh.') : response.status === 404 ? t('The Worker does not know this yet. Deploy it once with “npx wrangler deploy”.') : t('That did not work. Please try again.'));
   }, [api, token]);
 
@@ -252,7 +254,8 @@ export function AdminPage({ api, session, notify }: { api: string; session: { em
   const saveSettings = (settings: Settings) => attempt(async () => { await call('/admin/limits', 'PUT', settings); notify(t('Limits saved. They apply to the next upload.')); await load(); });
 
   const heading = <PageHeading eyebrow={t('Sharing service')} title={t('Admin')} description={t('Statistics, limits, accounts and links. Projects stay encrypted, also for you.')} action={token ? <button className="button" disabled={busy} onClick={() => void load()}>{busy ? <LoaderCircle size={15} className="spin"/> : <RefreshCw size={15}/>} {t('Refresh')}</button> : undefined}/>;
-  if (!token) return <>{heading}<EmptyState icon={ShieldCheck} title={t('Admins only')} detail={t('Sign in with the Google account that is set as admin.')} action={<button className="button primary" onClick={() => go(session ? 'sharing' : 'login')}>{session ? t('Shared links') : t('Sign in')}</button>}/></>;
+  // Nothing is shown before the server has confirmed the rights.
+  if (!token || (!data && !error)) return <div className="shared-state" role="status"><LoaderCircle className="spin" size={24}/></div>;
   const totals = data?.totals;
   const names: Record<Tab, string> = { overview: t('Overview'), accounts: t('Accounts'), links: t('Links'), limits: t('Limits'), log: t('History') };
   const counts: Partial<Record<Tab, number>> = data ? { accounts: data.accounts.length, links: data.shares.length } : {};

@@ -60,7 +60,7 @@ export function checkContent(project: { top: string; text: string; source?: stri
   const harm = count(text, SELFHARM);
   if (harm.total >= 2 && !lesson) add('selfharm', '16');
   // Not about age, but nobody should type a password into a shared project.
-  if (project.source && /<input[^>]+type\s*=\s*["']?password/i.test(project.source)) reasons.push('password');
+  if (project.source && /<input[^<>]+type\s*=\s*["']?password/i.test(project.source)) reasons.push('password');
   const signs = ([['violence', violence.total + count(text, MILD).total], ['drugs', drugs.total], ['gambling', gambling.total]] as Array<[Reason, number]>).filter(([, total]) => total > 0).map(([reason]) => reason);
   return { rating, reasons, by: 'rules', checkedAt: Date.now(), ...(signs.length ? { signs } : {}), ...(lesson ? { lesson: body ? 'body' as const : 'other' as const } : {}) };
 }

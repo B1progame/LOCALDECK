@@ -1,5 +1,5 @@
 import { language, plural, t, tm } from './i18n';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from 'motion/react';
 import {
@@ -37,7 +37,6 @@ import { BUNDLE_FORMAT } from './services/aiBundle';
 import { SharedPage, downloadBlob } from './sharedPage';
 import { ShareLinkField, ShareList, type ShareRecord } from './shareList';
 import { forgetShare, saveShare, shareUrl } from './services/savedShares';
-import { AdminPage } from './adminPage';
 import { AiConnect } from './aiConnect';
 import { LocalAiSettings } from './localAiSettings';
 import { ITEMS_CHANGED, readProjectText, ruleCheck, scanImported } from './autoScan';
@@ -67,6 +66,8 @@ const NAV: Array<{ page: Page; label: string; icon: React.ComponentType<{ size?:
   { page: 'learning', label: t('Learning hub'), icon: BookOpen }, { page: 'games', label: t('Games & apps'), icon: Gamepad2 },
   { page: 'collections', label: t('Collections'), icon: Archive }, { page: 'sharing', label: t('Shared links'), icon: Cloud },
 ];
+/** Only admins load this. Everyone else never gets its code. */
+const AdminPage = lazy(() => import('./adminPage').then(module => ({ default: module.AdminPage })));
 const PENDING_SHARE_KEY = 'localdeck-pending-share';
 
 function routeFromHash(): AppRoute {
@@ -205,7 +206,10 @@ function App() {
     window.addEventListener('pointermove', onMove, { passive: true });
     return () => window.removeEventListener('pointermove', onMove);
   }, []);
-  const currentPage = route.page === 'shared' ? 'shared' : route.page;
+  const isAdmin = getShareSession()?.admin === true;
+  // For everyone else there is no admin page.
+  const currentPage = route.page === 'admin' && !isAdmin ? 'home' : route.page;
+  useEffect(() => { if (route.page === 'admin' && !isAdmin) location.replace('#/home'); }, [route.page, isAdmin]);
   const pageItems = useMemo(() => {
     let result = [...items];
     if (currentPage === 'favorites') result = result.filter(item => item.favorite);
@@ -416,7 +420,7 @@ function App() {
         <NavItem page="studio" active={currentPage === 'studio'} label={t('AI studio')} icon={Sparkles} onNavigate={() => setMobileNav(false)} />
         <NavItem page="storage" active={currentPage === 'storage'} label={t('Storage & backups')} icon={Archive} onNavigate={() => setMobileNav(false)} />
         <NavItem page="sharing" active={currentPage === 'sharing'} label={t('Shared links')} icon={Cloud} onNavigate={() => setMobileNav(false)} />
-        {(currentPage === 'admin' || getShareSession()?.admin) && <NavItem page="admin" active={currentPage === 'admin'} label={t('Admin')} icon={ShieldCheck} onNavigate={() => setMobileNav(false)} />}
+        {isAdmin && <NavItem page="admin" active={currentPage === 'admin'} label={t('Admin')} icon={ShieldCheck} onNavigate={() => setMobileNav(false)} />}
       </nav>
       <div className="sidebar-spacer" />
       <StorageMini storage={storage} items={items} />
@@ -442,7 +446,7 @@ function App() {
           {currentPage === 'storage' && <StoragePage items={items} storage={storage} integrity={integrity} busy={busy} backup={performBackup} restore={() => restoreInput.current?.click()} requestPersistent={requestPersistentStorage} checkIntegrity={checkIntegrity} repair={runRepair} />}
           {currentPage === 'sharing' && <SharingPage notify={notify} />}
           {currentPage === 'privacy' && <PrivacyPage/>}
-          {currentPage === 'admin' && <AdminPage api={(import.meta.env.VITE_SHARE_API_BASE??'').replace(/\/$/,'')} session={getShareSession()} notify={notify} />}
+          {currentPage === 'admin' && <Suspense fallback={<LibrarySkeleton/>}><AdminPage api={(import.meta.env.VITE_SHARE_API_BASE??'').replace(/\/$/,'')} session={getShareSession()} notify={notify} /></Suspense>}
           {currentPage === 'login' && <SharingPage notify={notify} loginOnly />}
           {currentPage === 'settings' && <SettingsPage notify={notify} appearance={appearance} setAppearance={setAppearance} demosOn={demosOn} busy={busy} onDemos={value => void toggleDemos(value)} reducedMotion={reducedMotion} onMotion={async value => { setReducedMotion(value); await db.settings.put({ id:'reduced-motion', value, updatedAt:Date.now() }); }} />}
           </>}

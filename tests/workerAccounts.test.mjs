@@ -71,7 +71,7 @@ test('only the Google sign-in of a listed address is admin', async () => {
 
 test('the overview is closed to everyone but the admin', async () => {
   assert.equal((await call('/admin/overview')).status, 401);
-  assert.equal((await call('/admin/overview', person)).status, 403);
+  assert.deepEqual([(await call('/admin/overview', person)).status, await (await call('/admin/overview', person)).json()], [404, { error: 'not_found' }]);
 });
 
 test('the admin sees accounts and links, and can delete any link', async () => {
@@ -177,7 +177,7 @@ test('downloads are counted per link, per account and per day', async () => {
 });
 
 test('limits can be changed by the admin only, and stay within what the service can carry', async () => {
-  assert.equal((await call('/admin/limits', person, { method: 'PUT', body: '{}' })).status, 403);
+  assert.equal((await call('/admin/limits', person, { method: 'PUT', body: '{}' })).status, 404);
   const changed = await (await asAdmin('/admin/limits', 'PUT', { users: { linkMiB: 10, storageMiB: 99999, perHour: 50, perDay: 2.5, days: 30 }, service: { totalMiB: 900, open: true } })).json();
   assert.deepEqual(changed.users, { linkMiB: 10, storageMiB: 100, perHour: 50, perDay: 15, days: 30, aiPerDay: 150, aiDays: 60 });
   assert.equal(changed.service.totalMiB, 900);
@@ -703,5 +703,46 @@ test('the codes are deleted after their day, the numbers stay and only admins se
   const boss = await token({ sub: 'visit-boss', email: 'admin@example.com' }), guest = await token({ sub: 'visit-guest', email: 'visit-guest@example.com' });
   const data = await (await call('/admin/overview', boss)).json();
   assert.deepEqual(data.visits.find(entry => entry.day === yesterday), { day: yesterday, visitors: 7, opens: 9 });
-  assert.equal((await call('/admin/overview', guest)).status, 403);
+  assert.equal((await call('/admin/overview', guest)).status, 404);
+});
+
+test('above a limit nothing is written to the database any more', async () => {
+  const sum = async () => (await SHARES_DB.prepare('SELECT COALESCE(SUM(reads), 0) as sum FROM read_windows').bind().first()).sum;
+  const read = () => worker.fetch(new Request(`${SHARES}/00000000-0000-4000-8000-000000000000`, { headers: { 'CF-Connecting-IP': '198.51.100.77' } }), env);
+  for (let i = 0; i < 200; i++) assert.equal((await read()).status, 410);
+  const before = await sum();
+  for (let i = 0; i < 20; i++) assert.equal((await read()).status, 429);
+  assert.equal(await sum(), before);
+});
+
+test('a blocked account cannot finish an upload that it started before', async () => {
+  const late = await token({ sub: 'late-uid', email: 'late@example.com' });
+  await signIn(late);
+  await SHARES_DB.prepare("UPDATE accounts SET limits = ? WHERE owner_id = 'firebase:late-uid'").bind(JSON.stringify({ linkMiB: 40, storageMiB: 200, perHour: 50, perDay: 50 })).run();
+  const size = 20 * 1024 * 1024 + 64;
+  const start = await call('', late, { method: 'POST', body: new Uint8Array(20 * 1024 * 1024), headers: { 'content-length': String(20 * 1024 * 1024), 'x-share-size': String(size), 'x-share-parts': '2' } });
+  assert.equal(start.status, 201);
+  const { id } = await start.json();
+  await SHARES_DB.prepare("UPDATE accounts SET blocked = 1 WHERE owner_id = 'firebase:late-uid'").bind().run();
+  const part = () => call(`/${id}/parts/1`, late, { method: 'PUT', body: new Uint8Array(64), headers: { 'content-length': '64' } });
+  assert.equal((await part()).status, 403);
+  await SHARES_DB.prepare("UPDATE accounts SET blocked = 0 WHERE owner_id = 'firebase:late-uid'").bind().run();
+  assert.equal((await part()).status, 200);
+});
+
+test('an AI cannot blow a project up with edits', async () => {
+  const guest = await token({ sub: 'edits-uid', email: 'edits@example.com' });
+  await signIn(guest);
+  const { url } = await (await call('/ai', guest, { method: 'POST', body: JSON.stringify({ name: 'Edits' }) })).json();
+  const tool = async (name, input) => (await (await worker.fetch(new Request(url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: input } }) }), { ...env, APP_URL: 'https://app.example/' })).json()).result;
+  const created = await tool('create_project', { title: 'Edits', files: [{ path: 'index.html', content: '<!doctype html><p>' + 'a'.repeat(4000) + '</p>' }] });
+  const id = created.structuredContent.project_id;
+  const change = edits => tool('update_project', { project_id: id, edits });
+  const large = await change([{ path: 'index.html', find: 'a', replace: 'b'.repeat(100_000), all: true }]);
+  assert.equal(large.isError, true);
+  assert.match(large.content[0].text, /The limit is 10 MiB/);
+  const fine = await change([{ path: 'index.html', find: 'aa', replace: 'b', all: true }]);
+  assert.equal(fine.isError, false, fine.content[0].text);
+  const many = await change([{ path: 'index.html', find: 'b', replace: 'c' }]);
+  assert.match(many.content[0].text, /at least 100 times/);
 });

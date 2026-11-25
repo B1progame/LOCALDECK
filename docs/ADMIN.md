@@ -1,6 +1,6 @@
 # Admin page
 
-`#/admin`, visible to the Google accounts in the Worker secret `ADMIN_EMAILS` (setup: [`EMAIL_SETUP.md`](EMAIL_SETUP.md#admin-account)). The Worker checks the rights on every request.
+`#/admin`, visible to the Google accounts in the Worker secret `ADMIN_EMAILS` (setup: [`EMAIL_SETUP.md`](EMAIL_SETUP.md#admin-account)). The Worker checks the rights on every request. For everyone else the page does not exist: the address leads to the start page, its code is not loaded, and the Worker answers 404. Sign in first, then open it.
 
 | Tab | What it does |
 |---|---|

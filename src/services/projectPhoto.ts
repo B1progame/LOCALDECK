@@ -62,7 +62,7 @@ export async function runnablePage(files: PhotoFile[], entryPath: string): Promi
     }
     return result + text.slice(last);
   };
-  const styles = async (text: string, from: string, depth: number) => replaceAll(await replaceAll(text, /@import\s+(url\()?["']([^"')]+)["']\)?/gi, from, depth, (_, url) => `@import "${url}"`), /url\(\s*(["']?)([^"')]+)\1\s*\)/gi, from, depth, (_, url) => `url("${url}")`);
+  const styles = async (text: string, from: string, depth: number) => replaceAll(await replaceAll(text, /@import\s+(url\()?["']([^"')]+)["']\)?/gi, from, depth, (_, url) => `@import "${url}"`), /url\(\s{0,20}(["']?)([^"'()]{1,1000})\1\s{0,20}\)/gi, from, depth, (_, url) => `url("${url}")`);
   const modules = (text: string, from: string, depth: number) => replaceAll(text, /(\bfrom\s*|\bimport\s*\(?\s*)["'](\.{1,2}\/[^"']+)["']/g, from, depth, (match, url) => `${match[1]}"${url}"`);
 
   const doc = new DOMParser().parseFromString(await entry.blob.text(), 'text/html');

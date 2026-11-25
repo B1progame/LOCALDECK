@@ -988,8 +988,6 @@ const messages: Record<string, string> = {
   "Limits saved. They apply to the next upload.": "Limiti salvati. Valgono dal prossimo caricamento.",
   "Sharing service": "Servizio di condivisione",
   "Statistics, limits, accounts and links. Projects stay encrypted, also for you.": "Statistiche, limiti, account e link. I progetti restano cifrati, anche per te.",
-  "Admins only": "Solo admin",
-  "Sign in with the Google account that is set as admin.": "Accedi con l’account Google impostato come admin.",
   "Overview": "Panoramica",
   "Accounts": "Account",
   "Links": "Link",
