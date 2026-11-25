@@ -34,10 +34,10 @@ export function tidySentence(answer: string, question: string, page: string): st
   return sentence.length < 20 || sentence.includes('?') || sentence.toLowerCase().includes(same) || grounded(sentence, page) < .3 ? '' : sentence;
 }
 
-export async function smallDetails(project: ProjectText, options: { filename: string; fallback: string; ask: Ask; onStep?: (step: number, steps: number) => void; cancelled?: () => boolean }): Promise<ScanResult> {
+export async function smallDetails(project: ProjectText, options: { filename: string; fallback: string; ask: Ask; chars?: number; onStep?: (step: number, steps: number) => void; cancelled?: () => boolean }): Promise<ScanResult> {
   const { ask, onStep, cancelled } = options;
   const quick = quickScan(project, options), questions = ASK[pageLanguage(project, options.fallback)];
-  const page = [project.title, project.description, ...project.headings, project.text].join('\n'), content = excerpt(project);
+  const page = [project.title, project.description, ...project.headings, project.text].join('\n'), chars = options.chars ?? EXCERPT_CHARS, content = excerpt(project, chars);
   const question = async (text: string, tokens: number) => {
     if (cancelled?.()) throw new Error('cancelled');
     // The long part comes first and stays the same, so the model reads it only once.
@@ -47,7 +47,8 @@ export async function smallDetails(project: ProjectText, options: { filename: st
   // What the author wrote about the page is better than anything the model could write.
   const description = project.description ? '' : tidySentence(await question(questions[0], 70), questions[0], page);
   onStep?.(2, 2);
-  const words = parseTags(await question(questions[1], 45)).filter(tag => grounded(tag, page) >= .5);
+  // Some answer with code, such as: words = "one, two".
+  const words = parseTags((await question(questions[1], 45)).replace(/[\p{L}\d_]+\s*=\s*/gu, '').replace(/["“”„]/g, '')).filter(tag => grounded(tag, page) >= .5);
   if (!description && !words.length) return quick;
-  return { suggestion: { ...quick.suggestion, description: description || quick.suggestion.description, tags: mergeTags(words, quick.suggestion.tags).slice(0, MAX_TAGS) }, found: null, read: 1, total: Math.max(1, Math.ceil(project.text.length / EXCERPT_CHARS)) };
+  return { suggestion: { ...quick.suggestion, description: description || quick.suggestion.description, tags: mergeTags(words, quick.suggestion.tags).slice(0, MAX_TAGS) }, found: null, read: 1, total: Math.max(1, Math.ceil(project.text.length / chars)) };
 }

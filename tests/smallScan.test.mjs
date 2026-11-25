@@ -8,7 +8,7 @@ const options = ask => ({ filename: 'index.html', fallback: 'de', ask });
 
 test('the answer of the small model is joined with the quick scan', async () => {
   const asked = [];
-  const result = await smallDetails(page(), options(async messages => { asked.push(messages.at(-1).content); return asked.length === 1 ? '"Die Seite erklärt, wie Vulkane aus Magma entstehen."' : 'Vulkane, Magma, Vesuv, Quantenphysik'; }));
+  const result = await smallDetails(page(), options(async messages => { asked.push(messages.at(-1).content); return asked.length === 1 ? '"Die Seite erklärt, wie Vulkane aus Magma entstehen."' : 'Wort8 = "Vulkane, Magma, Vesuv, Quantenphysik"'; }));
   assert.equal(result.suggestion.description, 'Die Seite erklärt, wie Vulkane aus Magma entstehen.');
   assert.deepEqual([result.suggestion.title, result.suggestion.type, result.quick, result.found], ['Vulkane', 'learning', undefined, null]);
   assert.ok(result.suggestion.tags.includes('Vesuv') && !result.suggestion.tags.includes('Quantenphysik'), result.suggestion.tags.join());

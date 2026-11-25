@@ -3,7 +3,7 @@
    little memory as possible. The model files stay on the disk of the browser and are read from there. */
 import { LoggerWithoutDebug, Wllama } from '@wllama/wllama';
 import wasm from '@wllama/wllama/esm/single-thread/wllama.wasm?url';
-import { SMALL, type ChatMessage } from './model';
+import type { ChatMessage, CpuModel } from './model';
 import { loadBlobs, type PartCache } from './parts';
 
 /** Room for the text and the answer, in word pieces. More would need more memory. */
@@ -16,12 +16,12 @@ export type SmallModel = {
 
 /** The text of a project must not be able to look like a part of the conversation. */
 const plain = (text: string) => text.replace(/<\|/g, '< |');
-const prompt = (messages: ChatMessage[]) => `${messages.map(message => `<|im_start|>${message.role}\n${plain(message.content)}<|im_end|>\n`).join('')}<|im_start|>assistant\n<think>\n\n</think>\n\n`;
+const prompt = (messages: ChatMessage[], think: boolean) => `${messages.map(message => `<|im_start|>${message.role}\n${plain(message.content)}<|im_end|>\n`).join('')}<|im_start|>assistant\n${think ? '<think>\n\n</think>\n\n' : ''}`;
 
-export async function startSmall(options: { signal: AbortSignal; onProgress: (loaded: number, total: number) => void; onStarting: () => void }): Promise<SmallModel> {
+export async function startSmall(info: CpuModel, options: { signal: AbortSignal; onProgress: (loaded: number, total: number) => void; onStarting: () => void }): Promise<SmallModel> {
   let cache: PartCache | null = null;
-  try { cache = await caches.open(SMALL.cache); } catch { /* private window: works, but loads again next time */ }
-  const blobs = await loadBlobs(SMALL.url, { cache, signal: options.signal, onProgress: options.onProgress });
+  try { cache = await caches.open(info.cache); } catch { /* private window: works, but loads again next time */ }
+  const blobs = await loadBlobs(info.url, { cache, signal: options.signal, onProgress: options.onProgress });
   options.onStarting();
   const runner = new Wllama({ 'single-thread/wllama.wasm': new URL(wasm, location.href).href }, { suppressNativeLog: true, logger: LoggerWithoutDebug });
   const close = () => { void runner.exit().catch(() => undefined); };
@@ -32,7 +32,7 @@ export async function startSmall(options: { signal: AbortSignal; onProgress: (lo
   return {
     close,
     async generate(messages, onText, { maxTokens, temperature, signal }) {
-      const text = prompt(messages);
+      const text = prompt(messages, info.think);
       if ((await runner.tokenize(text, true)).length + maxTokens + 8 > CONTEXT) throw new Error('too-long');
       return (await runner.createCompletion(text, {
         nPredict: maxTokens, useCache: true, abortSignal: signal, sampling: { temp: temperature, top_p: .9, top_k: 40, penalty_repeat: 1.05 },

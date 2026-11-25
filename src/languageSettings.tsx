@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Check, Languages } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Check, ChevronDown, Languages } from 'lucide-react';
 import { chooseLanguage, LANGUAGES, language, languageChoice, t, type LanguageChoice } from './i18n';
 import { rovingKeys } from './a11y';
 
@@ -24,8 +24,26 @@ export function LanguageSettings() {
 
 /** Small picker for the sign-in pages, which have no Settings. */
 export function LanguagePicker() {
-  return <label className="language-picker">
-    <Languages size={15} aria-hidden="true"/><span className="visually-hidden">{t('Language')}</span>
-    <select value={language()} onChange={event => chooseLanguage(event.target.value as LanguageChoice)}>{LANGUAGES.map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select>
-  </label>;
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null), button = useRef<HTMLButtonElement>(null);
+  const id = useId(), current = language();
+  useEffect(() => {
+    if (!open) return;
+    root.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
+    const outside = (event: Event) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('focusin', outside);
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('focusin', outside); };
+  }, [open]);
+  const close = () => { setOpen(false); button.current?.focus(); };
+  return <div ref={root} className="language-picker" onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); close(); } }}>
+    <button ref={button} type="button" className="language-button" aria-haspopup="menu" aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}>
+      <Languages size={16} aria-hidden="true"/><span className="visually-hidden">{t('Language')}: </span><span>{LANGUAGES.find(entry => entry.id === current)!.name}</span><ChevronDown size={15} aria-hidden="true" className="language-chevron"/>
+    </button>
+    {open && <div id={id} className="language-menu" role="menu" aria-label={t('Language')} onKeyDown={event => rovingKeys(event, '[role="menuitemradio"]')}>
+      {LANGUAGES.map(entry => <button key={entry.id} type="button" role="menuitemradio" aria-checked={entry.id === current} tabIndex={entry.id === current ? 0 : -1} lang={entry.id} onClick={() => { close(); if (entry.id !== current) chooseLanguage(entry.id); }}>
+        <span className="language-code" aria-hidden="true">{entry.id.toUpperCase()}</span><span>{entry.name}</span>{entry.id === current && <Check size={16} aria-hidden="true"/>}
+      </button>)}
+    </div>}
+  </div>;
 }

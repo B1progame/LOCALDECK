@@ -4,7 +4,7 @@ LocalDeck reads projects, explains what they are and adds name, subject and hash
 
 **Nothing has to be loaded.** The quick scan (`src/services/quickScan.ts`) is on from the start. It takes the name, first text, headings and the important words of the page, knows 17 school subjects in five languages, needs a few milliseconds and works offline on every device. It does not think, but it also invents nothing. A language model is optional and writes better texts.
 
-1. **Settings → Local AI**: quick scan (default), the AI of the browser if it has one, Qwen3 for every device, Qwen3.5 for graphics chips, or off. A model is loaded only with the button **Set up the AI**.
+1. **Settings → Local AI**: quick scan (default), the AI of the browser if it has one, one of five models, or off. Three models run on the processor of every device, two need a graphics chip. All have the Apache 2.0 license ([LICENSES.md](LICENSES.md)). A model is loaded only with the button **Set up the AI**.
 2. From then on every import is scanned in the background. The AI fills in only what is missing and adds hashtags. A name is changed only when it says nothing, such as `index`. The title on the page is preferred, and an answer that has nothing in common with the page is asked for again in plain questions. **Scan every import automatically** in Settings turns this off.
 3. A shared link shows what the project is before it is imported.
 4. **Scan this project** in the details of a project suggests everything anew. Nothing changes before you press **Save**.
@@ -30,25 +30,27 @@ A click on a hashtag shows all projects with it. `#word` in the search does the 
 | Quick scan | Nothing | Everywhere |
 | AI of the browser | Nothing. It is used when the browser already has one ready (`LanguageModel`) | Some versions of Chrome and Edge on computers |
 | Qwen3 0.6B | About 400 MB, once per browser | Every browser since about 2023 (Safari 16.4, Firefox 100, Chrome 95 and newer) on computers, phones and tablets. Needs no graphics chip |
+| EuroLLM 1.7B, Qwen3 1.7B | About 1,050 and 1,110 MB, once per browser | The same browsers, on strong computers. A few minutes per project |
 | Qwen3.5 0.8B | About 490 MB, once per browser | Browsers with WebGPU and a fairly new graphics chip |
+| SmolLM3 3B | About 2,140 MB, once per browser | Graphics chips with at least about 4 GB of memory. English, German, French, Spanish, Italian, Portuguese |
 
 Qwen3.6 has no version this small, so Qwen3.5 0.8B (Apache 2.0) is used: `onnx-community/Qwen3.5-0.8B-Text-ONNX` in a fixed revision, see `src/localAi/model.ts`. Chips without 16-bit shaders load the `q4` files, about 570 MB.
 
 ### Without a graphics chip
 
-Qwen3 0.6B (Apache 2.0, `unsloth/Qwen3-0.6B-GGUF` in a fixed revision) runs on the processor with [wllama](https://github.com/ngxson/wllama) (llama.cpp as WebAssembly, MIT, 2 MB, comes from LocalDeck itself). Version 2.3.7 is used on purpose: newer ones need 64-bit memory or JSPI, which Safari does not have.
+The models for the processor (Qwen3 0.6B, EuroLLM 1.7B, Qwen3 1.7B) run with [wllama](https://github.com/ngxson/wllama) (llama.cpp as WebAssembly, MIT, 2 MB, comes from LocalDeck itself). Version 2.3.7 is used on purpose: newer ones need 64-bit memory or JSPI, which Safari does not have.
 
-- It is slow. A project takes about a minute on a fast computer and longer on phones. GitHub Pages cannot send the headers that several threads need, so it uses one.
+- They are slow. With Qwen3 0.6B a project takes about a minute on a fast computer, with the larger ones about four, and longer on phones. GitHub Pages cannot send the headers that several threads need, so it uses one.
 - It therefore reads the title, the headings, the beginning and a piece from the middle (1,000 characters) and answers two short questions: one sentence and keywords. Name, kind, subject and topic come from the quick scan. Answers that have nothing to do with the page are dropped. It does not take part in the 16+ and 18+ check.
 - While it works it needs memory for the file (about 400 MB) and roughly 100 to 200 MB more. It gives them back after 90 seconds without use, and stopping ends it at once. While loading, only one part of 16 MB is in memory at a time.
 - On a device with less memory the browser may close the page. LocalDeck notices that and uses the quick scan afterwards, which needs no extra memory.
 
 ## Good to know
 
-- The model is kept in the browser's cache (`localdeck-ai-model` or `localdeck-ai-small`) and then works offline. **Delete the model** in Settings removes it. A browser may also remove it when space gets tight.
+- The model is kept in the browser's cache (`localdeck-ai-…`, one for each model) and then works offline. **Delete the model** in Settings removes it. A browser may also remove it when space gets tight.
 - The model files come from Hugging Face, which sees the IP address while they load. Projects and suggestions stay on the device.
 - The runtime (ONNX Runtime, 27 MB) comes from LocalDeck itself and is loaded on first use. The service worker does not precache it.
-- Both models are loaded in parts of 16 MB (`src/localAi/parts.ts`). A lost connection or a closed page continues where it stopped.
+- All models are loaded in parts of 16 MB (`src/localAi/parts.ts`). A lost connection or a closed page continues where it stopped.
 - When the model cannot run, the quick scan does the work and Settings says why: no WebGPU, graphics chip not available to the browser (hardware acceleration off, driver reset), no graphics chip at all, too little memory, or the page was closed while the model started. Loading that gets stuck ends after two minutes.
 - After ten minutes without use Qwen3.5 leaves the memory. Starting it again needs no internet.
 - When another program fills the graphics memory, the browser stops the model. LocalDeck shows that and offers to try again.

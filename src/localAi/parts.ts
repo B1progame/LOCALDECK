@@ -77,12 +77,15 @@ export async function loadBlobs(url: string, options: Options & { signal?: Abort
 /** How much of the large files is already in the cache, from 0 to 1. A file that was stored whole counts, too. */
 export async function storedShare(cache: PartCache, size = PART_BYTES): Promise<number> {
   const urls = (await cache.keys?.() ?? []).map(request => request.url);
-  let best = 0;
+  let stored = 0, needed = 0;
   for (const url of urls) {
     if (/\.onnx_data$/.test(url)) return 1;
     if (!url.endsWith('?localdeck-size')) continue;
     const file = url.slice(0, -'?localdeck-size'.length), total = await knownSize(file, cache);
-    if (total) best = Math.max(best, urls.filter(entry => entry.startsWith(`${file}?localdeck-part=`)).length / Math.ceil(total / size));
+    if (!total) continue;
+    const parts = Math.ceil(total / size);
+    needed += parts;
+    stored += Math.min(parts, urls.filter(entry => entry.startsWith(`${file}?localdeck-part=`)).length);
   }
-  return Math.min(1, best);
+  return needed ? stored / needed : 0;
 }

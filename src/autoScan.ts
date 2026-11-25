@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { useContentMarks } from './contentMarks';
 import { language } from './i18n';
-import { checkLocalAi, generateText, loadLocalAi, modelUsable, useLocalAi } from './localAi/engine';
+import { checkLocalAi, generateText, loadLocalAi, modelUsable, onCpu, plainQuestions, useLocalAi } from './localAi/engine';
 import { checkContent, withOpinion, type ContentCheck } from './services/contentCheck';
 import { db } from './services/database';
 import { getAssets, updateItem } from './services/library';
@@ -83,7 +83,8 @@ export async function askAbout(project: ReadProject, filename: string, options: 
     try {
       await loadLocalAi();
       const ask = (messages: Parameters<typeof generateText>[0], maxTokens: number) => options.cancelled?.() ? Promise.reject(new Error('cancelled')) : generateText(messages, () => undefined, { maxTokens, temperature: 0 });
-      if (useLocalAi.getState().engine === 'small') return await smallDetails(project, { filename, fallback: language(), ask, ...options });
+      const { engine } = useLocalAi.getState();
+      if (plainQuestions(engine)) return await smallDetails(project, { filename, fallback: language(), ask, ...(onCpu(engine) ? {} : { chars: 4500 }), ...options });
       return await suggestDetails(project, {
         filename, language: languageName(project.language), ...options, rate: useContentMarks.getState().on, ask,
       });

@@ -6,6 +6,9 @@ import { useStillMotion } from './a11y';
 
 /** One ball takes this long from the project through the lock to the friend. Lock and pulse keep in step with it. */
 const ROUND = '4.5s';
+const FLIGHT = 'M92 262 C 130 262, 150 214, 196 212 L 224 212 C 270 214, 290 262, 328 262';
+/** Dots behind the ball, each one smaller and paler. */
+const TAIL = 11;
 
 export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   const svg = useRef<SVGSVGElement>(null);
@@ -34,16 +37,19 @@ export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
         <line x1="0" x2="420" y1="300" y2="300"><animate attributeName="y1" values="300;420" dur="3s" repeatCount="indefinite"/><animate attributeName="y2" values="300;420" dur="3s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;0" dur="3s" repeatCount="indefinite"/></line>
       </g>
 
-      {/* one star */}
-      <path d="M318 118 l3 9 l9 3 l-9 3 l-3 9 l-3 -9 l-9 -3 l9 -3 z" fill="#e9d5ff"><animate attributeName="opacity" values=".25;1;.25" dur="3.4s" repeatCount="indefinite"/></path>
-
       {/* data paths */}
       <use href="#sa-in" className="sa-path" />
       <use href="#sa-out" className="sa-path sa-path-out" />
 
+      {/* the tail of the ball */}
+      {Array.from({ length: TAIL }, (_, index) => TAIL - index).map(step => <circle key={step} r={Math.max(1.2, 5.6 - step * .4)} opacity="0" fill="#7dd3fc">
+        <animateMotion dur={ROUND} begin={`${step * .045}s`} repeatCount="indefinite" path={FLIGHT}/>
+        <animate attributeName="fill" values="#7dd3fc;#7dd3fc;#c4b5fd;#c4b5fd" keyTimes="0;.46;.54;1" dur={ROUND} begin={`${step * .045}s`} repeatCount="indefinite"/>
+        <animate attributeName="opacity" values={`0;${(.5 - step * .04).toFixed(2)};${(.5 - step * .04).toFixed(2)};0`} keyTimes="0;.1;.9;1" dur={ROUND} begin={`${step * .045}s`} repeatCount="indefinite"/>
+      </circle>)}
       {/* one ball: plain on the way in, encrypted on the way out. The lock covers it in between. */}
       <circle r="6" fill="#7dd3fc" filter="url(#sa-glow)" opacity="0">
-        <animateMotion dur={ROUND} repeatCount="indefinite" path="M92 262 C 130 262, 150 214, 196 212 L 224 212 C 270 214, 290 262, 328 262"/>
+        <animateMotion dur={ROUND} repeatCount="indefinite" path={FLIGHT}/>
         <animate attributeName="fill" values="#7dd3fc;#7dd3fc;#c4b5fd;#c4b5fd" keyTimes="0;.46;.54;1" dur={ROUND} repeatCount="indefinite"/>
         <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.08;.92;1" dur={ROUND} repeatCount="indefinite"/>
       </circle>

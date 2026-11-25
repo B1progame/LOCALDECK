@@ -84,7 +84,7 @@ export function HomePage({ items, collections, add, tryDemos }: { items: Library
       </motion.div>
       {featured
         ? <div className="hero-art" aria-hidden="true"><motion.div className="hero-cover-card" style={{ backgroundImage: art, y: still ? 0 : heroCardY, rotate: -3 }} whileHover={{ rotate: -1, scale: 1.04 }} transition={{ type: 'spring', bounce: .3 }} /></div>
-        : <div className="hero-art" aria-hidden="true"><div className="hero-orbit orbit-one"/><div className="hero-orbit orbit-two"><span className="hero-spark">✦</span></div><div className="hero-core"><img src={`${base}icon-512.png`} alt="" /></div></div>}
+        : <div className="hero-art" aria-hidden="true"><div className="hero-stage"><div className="hero-ring"><div className="hero-spin"><i className="hero-tail"/><span className="hero-ball"><i/></span></div></div><div className="hero-core"><img src={`${base}icon-512.png`} alt=""/><i className="hero-glint"/></div></div></div>}
     </section>
 
     {items.length < 3 && <section className="section-block"><div className="section-title-row"><div><h2>{t('Get started')}</h2><p>{t('A few useful ways to begin')}</p></div></div><div className="start-list">

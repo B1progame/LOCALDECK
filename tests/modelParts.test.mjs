@@ -44,6 +44,13 @@ test('a short interruption is bridged, a damaged part is loaded again', async ()
   assert.deepEqual(source.asked, [10]);
 });
 
+test('several large files count together', async () => {
+  const store = cache();
+  await read(await loadInParts(URL_, options(store, server())));
+  await assert.rejects(read(await loadInParts('https://models.example/two.onnx_data', options(store, server((count, from) => from >= 10)))));
+  assert.equal(await storedShare(store, SIZE), 6 / 10);
+});
+
 test('it also works without storage, and refuses servers that ignore the range', async () => {
   assert.deepEqual(await read(await loadInParts(URL_, options(null, server()))), file);
   const full = { fetcher: async () => new Response(file, { status: 200 }) };

@@ -299,15 +299,9 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 .hero-ghost:hover:not(:disabled) { background: rgb(255 255 255 / .14) !important; }
 .hero-banner:not(.has-art) .hero-ghost { border-color: var(--line-strong); background: var(--elevated); }
 .hero-art { position: relative; display: grid; place-items: center; min-height: 260px; }
-.hero-orbit { position: absolute; border: 1px solid var(--accent-line); border-radius: 50%; }
-.orbit-one { width: 260px; height: 260px; animation: orbit 24s linear infinite; }
-.orbit-two { width: 370px; height: 370px; border-style: dashed; opacity: .5; animation: orbit 40s linear infinite reverse; }
-/* One ball on the inner ring and one star on the outer one, both exactly on the line. */
-.orbit-one::after { content: ''; position: absolute; top: -5.5px; left: calc(50% - 5px); width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 18px var(--accent); }
 @keyframes orbit { to { transform: rotate(360deg); } }
 .hero-core { width: 132px; height: 132px; overflow: hidden; border-radius: 34px; box-shadow: 0 0 0 1px var(--line-strong), 0 24px 60px rgb(var(--accent-rgb) / .35); }
 .hero-core img { width: 100%; height: 100%; object-fit: cover; }
-.hero-spark { position: absolute; bottom: -12px; left: calc(50% - 12px); display: grid; place-items: center; width: 24px; height: 24px; color: var(--accent-2); font-size: 22px; line-height: 1; }
 .hero-art:has(.hero-cover-card) { padding: 32px 40px 32px 0; }
 .hero-cover-card { position: relative; align-self: center; justify-self: center; width: min(100%, 380px); aspect-ratio: 16 / 10; overflow: hidden; border-radius: 20px; background-position: center; background-size: cover; box-shadow: 0 30px 70px rgba(0, 0, 0, .5), 0 0 0 1px rgb(255 255 255 / .12); transform: rotate(-3deg); }
 
@@ -864,7 +858,7 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 }
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation: none !important; transition-duration: .01ms !important; }
 /* Settings switch "Background animations": holds the endless decorative loops. Loading indicators keep moving. */
-.ambient-paused :is(.hero-backdrop, .hero-orbit, .hero-core, .hero-spark, .drop-icon, .aurora i, .sa-path, .sa-float-a, .sa-float-b, .sa-vault, .sa-check),
+.ambient-paused :is(.hero-backdrop, .hero-spin, .hero-ball, .hero-core, .hero-glint, .drop-icon, .aurora i, .sa-path, .sa-float-a, .sa-float-b, .sa-vault, .sa-check),
 .ambient-paused :is(.hero-art, .dot-pattern)::before,
 .ambient-paused :is(.beam, .beam-tabs button.active, .auth-shell)::after { animation-play-state: paused; }
 /* Finger-sized targets on touch screens */
@@ -1079,10 +1073,7 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 .toast { animation: toast-in .35s var(--ease); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px) scale(.97); } }
 
-/* Empty home hero art: keep the orbits inside the art column */
 .hero-art { overflow: hidden; }
-.orbit-one { width: 184px; height: 184px; }
-.orbit-two { width: 240px; height: 240px; border-color: rgb(var(--accent-rgb) / .22); opacity: 1; }
 
 /* Details hero: clip only the background so menus can overflow */
 .details-hero { overflow: visible; }
@@ -1231,8 +1222,6 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent);
 
 /* Same treatment for the empty Home hero art */
 .hero-banner:not(.has-art) .hero-art::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle closest-side, rgb(var(--accent-rgb) / .25), transparent); animation: glow-breathe 6s ease-in-out infinite; }
-.hero-core { position: relative; animation: lock-float 6s ease-in-out infinite; }
-.hero-spark { animation: twinkle 3.4s ease-in-out infinite; }
 .share-lock > .lock-shine { right: auto; bottom: auto; inset: 0; border-radius: inherit; overflow: hidden; place-items: initial; display: block; width: auto; height: auto; border: 0; background: none; color: inherit; animation: none; }
 
 /* Package builder: start from an AI */
@@ -1564,11 +1553,6 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 .language-name b { font-size: 14px; font-weight: 600; }
 .language-name small { color: var(--muted); font-size: 12.5px; }
 .language-check { flex: none; color: var(--accent); }
-.language-picker { display: inline-flex; align-items: center; gap: 8px; margin-top: -14px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 99px; background: var(--surface); color: var(--text-2); font-size: 13.5px; }
-.language-picker:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
-.language-picker select { min-height: 36px; padding: 0 4px; border: 0; outline: 0; background: transparent; color: inherit; font-weight: 550; cursor: pointer; }
-.language-picker option { background: var(--elevated); color: var(--text); }
-@media (pointer: coarse) { .language-picker select { min-height: 44px; } }
 @media (max-width: 640px) { .language-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px; } .language-card { gap: 9px; padding: 8px 10px 8px 8px; } .language-card:first-child { grid-column: 1 / -1; } .language-check { display: none; } }
 .panel-title-row { flex-wrap: wrap; row-gap: 8px; }
 
@@ -1866,9 +1850,10 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
   .login-top-back { display: grid; flex: none; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: #fff; }
   .login-top .login-brand { flex: 1; color: #fff; font-size: 17px; }
   .login-top .login-brand img { width: 30px; height: 30px; }
-  .login-top .language-picker { margin-top: 0; padding: 0 6px 0 12px; border-color: rgb(255 255 255 / .22); background: rgb(255 255 255 / .1); color: #fff; }
-  .login-top .language-picker select { min-height: 40px; color: #fff; font-size: 16px; }
-  .login-top .language-picker option { color: #111; }
+
+  .login-top .language-picker { margin: 0; }
+  .login-top .language-button { border-color: rgb(255 255 255 / .2); background: rgb(255 255 255 / .1); color: #fff; }
+  .login-top .language-menu { right: 0; left: auto; transform-origin: top right; }
 
   .auth-phone { display: flex; flex: 1; flex-direction: column; }
   .auth-phone-art { display: grid; flex: 1 1 0; min-height: 170px; max-height: 360px; place-items: center; overflow: hidden; transition: min-height .35s var(--ease), max-height .35s var(--ease); }
@@ -1908,3 +1893,63 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
   .item-row-cover { width: 48px; height: 38px; }
   .login-top .login-brand { font-size: 15.5px; }
 }
+
+/* ---------- Language menu on the sign-in pages ---------- */
+.language-picker { position: relative; z-index: 5; margin-top: -14px; }
+.language-button { display: inline-flex; align-items: center; gap: 9px; min-height: 40px; padding: 0 12px 0 14px; border: 1px solid var(--line-strong); border-radius: 99px; background: var(--surface); color: var(--text-2); font-size: 14px; font-weight: 600; transition: border-color .15s ease, color .15s ease; }
+.language-button:hover, .language-button[aria-expanded='true'] { border-color: var(--accent-line); color: var(--text); }
+.language-chevron { opacity: .7; transition: transform .2s var(--ease); }
+.language-button[aria-expanded='true'] .language-chevron { transform: rotate(180deg); }
+.language-menu { position: absolute; top: calc(100% + 8px); left: 50%; width: 208px; padding: 6px; border: 1px solid var(--line-strong); border-radius: 18px; background: var(--elevated); box-shadow: var(--shadow-3); transform: translateX(-50%); animation: language-in .16s var(--ease); }
+@keyframes language-in { from { opacity: 0; translate: 0 -6px; } }
+.language-menu button { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 44px; padding: 0 12px 0 8px; border: 0; border-radius: 13px; background: none; color: var(--text); font-size: 14.5px; font-weight: 550; text-align: left; }
+.language-menu button:hover, .language-menu button:focus-visible { background: var(--interactive); }
+.language-menu button:focus-visible { outline-offset: -2px; }
+.language-menu button[aria-checked='true'] { background: var(--accent-soft); font-weight: 650; }
+.language-menu button > span:nth-child(2) { flex: 1; }
+.language-menu svg { color: var(--accent); }
+.language-code { display: grid; flex: none; place-items: center; width: 32px; height: 28px; border-radius: 9px; background: var(--interactive); color: var(--text-2); font-size: 11.5px; font-weight: 700; letter-spacing: .02em; }
+.language-menu button[aria-checked='true'] .language-code { background: var(--accent); color: var(--on-accent, #14111F); }
+@media (pointer: coarse) { .language-button { min-height: 44px; } }
+@media (max-width: 640px) { .login-top .language-menu { transform: none; } }
+
+/* ---------- Contact on the privacy page ---------- */
+.contact-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; }
+.contact-list > * { display: flex; align-items: center; gap: 13px; min-width: 0; padding: 13px 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); }
+.privacy-page .contact-list a { color: var(--text); text-decoration: none; transition: border-color .15s ease, background-color .15s ease; }
+.privacy-page .contact-list a:hover { border-color: var(--accent-line); background: var(--elevated); }
+.contact-list > * > span:nth-child(2) { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
+.contact-list b { font-size: 14.5px; font-weight: 620; overflow-wrap: anywhere; }
+.contact-list small { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.contact-list > * > svg { flex: none; color: var(--muted); }
+.contact-icon { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
+.contact-icon.bug { background: rgb(240 128 145 / .14); color: var(--error); }
+
+/* ---------- Start page: one ball of light flies around the logo, behind it and in front of it ---------- */
+.hero-art { overflow: hidden; }
+.hero-stage { position: relative; display: grid; place-items: center; width: 300px; height: 260px; perspective: 900px; }
+.hero-stage, .hero-ring, .hero-spin, .hero-ball { transform-style: preserve-3d; }
+.hero-core { position: relative; }
+.hero-ring { position: absolute; width: 252px; height: 252px; border-radius: 50%; transform: rotateZ(-14deg) rotateX(70deg); }
+.hero-ring::before { content: ''; position: absolute; inset: 0; border: 1.5px solid rgb(var(--accent-rgb) / .28); border-radius: 50%; }
+.hero-spin { position: absolute; inset: 0; animation: orbit 7s linear infinite; }
+.hero-tail { position: absolute; inset: -3px; border-radius: 50%; background: conic-gradient(from 0deg, transparent 0 58%, rgb(var(--accent-rgb) / .08) 64%, rgb(var(--accent-rgb) / .9) 97%, #fff 100%); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px)); mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px)); }
+.hero-ball { position: absolute; top: -8px; left: calc(50% - 8px); width: 16px; height: 16px; animation: orbit 7s linear infinite reverse; }
+.hero-ball i { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle at 38% 34%, #fff 12%, var(--accent) 70%); box-shadow: 0 0 10px 2px rgb(var(--accent-rgb) / .85), 0 0 32px 8px rgb(var(--accent-rgb) / .45); transform: rotateX(-70deg) rotateZ(14deg); }
+/* The star of the logo glints. */
+.hero-glint { position: absolute; top: 26.5%; left: 69.5%; width: 44px; height: 44px; margin: -22px 0 0 -22px; background: radial-gradient(closest-side, #fff, transparent 20%), linear-gradient(transparent 47%, #fff 49% 51%, transparent 53%), linear-gradient(90deg, transparent 47%, #fff 49% 51%, transparent 53%); -webkit-mask: radial-gradient(closest-side, #000 10%, transparent); mask: radial-gradient(closest-side, #000 10%, transparent); mix-blend-mode: screen; opacity: 0; animation: glint 7s ease-in-out infinite; }
+@keyframes glint { 0%, 22%, 44%, 100% { opacity: 0; transform: scale(.3) rotate(-20deg); } 33% { opacity: .95; transform: scale(1) rotate(0); } }
+/* Standing still, the ball is at the front right. */
+@media (prefers-reduced-motion: reduce) { .hero-spin, .hero-ball, .hero-glint { animation: none !important; } .hero-spin { transform: rotate(125deg); } .hero-ball { transform: rotate(-125deg); } }
+.reduce-motion .hero-spin { transform: rotate(125deg); }
+.reduce-motion .hero-ball { transform: rotate(-125deg); }
+/* ---------- Choice of models ---------- */
+.local-ai-groups { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.local-ai-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 0 0 8px 2px; }
+.local-ai-title b { font-size: 13.5px; font-weight: 650; }
+.local-ai-title small { color: var(--muted); font-size: 12.5px; }
+.local-ai-choice .language-name { min-width: 0; }
+.local-ai-choice .language-name b { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.local-ai-choice em { padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-size: 11.5px; font-style: normal; font-weight: 650; }
+.local-ai-choice .local-ai-facts { margin-top: 3px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.local-ai-note a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }

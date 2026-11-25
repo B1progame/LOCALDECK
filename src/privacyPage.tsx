@@ -1,15 +1,21 @@
 /* What LocalDeck stores, where, and whom it contacts. Keep it in step with the code. */
+import { Bug, ExternalLink, Mail, UserRound } from 'lucide-react';
 import { t } from './i18n';
 import { PageHeading } from './shared';
 
 const OPERATOR = (import.meta.env.VITE_OPERATOR_NAME ?? '').trim();
 const CONTACT = (import.meta.env.VITE_OPERATOR_CONTACT ?? '').trim();
-const ISSUES = 'https://github.com/B1progame/LOCALDECK/issues';
+const ISSUES = 'https://github.com/B1progame/LOCALDECK/issues/new';
 
 function Contact() {
   const href = /^https?:\/\//.test(CONTACT) ? CONTACT : /^[^\s@]+@[^\s@]+$/.test(CONTACT) ? `mailto:${CONTACT}` : '';
-  if (CONTACT) return <p>{OPERATOR && <>{OPERATOR}<br/></>}{href ? <a href={href}>{CONTACT}</a> : CONTACT}</p>;
-  return <p>{OPERATOR && <>{OPERATOR}<br/></>}<a href={ISSUES} target="_blank" rel="noopener noreferrer">{t('Contact through the project page on GitHub')}</a>. {t('Messages there are public, so do not write private data.')}</p>;
+  return <div className="contact-list">
+    {OPERATOR && <div><span className="contact-icon"><UserRound size={18}/></span><span><small>{t('Operator')}</small><b>{OPERATOR}</b></span></div>}
+    {CONTACT && (href
+      ? <a href={href}><span className="contact-icon"><Mail size={18}/></span><span><small>{t('Questions and privacy')}</small><b>{CONTACT.split('@')[0]}<wbr/>{CONTACT.includes('@') && `@${CONTACT.split('@')[1]}`}</b></span></a>
+      : <div><span className="contact-icon"><Mail size={18}/></span><span><small>{t('Questions and privacy')}</small><b>{CONTACT}</b></span></div>)}
+    <a href={ISSUES} target="_blank" rel="noopener noreferrer"><span className="contact-icon bug"><Bug size={18}/></span><span><small>{t('Found a bug?')}</small><b>{t('Report it on GitHub')}</b><small>{t('Messages there are public, so do not write private data.')}</small></span><ExternalLink size={15}/></a>
+  </div>;
 }
 
 export function PrivacyPage() {

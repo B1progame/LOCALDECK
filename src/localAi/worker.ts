@@ -2,12 +2,11 @@
 import { AutoModelForCausalLM, AutoTokenizer, env, InterruptableStoppingCriteria, TextStreamer } from '@huggingface/transformers';
 import ortModule from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
-import { MODEL, type FromWorker, type ToWorker } from './model';
+import { MODELS, type FromWorker, type GpuModel, type ModelId, type ToWorker } from './model';
 import { loadInParts } from './parts';
 
 // Runtime files come from LocalDeck itself. Only the model is loaded from Hugging Face, once, in a fixed version.
 env.allowLocalModels = false;
-env.cacheKey = MODEL.cache;
 // The large file is loaded and kept in parts, so a lost connection does not start it over again.
 const LARGE = /\.onnx_data$/;
 let modelCache: Cache | null = null;
@@ -30,8 +29,9 @@ const stop = new InterruptableStoppingCriteria();
 const send = (message: FromWorker) => self.postMessage(message);
 const explain = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-async function load(): Promise<void> {
+async function load(id: ModelId): Promise<void> {
   if (model) { send({ type: 'ready' }); return; }
+  const chosen = MODELS[id] as GpuModel;
   const files = new Map<string, { loaded: number; total: number }>();
   let last = 0;
   const progress_callback = (info: { status: string; file?: string; loaded?: number; total?: number }) => {
@@ -40,15 +40,15 @@ async function load(): Promise<void> {
     if (Date.now() - last < 150) return;
     last = Date.now();
     const loaded = [...files.values()].reduce((sum, file) => sum + file.loaded, 0);
-    send({ type: 'progress', loaded, total: Math.max(MODEL.bytes, [...files.values()].reduce((sum, file) => sum + file.total, 0)) });
+    send({ type: 'progress', loaded, total: Math.max(chosen.bytes, [...files.values()].reduce((sum, file) => sum + file.total, 0)) });
   };
-  try { modelCache ??= await caches.open(MODEL.cache); } catch { /* private window: works, but loads again next time */ }
+  try { modelCache ??= await caches.open(chosen.cache); } catch { /* private window: works, but loads again next time */ }
   const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<{ features: { has(name: string): boolean } } | null> } }).gpu;
   const adapter = await gpu?.requestAdapter();
   if (!adapter) throw new Error('no-webgpu');
-  const options = { revision: MODEL.revision, progress_callback };
-  tokenizer = await AutoTokenizer.from_pretrained(MODEL.id, options as never);
-  model = await AutoModelForCausalLM.from_pretrained(MODEL.id, { ...options, device: 'webgpu', dtype: adapter.features.has('shader-f16') ? 'q4f16' : 'q4' } as never);
+  const options = { revision: chosen.revision, progress_callback };
+  tokenizer = await AutoTokenizer.from_pretrained(chosen.repo, options as never);
+  model = await AutoModelForCausalLM.from_pretrained(chosen.repo, { ...options, device: 'webgpu', dtype: adapter.features.has('shader-f16') ? 'q4f16' : 'q4' } as never);
   send({ type: 'preparing' });
   // The first run compiles the GPU programs.
   await (model as unknown as { generate(input: object): Promise<unknown> }).generate({ ...tokenizer('a') as object, max_new_tokens: 1 });
@@ -71,7 +71,7 @@ self.onmessage = (event: MessageEvent<ToWorker>) => {
   const message = event.data;
   if (message.type === 'stop') { stop.interrupt(); return; }
   queue = queue.then(async () => {
-    try { if (message.type === 'load') await load(); else await generate(message); }
+    try { if (message.type === 'load') await load(message.model); else await generate(message); }
     catch (error) { send({ type: 'failed', id: message.type === 'generate' ? message.id : null, error: explain(error) }); }
   });
 };
