@@ -27,3 +27,13 @@ A change applies to the next upload. Links that already exist keep their expiry.
 ## Data that is stored
 
 The Worker keeps the name, email address, sign-in method, times and counters of every account that signs in, so the admin can see them. The sign-in page says so. Accounts that have not signed in for 180 days and have no links are deleted. Project names and contents are never known to the server. Counting starts when this version of the Worker is deployed; older sign-ins and downloads are not known.
+
+## Local test admin
+
+```powershell
+npm run dev:admin
+```
+
+Starts LocalDeck on `http://localhost:5469` with its own sharing service, sample accounts and a test admin ("Local test admin" on the sign-in page). Everything is in memory and gone when it stops.
+
+It is no way into the real service. The sign-in is signed with a key that is new at every start and that only this process accepts, the service listens on this computer only, and the button is not part of the published site.
