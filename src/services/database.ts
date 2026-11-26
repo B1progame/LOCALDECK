@@ -58,6 +58,19 @@ export async function openLibrary(): Promise<void> {
   // Ratings that came from the AI alone are not trusted any more.
   await db.items.filter(item => item.contentCheck?.reasons.length === 1 && item.contentCheck.reasons[0] === 'ai')
     .modify(item => { item.contentCheck = { ...item.contentCheck!, rating: 'ok', reasons: [] }; }).catch(() => undefined);
+  // The check used to flag text in scripts and plain links as files. Projects it flagged are checked once more.
+  if (!await db.settings.get('compatibility-v2')) {
+    try {
+      const { diagnoseCompatibility } = await import('./importer');
+      for (const item of await db.items.filter(entry => entry.offlineCompatibility?.score === 'partial' && /\.html?$/i.test(entry.entryFile)).toArray()) {
+        const assets = await db.assets.where('itemId').equals(item.id).toArray();
+        const entry = assets.find(asset => asset.normalizedPath === item.entryFile);
+        if (!entry) continue;
+        await db.items.update(item.id, { offlineCompatibility: diagnoseCompatibility(await entry.blob.text(), assets.map(asset => asset.normalizedPath), item.entryFile) });
+      }
+      await db.settings.put({ id: 'compatibility-v2', value: true, updatedAt: Date.now() });
+    } catch { /* tried again next time */ }
+  }
   const migrated = await db.settings.get('migration-v1-complete');
   if (migrated) return;
   const oldProjects = await readLegacyProjects();

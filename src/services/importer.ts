@@ -44,33 +44,71 @@ function parseEmbeddedManifest(html: string): { manifest: ProjectManifest | null
   } catch { return { manifest: null, warning: 'The embedded LocalDeck manifest contains invalid JSON.' }; }
 }
 
+/** The page without the text of its scripts, and that text on its own. Linear, so a broken page cannot make it slow. */
+function splitScripts(html: string): { markup: string; scripts: string } {
+  const lower = html.toLowerCase();
+  let markup = '', scripts = '', at = 0;
+  for (;;) {
+    const start = lower.indexOf('<script', at);
+    const open = start < 0 ? -1 : lower.indexOf('>', start);
+    if (open < 0) break;
+    const close = lower.indexOf('</script', open);
+    const end = close < 0 ? html.length : close;
+    markup += html.slice(at, open + 1);
+    scripts += `${html.slice(open + 1, end)}\n`;
+    at = end;
+  }
+  return { markup: markup + html.slice(at), scripts };
+}
+
 export function diagnoseCompatibility(entryHtml: string, packagePaths: string[] = [], entryPath = 'index.html'): CompatibilityReport {
   const findings: string[] = [];
   let concerns = 0;
   const localPaths = new Set(packagePaths.map(path => path.toLocaleLowerCase('en-US')));
-  const references = new Set<string>();
-  for (const match of entryHtml.matchAll(/\b(?:src|href|poster|data)\s*=\s*(["'])(.*?)\1/gi)) references.add(match[2].trim());
+  // Only what the page really loads counts: files named in its tags and styles. Text inside scripts, links to
+  // other websites (<a href>, canonical, preconnect) and variables like `data = "..."` are not files.
   // Limited lengths: a page that is made to be slow must not stop the app when someone opens its link.
-  for (const match of entryHtml.matchAll(/url\(\s{0,20}(?:"([^"\n]{0,1000})"|'([^'\n]{0,1000})'|([^"'()\s]{1,1000}))\s{0,20}\)/gi)) references.add((match[1] ?? match[2] ?? match[3] ?? '').trim());
-  for (const match of entryHtml.matchAll(/@import\s+(?:url\()?\s*(["'])(.*?)\1\s*\)?/gi)) references.add(match[2].trim());
-  const external = [...references].filter(ref => /^https?:\/\//i.test(ref) || ref.startsWith('//'));
+  const { markup, scripts } = splitScripts(entryHtml);
+  const references = new Set<string>(), pages = new Set<string>();
+  for (const tag of markup.matchAll(/<([a-z][a-z0-9-]{0,30})\b([^<>]{0,4000})>/gi)) {
+    const name = tag[1]!.toLowerCase(), attributes = tag[2]!;
+    const rel = /\brel\s*=\s*["']?([^"'>]{0,200})/i.exec(attributes)?.[1]?.toLowerCase() ?? '';
+    for (const attribute of attributes.matchAll(/(?:^|\s)(src|href|poster|data)\s*=\s*(["'])([^"']{0,2000})\2/gi)) {
+      const kind = attribute[1]!.toLowerCase(), value = attribute[3]!.trim();
+      if (name === 'a' || name === 'area') { if (kind === 'href') pages.add(value); continue; }
+      if (name === 'base' || (kind === 'data' && name !== 'object')) continue;
+      if (name === 'link' && !/stylesheet|icon|preload|modulepreload|manifest/.test(rel)) continue;
+      references.add(value);
+    }
+  }
+  for (const match of markup.matchAll(/url\(\s{0,20}(?:"([^"\n]{0,1000})"|'([^'\n]{0,1000})'|([^"'()\s]{1,1000}))\s{0,20}\)/gi)) references.add((match[1] ?? match[2] ?? match[3] ?? '').trim());
+  for (const match of markup.matchAll(/@import\s+(?:url\()?\s*(["'])([^"'\n]{0,1000})\1\s*\)?/gi)) references.add(match[2]!.trim());
+  // Data that scripts ask for with a written address. Local files are found by the player, other websites need the internet.
+  const requests = new Set<string>();
+  for (const match of scripts.matchAll(/\b(?:fetch|EventSource)\s*\(\s*(["'`])([^"'`\n]{1,1000})\1/g)) requests.add(match[2]!.trim());
+  for (const match of scripts.matchAll(/\.open\s*\(\s*["'][a-z]{3,7}["']\s*,\s*(["'`])([^"'`\n]{1,1000})\1/gi)) requests.add(match[2]!.trim());
+  const remote = (ref: string) => /^(?:https?|wss?):\/\//i.test(ref) || ref.startsWith('//');
+  const online = [...requests].filter(remote);
+  for (const ref of requests) if (!remote(ref) && !ref.includes('${')) references.add(ref);
+  const external = [...references].filter(remote);
   if (external.length) concerns++;
   if (external.length) findings.push(`${external.length} remote file reference${external.length === 1 ? '' : 's'} detected. The isolated player blocks them unless you allow the internet for this project in its details. Without internet they will not load.`);
   const missing = new Set<string>();
-  for (const ref of references) {
-    if (!ref || external.includes(ref) || /^(?:data:|blob:|javascript:|mailto:|tel:|#)/i.test(ref)) continue;
+  for (const ref of [...references, ...pages]) {
+    if (!ref || remote(ref) || /^(?:[a-z][a-z0-9+.-]*:|#)/i.test(ref)) continue;
     try {
       const url = new URL(ref, `https://localdeck.invalid/${entryPath}`);
       if (url.origin !== 'https://localdeck.invalid') continue;
+      // A path from the root means the root of the project. A folder means its index.html.
       let path = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+      if (!path || path.endsWith('/')) path += 'index.html';
       path = normalizePackagePath(path);
       if (localPaths.size && !localPaths.has(path.toLocaleLowerCase('en-US'))) missing.add(path);
-      if (ref.startsWith('/')) missing.add(ref);
     } catch { missing.add(ref); }
   }
   if (missing.size) concerns++;
   if (missing.size) findings.push(`${missing.size} local file reference${missing.size === 1 ? '' : 's'} could not be matched to the package: ${[...missing].slice(0,3).join(', ')}${missing.size > 3 ? ', …' : ''}.`);
-  if (/\bfetch\s*\(|XMLHttpRequest|WebSocket\s*\(/i.test(entryHtml)) { concerns++; findings.push('The page appears to use network requests. Local files work. For other websites, allow the internet for this project in its details.'); }
+  if (online.length || /\bnew\s+WebSocket\s*\(/.test(scripts)) { concerns++; findings.push('The page appears to use network requests. Local files work. For other websites, allow the internet for this project in its details.'); }
   if (/serviceWorker|navigator\.serviceWorker/i.test(entryHtml)) { concerns++; findings.push('The project references its own service worker; embedded projects cannot register one from the isolated player.'); }
   if (/\btype\s*=\s*["']module["']/i.test(entryHtml)) findings.push('The entry page uses JavaScript modules. Modules with multi-file local imports need to pass the compatibility check in the player.');
   if (/\bindexedDB\b/.test(entryHtml)) findings.push('The page uses IndexedDB, which is not available in the isolated player. localStorage and cookies work and are kept on this device.');

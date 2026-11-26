@@ -55,6 +55,21 @@ test('flags remote resources and network calls as partial compatibility', () => 
   assert.equal(diagnoseCompatibility('<h1>Offline</h1>', ['index.html']).score, 'likely');
 });
 
+test('only what a page really loads counts, not text in scripts or links to websites', () => {
+  const ok = html => assert.equal(diagnoseCompatibility(html, ['index.html', 'data.json', 'style.css']).score, 'likely', html);
+  const flagged = html => assert.equal(diagnoseCompatibility(html, ['index.html', 'data.json', 'style.css']).score, 'partial', html);
+  ok('<script>const data = "hallo welt"; el.href = "#top"; img.src = "player.png";</script>');
+  ok('<a href="https://example.com">Seite</a><a href="/">Start</a><a href="mailto:a@b.c">Mail</a>');
+  ok('<link rel="canonical" href="https://x.example/"><link rel="preconnect" href="https://fonts.gstatic.com"><meta property="og:url" content="https://x.example">');
+  ok('<svg xmlns="http://www.w3.org/2000/svg"><use href="#a"/></svg><div data-x="y"></div>');
+  ok('<link rel="stylesheet" href="/style.css"><script>fetch("data.json"); fetch(`./data.json`)</script>');
+  flagged('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">');
+  flagged('<script>fetch("https://api.example.com/x")</script>');
+  flagged('<script>const socket = new WebSocket("wss://x.example")</script>');
+  flagged('<script src="missing.js"></script>');
+  flagged('<a href="page2.html">Weiter</a>');
+});
+
 test('ignores macOS metadata and version-control folders in packages', async () => {
   const enc = new TextEncoder();
   const zip = createStoredZip([
