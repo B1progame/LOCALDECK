@@ -545,8 +545,8 @@ test('the guide explains the website, AI studio and the output', async () => {
 test('problems in a project are named so the AI can fix them', async () => {
   const guest = await token({ sub: 'ai-check', email: 'ai-check@example.com' });
   const { url } = await newConnection(guest);
-  const made = (await tool(url, 'create_project', { title: 'P', files: [{ path: 'index.html', content: '<html><script src="https://cdn.example/x.js"></script><img src="pics/missing.png"><a href="https://example.com">ok</a><script>localStorage.setItem("a",1);alert("hi")</script></html>' }] })).text;
-  for (const part of ['loads something from the internet', '"pics/missing.png" is not in the project', 'browser storage', 'uses alert', 'viewport', 'lang attribute', 'no cover']) assert.ok(made.includes(part), part);
+  const made = (await tool(url, 'create_project', { title: 'P', files: [{ path: 'index.html', content: '<html><script src="https://cdn.example/x.js"></script><img src="pics/missing.png"><a href="https://example.com">ok</a><script>indexedDB.open("a")</script></html>' }] })).text;
+  for (const part of ['loads something from the internet', '"pics/missing.png" is not in the project', 'uses IndexedDB', 'viewport', 'lang attribute', 'no cover']) assert.ok(made.includes(part), part);
   const id = idOf(made);
   const fixed = (await tool(url, 'update_project', { project_id: id, files: [{ path: 'index.html', content: goodPage('<a href="https://example.com">ok</a><script src="app.js"></script>') }, { path: 'app.js', content: 'let state = {};' }, { path: 'cover.svg', content: '<svg xmlns="http://www.w3.org/2000/svg"/>' }] })).text;
   assert.ok(!fixed.includes('Problems'), fixed);

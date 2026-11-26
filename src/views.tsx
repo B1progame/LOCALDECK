@@ -12,6 +12,7 @@ import { HeroLogo } from './heroLogo';
 import { useProfile } from './profile';
 import { tagsWithMark, useContentMarks } from './contentMarks';
 import { ContentNote } from './contentNote';
+import { ProjectRuntime } from './projectRuntime';
 import { ProjectScanPanel } from './projectScanPanel';
 import { rovingKeys, useStillMotion } from './a11y';
 import { getAssets, hasPhotoCover, type ItemSort } from './services/library';
@@ -279,6 +280,7 @@ export function ItemDetailsPage({ item, collections }: { item: LibraryItem | und
         <section className="panel">
           <div className="panel-title-row"><h2>{t('Compatibility')}</h2><span className={`status-pill ${score}`}><ShieldCheck size={14}/>{score === 'likely' ? t('Likely works offline') : score === 'partial' ? t('Needs a look') : t('Not checked')}</span></div>
           <ul className="finding-list">{item.offlineCompatibility.findings.map(f => <li key={f}>{tm(f)}</li>)}</ul>
+          {isHtmlItem(item) && <ProjectRuntime item={item}/>}
         </section>
         <section className="panel">
           <div className="panel-title-row"><h2>{t('Files')}</h2><span className="muted-text">{plural(item.fileCount, '{0} file · {1}', '{0} files · {1}', item.fileCount, bytes(item.storageSize))}</span></div>

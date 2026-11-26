@@ -22,7 +22,7 @@ With these tools you create a project, get a private link for the person, and ch
 How to build a good project:
 - Write a complete index.html. Put CSS and JavaScript inside it, or in extra files with relative paths.
 - It must work offline: no CDNs, no web fonts, no remote images, no fetch to other servers. They are blocked.
-- It runs in an isolated frame: localStorage, cookies and service workers are not available. Keep state in memory.
+- It runs in an isolated frame. localStorage and cookies work and are kept on the device (up to 5 MB). IndexedDB and service workers are not available.
 - Make it work on phones and with touch, use large tap targets, readable contrast and a layout that fits 360 px.
 - Draw illustrations as SVG. Add cover.svg (1200x750) as the cover. Do not write localdeck.json, it is created from the details you pass.
 - Use the language of the person. A project may have ${MAX_PROJECT_MIB} MiB and ${MAX_FILES} files. One call may carry ${REQUEST_MIB} MiB, add more with update_project.

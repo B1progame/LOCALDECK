@@ -55,7 +55,7 @@ export function diagnoseCompatibility(entryHtml: string, packagePaths: string[] 
   for (const match of entryHtml.matchAll(/@import\s+(?:url\()?\s*(["'])(.*?)\1\s*\)?/gi)) references.add(match[2].trim());
   const external = [...references].filter(ref => /^https?:\/\//i.test(ref) || ref.startsWith('//'));
   if (external.length) concerns++;
-  if (external.length) findings.push(`${external.length} remote file reference${external.length === 1 ? '' : 's'} detected. The isolated player blocks remote scripts, images, fonts, and styles; they may also be unavailable offline.`);
+  if (external.length) findings.push(`${external.length} remote file reference${external.length === 1 ? '' : 's'} detected. The isolated player blocks them unless you allow the internet for this project in its details. Without internet they will not load.`);
   const missing = new Set<string>();
   for (const ref of references) {
     if (!ref || external.includes(ref) || /^(?:data:|blob:|javascript:|mailto:|tel:|#)/i.test(ref)) continue;
@@ -70,10 +70,11 @@ export function diagnoseCompatibility(entryHtml: string, packagePaths: string[] 
   }
   if (missing.size) concerns++;
   if (missing.size) findings.push(`${missing.size} local file reference${missing.size === 1 ? '' : 's'} could not be matched to the package: ${[...missing].slice(0,3).join(', ')}${missing.size > 3 ? ', …' : ''}.`);
-  if (/\bfetch\s*\(|XMLHttpRequest|WebSocket\s*\(/i.test(entryHtml)) { concerns++; findings.push('The page appears to use network requests. The isolated player restricts requests to local project files and offline cache.'); }
+  if (/\bfetch\s*\(|XMLHttpRequest|WebSocket\s*\(/i.test(entryHtml)) { concerns++; findings.push('The page appears to use network requests. Local files work. For other websites, allow the internet for this project in its details.'); }
   if (/serviceWorker|navigator\.serviceWorker/i.test(entryHtml)) { concerns++; findings.push('The project references its own service worker; embedded projects cannot register one from the isolated player.'); }
   if (/\btype\s*=\s*["']module["']/i.test(entryHtml)) findings.push('The entry page uses JavaScript modules. Modules with multi-file local imports need to pass the compatibility check in the player.');
-  if (/\b(?:indexedDB|localStorage|sessionStorage)\b/.test(entryHtml)) findings.push('The isolated player does not share LocalDeck storage. Project-owned storage may be unavailable in the opaque sandbox.');
+  if (/\bindexedDB\b/.test(entryHtml)) findings.push('The page uses IndexedDB, which is not available in the isolated player. localStorage and cookies work and are kept on this device.');
+  else if (/\b(?:localStorage|sessionStorage)\b|document\.cookie/.test(entryHtml)) findings.push('The page saves data with localStorage or cookies. LocalDeck keeps it on this device, separately for this project.');
   if (!findings.length) findings.push('No common remote-resource, missing-file, or server dependency was found in the entry page. Runtime compatibility still depends on the project code and browser.');
   return { score: concerns ? 'partial' : 'likely', findings, checkedAt: Date.now() };
 }

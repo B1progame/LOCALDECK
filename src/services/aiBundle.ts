@@ -112,7 +112,7 @@ REQUIREMENTS
 - Make it look great: modern layout, smooth but subtle animations, responsive from phone to desktop, readable contrast, and respect prefers-reduced-motion.
 - Include localdeck.json with schemaVersion 1, title, type ("${opts.kind}"), description, entry "index.html", cover, tags${opts.subject?.trim() ? ', subject' : ''}.
 - Create an original cover illustration as cover.svg (1200×750) that matches the project. No text other than the title.
-- Do not use localStorage for anything essential; the app runs in a sandbox where it may be unavailable.
+- localStorage works for scores and settings (up to 5 MB, kept on the device). IndexedDB does not.
 
 ${BUNDLE_FORMAT}`;
 }

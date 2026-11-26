@@ -2051,3 +2051,8 @@ a.profile-row:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
   .sa-vault:hover { scale: 1.1; filter: drop-shadow(0 0 26px rgb(167 139 250 / .95)); }
   .sa-project:hover, .sa-friend:hover { scale: 1.14; }
 }
+
+/* ---------- What a project may do ---------- */
+.runtime-rows { margin: 16px -20px -20px; border-top: 1px solid var(--line); }
+.runtime-rows .setting-row:last-child { border-bottom: 0; }
+@media (max-width: 640px) { .runtime-rows { margin: 14px -16px -16px; } .runtime-rows .setting-row { padding: 14px 16px; } }

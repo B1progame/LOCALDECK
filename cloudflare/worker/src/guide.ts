@@ -27,7 +27,8 @@ What happens with your project
 
 How a project runs
 - In an isolated frame (sandbox with scripts, forms, pointer lock, presentation and downloads).
-- Blocked: every request to the internet, localStorage, sessionStorage, IndexedDB, cookies, service workers, alert/confirm/prompt, opening windows, reading the library.
+- Blocked: every request to the internet (unless the person allows it for this project), IndexedDB, service workers, opening windows, reading the library.
+- Works: localStorage and cookies. LocalDeck keeps them on the device, separately for every project, up to 5 MB. sessionStorage lasts until the project is closed. alert, confirm and prompt work.
 - Allowed: inline scripts and styles, relative files of the project, data: and blob: URLs, canvas, WebGL, Web Audio, fullscreen, downloads of blobs, ES modules with relative paths.
 - The window can be a phone (about 360 x 640) or a big screen, in light or dark surroundings.`;
 
@@ -105,8 +106,7 @@ export function checkProject(files: Map<string, Uint8Array>): string[] {
     if (page || style) add(path, text, /@import\s+(?:url\()?["']?(?:https?:)?\/\/|url\(\s*["']?(?:https?:)?\/\//i, 'loads a style, font or image from the internet. It is blocked.');
     if (page || script) {
       add(path, text, /\bfetch\(\s*["'`]https?:|new\s+WebSocket\(|new\s+EventSource\(|importScripts\(\s*["']https?:|from\s+["']https?:/i, 'contacts the internet. It is blocked.');
-      add(path, text, /\b(?:localStorage|sessionStorage|indexedDB)\s*[.[]|document\.cookie/, 'uses browser storage. It is not available and throws an error. Keep state in memory or use try/catch.');
-      add(path, text, /(?<![.\w])(?:alert|confirm|prompt)\(/, 'uses alert, confirm or prompt. They do nothing here, show the message in the page.');
+      add(path, text, /\bindexedDB\s*[.[]/, 'uses IndexedDB. It is not available. Use localStorage, which LocalDeck keeps on the device.');
       add(path, text, /serviceWorker\.register/, 'registers a service worker. It is not available.');
     }
     if (page) {

@@ -18,7 +18,17 @@ When a signed-in user chooses **Create encrypted link**, the browser exports one
 
 ## Tradeoffs
 
-The service worker is needed for local multi-file URLs while the iframe has an opaque origin. It is served from the Pages app origin but only returns blobs for a validated item ID and normalized path. Some projects still need a server, cross-origin features, or browser capabilities that this static runtime cannot provide; compatibility reports are estimates, not guarantees.
+The service worker is needed for local multi-file URLs while the iframe has an opaque origin. It is served from the Pages app origin but only returns blobs for a validated item ID and normalized path. Compatibility reports are estimates, not guarantees.
+
+What the player adds, so more projects work as they are ([details](LOCAL_RUNTIME.md)):
+
+| Projects that need | Support |
+|---|---|
+| localStorage, sessionStorage, cookies | Replaced. Saved per project on the device, up to 5 MB |
+| Paths that start with `/` (`/style.css`) | Mapped to the files of the project |
+| alert, confirm, prompt, eval | Allowed |
+| Fonts, libraries or data from other websites | Off, the person can allow it per project |
+| IndexedDB, a service worker of their own, a server (PHP, databases, accounts) | Not possible in a static player. Projects with a server need their own hosting |
 
 ## Optional local HTML review
 

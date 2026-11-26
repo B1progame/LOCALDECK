@@ -1,3 +1,4 @@
+import { deleteProjectSave } from './projectSaves';
 import { db } from './database';
 import type { AppSettings, Collection, ContentType, ImportJob, ImportPreview, LibraryAsset, LibraryItem, Subject, UsageRecord } from '../types';
 
@@ -177,6 +178,7 @@ export async function updateItem(itemId: string, changes: Partial<Omit<LibraryIt
 }
 
 export async function deleteItem(itemId: string): Promise<void> {
+  await deleteProjectSave(itemId);
   await db.transaction('rw', db.items, db.assets, db.usage, db.collections, async () => {
     await db.items.delete(itemId);
     await db.assets.where('itemId').equals(itemId).delete();

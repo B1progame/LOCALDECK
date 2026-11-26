@@ -4,7 +4,8 @@ export const CONTENT_TYPES = ['game', 'learning', 'app', 'tool', 'simulation', '
 export type ContentType = (typeof CONTENT_TYPES)[number];
 /** `ownCover`: the cover of the project itself while a photo is used instead. */
 export type ArtworkReferences = { cover?: string; ownCover?: string; banner?: string; icon?: string; screenshots?: string[] };
-export type RuntimeSettings = { preferredOrientation?: 'any' | 'portrait' | 'landscape'; fullscreen?: boolean };
+/** `internet`: the person allowed the project to load from and talk to other websites. */
+export type RuntimeSettings = { preferredOrientation?: 'any' | 'portrait' | 'landscape'; fullscreen?: boolean; internet?: boolean };
 export type CompatibilityReport = {
   score: 'likely' | 'partial' | 'unknown';
   findings: string[];

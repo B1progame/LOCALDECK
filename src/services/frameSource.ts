@@ -4,7 +4,7 @@
 /** Runs scripts in an opaque origin, so the project cannot reach LocalDeck's storage or page. */
 export const OPAQUE_SANDBOX = 'allow-scripts allow-forms allow-pointer-lock allow-presentation allow-downloads allow-modals';
 /** For files routed by the service worker. Its CSP sandbox header makes the document opaque before any script runs. */
-export const ROUTED_SANDBOX = 'allow-scripts allow-forms allow-pointer-lock allow-presentation allow-downloads allow-same-origin';
+export const ROUTED_SANDBOX = 'allow-scripts allow-forms allow-pointer-lock allow-presentation allow-downloads allow-modals allow-same-origin';
 /** PDFs never need scripts. */
 export const PDF_SANDBOX = 'allow-downloads allow-same-origin';
 

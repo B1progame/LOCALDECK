@@ -1275,6 +1275,19 @@ const messages: Record<string, string> = {
   "Hi!": "Salut !",
   "Licenses": "Licences",
   "The software LocalDeck is built with, and its authors.": "Les logiciels qui composent LocalDeck et leurs auteurs.",
+  "Allow “{0}” to use the internet? It can then load files from other websites and send them what it knows, for example what you type into it. It still cannot see your library or other projects.": "Autoriser internet pour « {0} » ? Le projet pourra charger des fichiers d’autres sites et leur envoyer ce qu’il sait, par exemple ce que tu tapes. Il ne voit toujours ni ta bibliothèque ni les autres projets.",
+  "Delete what “{0}” saved, such as scores and settings? It starts fresh next time.": "Supprimer ce que « {0} » a enregistré, comme les scores et réglages ? Il repartira de zéro.",
+  "Allow the internet": "Autoriser internet",
+  "On. The project may load files and send data to other websites.": "Activé. Le projet peut charger des fichiers et envoyer des données à d’autres sites.",
+  "Off. Nothing can leave this project. Turn it on for projects that need online fonts, libraries or data.": "Désactivé. Rien ne peut quitter ce projet. Active-le pour les projets qui ont besoin de polices, bibliothèques ou données en ligne.",
+  "Saved by the project": "Enregistré par le projet",
+  "{0} entries, {1}. Scores and settings stay on this device and are not in backups.": "{0} entrées, {1}. Scores et réglages restent sur cet appareil et ne sont pas dans les sauvegardes.",
+  "Nothing yet. What the project saves with localStorage or cookies stays on this device.": "Rien pour l’instant. Ce que le projet enregistre avec localStorage ou des cookies reste sur cet appareil.",
+  "Isolated frame, internet allowed": "Cadre isolé, internet autorisé",
+  "The isolated player blocks them unless you allow the internet for this project in its details. Without internet they will not load.": "Le lecteur isolé les bloque, sauf si tu autorises internet dans les détails du projet. Sans internet, ils ne se chargent pas.",
+  "The page appears to use network requests. Local files work. For other websites, allow the internet for this project in its details.": "La page semble faire des requêtes réseau. Les fichiers locaux marchent. Pour d’autres sites, autorise internet dans les détails.",
+  "The page uses IndexedDB, which is not available in the isolated player. localStorage and cookies work and are kept on this device.": "La page utilise IndexedDB, indisponible dans le lecteur isolé. localStorage et les cookies marchent et restent sur cet appareil.",
+  "The page saves data with localStorage or cookies. LocalDeck keeps it on this device, separately for this project.": "La page enregistre avec localStorage ou des cookies. LocalDeck le garde sur cet appareil, séparément pour ce projet.",
 };
 
 export default messages;
