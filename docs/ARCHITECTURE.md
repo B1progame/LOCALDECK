@@ -18,13 +18,14 @@ When a signed-in user chooses **Create encrypted link**, the browser exports one
 
 ## Tradeoffs
 
-The service worker is needed for local multi-file URLs while the iframe has an opaque origin. It is served from the Pages app origin but only returns blobs for a validated item ID and normalized path. Compatibility reports are estimates, not guarantees.
+A project runs in a frame with an opaque origin. Browsers do not let a service worker serve such a frame, so the player packs every page with all its files into one page (`src/services/packPage.ts`, `src/services/playerRuntime.ts`). Compatibility reports are estimates, not guarantees.
 
 What the player adds, so more projects work as they are ([details](LOCAL_RUNTIME.md)):
 
 | Projects that need | Support |
 |---|---|
 | localStorage, sessionStorage, cookies | Replaced. Saved per project on the device, up to 5 MB |
+| Many files, JavaScript modules, links between pages | Packed into one page |
 | Paths that start with `/` (`/style.css`) | Mapped to the files of the project |
 | alert, confirm, prompt, eval | Allowed |
 | Fonts, libraries or data from other websites | Off, the person can allow it per project |

@@ -1,104 +1,21 @@
 /* Photos of a running project, used as its cover.
    A browser cannot look into a foreign frame, so the project itself draws the photo: LocalDeck puts a small script
    in front of it, runs it in an isolated frame without internet, and receives only a picture. */
-import { mimeType } from './zip.ts';
+import { packPage, resolvePath, scriptJson } from './packPage.ts';
 
 export type PhotoFile = { path: string; blob: Blob };
 export const PHOTO_WIDTH = 1200, PHOTO_HEIGHT = 750;
-const MAX_FILE = 6 * 1024 * 1024, MAX_TOTAL = 40 * 1024 * 1024, MAX_SHIM = 12 * 1024 * 1024;
+const MAX_FILE = 6 * 1024 * 1024, MAX_TOTAL = 40 * 1024 * 1024;
 
 /** The frame may run scripts, nothing else. Everything it needs is inside the page. */
 export const PHOTO_SANDBOX = 'allow-scripts';
 const POLICY = "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' data: blob:; style-src 'unsafe-inline' data:; img-src data: blob:; font-src data: blob:; media-src data: blob:; connect-src data: blob:; worker-src data: blob:; form-action 'none'; base-uri 'none'";
 
-const local = (reference: string) => Boolean(reference) && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(reference.trim());
-/** Path of a file that `reference` in `from` means, without query and fragment. */
-export function resolvePath(from: string, reference: string): string {
-  const clean = reference.trim().replace(/[?#].*$/, '');
-  let decoded = clean;
-  try { decoded = decodeURIComponent(clean); } catch { /* keep it as written */ }
-  const folder = decoded.startsWith('/') ? [] : from.split('/').slice(0, -1);
-  for (const part of decoded.split('/')) { if (part === '..') folder.pop(); else if (part && part !== '.') folder.push(part); }
-  return folder.join('/');
-}
-
-async function toDataUrl(blob: Blob, type: string): Promise<string> {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return `data:${type};base64,${btoa(binary)}`;
-}
-
 /** One page that contains the whole project, plus the photo script. */
-export async function runnablePage(files: PhotoFile[], entryPath: string): Promise<string> {
-  const byPath = new Map(files.map(file => [file.path.toLowerCase(), file]));
-  const entry = byPath.get(entryPath.toLowerCase());
-  if (!entry) throw new Error('no-entry');
-  let budget = MAX_TOTAL;
-  const cache = new Map<string, Promise<string | null>>();
-  const find = (from: string, reference: string) => local(reference) ? byPath.get(resolvePath(from, reference).toLowerCase()) : undefined;
-  const data = (file: PhotoFile, depth = 0): Promise<string | null> => {
-    const known = cache.get(file.path);
-    if (known) return known;
-    const made = (async () => {
-      if (file.blob.size > MAX_FILE || file.blob.size > budget) return null;
-      budget -= file.blob.size;
-      if (/\.css$/i.test(file.path)) return toDataUrl(new Blob([await styles(await file.blob.text(), file.path, depth)]), 'text/css');
-      if (/\.m?js$/i.test(file.path)) return toDataUrl(new Blob([await modules(await file.blob.text(), file.path, depth)]), 'text/javascript');
-      return toDataUrl(file.blob, mimeType(file.path));
-    })();
-    cache.set(file.path, made);
-    return made;
-  };
-  const replaceAll = async (text: string, pattern: RegExp, from: string, depth: number, build: (match: RegExpMatchArray, url: string) => string) => {
-    if (depth > 6) return text;
-    let result = '', last = 0;
-    for (const match of text.matchAll(pattern)) {
-      const file = find(from, match[2] ?? '');
-      const url = file ? await data(file, depth + 1) : null;
-      if (!url) continue;
-      result += text.slice(last, match.index) + build(match, url);
-      last = match.index! + match[0].length;
-    }
-    return result + text.slice(last);
-  };
-  const styles = async (text: string, from: string, depth: number) => replaceAll(await replaceAll(text, /@import\s+(url\()?["']([^"')]+)["']\)?/gi, from, depth, (_, url) => `@import "${url}"`), /url\(\s{0,20}(["']?)([^"'()]{1,1000})\1\s{0,20}\)/gi, from, depth, (_, url) => `url("${url}")`);
-  const modules = (text: string, from: string, depth: number) => replaceAll(text, /(\bfrom\s*|\bimport\s*\(?\s*)["'](\.{1,2}\/[^"']+)["']/g, from, depth, (match, url) => `${match[1]}"${url}"`);
-
-  const doc = new DOMParser().parseFromString(await entry.blob.text(), 'text/html');
-  doc.querySelectorAll('meta[http-equiv], base').forEach(node => node.remove());
-  for (const link of doc.querySelectorAll('link[href]')) {
-    const file = find(entryPath, link.getAttribute('href')!);
-    const url = file && /stylesheet/i.test(link.getAttribute('rel') ?? '') ? await data(file) : null;
-    if (url) link.setAttribute('href', url); else link.remove();
-  }
-  for (const style of doc.querySelectorAll('style')) style.textContent = await styles(style.textContent ?? '', entryPath, 0);
-  for (const script of doc.querySelectorAll('script:not([src])[type="module"]')) script.textContent = (await modules(script.textContent ?? '', entryPath, 0)).replace(/<\/(script)/gi, '<\\/$1');
-  for (const element of doc.querySelectorAll('[src], [poster], image[href], use[href]')) for (const name of ['src', 'poster', 'href']) {
-    const value = element.getAttribute(name);
-    const file = value ? find(entryPath, value) : undefined;
-    const url = file ? await data(file) : null;
-    if (url) element.setAttribute(name, url);
-  }
-  for (const element of doc.querySelectorAll('[style*="url("]')) element.setAttribute('style', await styles(element.getAttribute('style')!, entryPath, 0));
-
-  // Files that scripts load by name, such as new Image().src = "player.png".
-  const named: Record<string, string> = {};
-  let shim = 0;
-  for (const file of files) {
-    if (!/\.(png|jpe?g|gif|webp|avif|svg|json|txt|csv|mp3|ogg|wav)$/i.test(file.path) || file.path === 'localdeck.json' || shim + file.blob.size > MAX_SHIM) continue;
-    shim += file.blob.size;
-    const url = await data(file);
-    if (url) named[file.path.toLowerCase()] = url;
-  }
-  const head = doc.head;
-  const policy = doc.createElement('meta');
-  policy.setAttribute('http-equiv', 'Content-Security-Policy'); policy.setAttribute('content', POLICY);
-  const script = doc.createElement('script');
-  script.textContent = `(${PHOTO_SCRIPT})(${JSON.stringify(named).split('<').join('\\u003c')},${JSON.stringify(entryPath.split('/').slice(0, -1).join('/').toLowerCase())})`;
-  head.prepend(policy, script);
-  return `<!doctype html>\n${doc.documentElement.outerHTML}`;
+export function runnablePage(files: PhotoFile[], entryPath: string): Promise<string> {
+  return packPage(files, entryPath, { policy: POLICY, maxFile: MAX_FILE, maxTotal: MAX_TOTAL, prelude: (named, folder) => `(${PHOTO_SCRIPT})(${scriptJson(named)},${scriptJson(folder)})`, named: (() => { let shim = 0; return (path: string) => /\.(png|jpe?g|gif|webp|avif|svg|json|txt|csv|mp3|ogg|wav)$/i.test(path) && (shim += 1) <= 400; })() });
 }
+export { resolvePath };
 
 /* ---------- Inside the frame ---------- */
 

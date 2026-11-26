@@ -6,11 +6,11 @@ import { planFrame } from '../src/services/frameSource.ts';
 
 test('HTML is always sandboxed, with or without the service worker', () => {
   const withoutWorker = planFrame('index.html', ['index.html'], false);
-  assert.equal(withoutWorker.kind, 'blob');
+  assert.equal(withoutWorker.kind, 'packed');
   assert.match(withoutWorker.sandbox, /allow-scripts/);
   assert.doesNotMatch(withoutWorker.sandbox, /allow-same-origin/);
-  assert.equal(planFrame('index.html', ['index.html'], true).kind, 'routed');
-  assert.ok(planFrame('index.html', ['index.html'], true).sandbox);
+  assert.equal(planFrame('index.html', ['index.html'], true).kind, 'packed');
+  assert.doesNotMatch(planFrame('index.html', ['index.html'], true).sandbox, /allow-same-origin/);
 });
 
 test('only real PDF paths skip the sandbox, and they are forced to the PDF type', () => {
@@ -18,8 +18,8 @@ test('only real PDF paths skip the sandbox, and they are forced to the PDF type'
   for (const path of ['evil.svg', 'evil.xml', 'evil.xhtml', 'evil.txt', 'pdf']) assert.equal(planFrame(path, [path], false).kind, 'unavailable', path);
 });
 
-test('multi-file pages wait for the service worker', () => {
-  assert.equal(planFrame('index.html', ['index.html', 'app.js'], false).kind, 'unavailable');
+test('multi-file pages run without the service worker, too', () => {
+  assert.equal(planFrame('index.html', ['index.html', 'app.js'], false).kind, 'packed');
 });
 
 /** The service worker with a small in-memory IndexedDB: one database per name, stores as maps. */
@@ -83,60 +83,63 @@ test('the code of the admin page is not loaded by everyone', async () => {
   assert.match(config, /onDemand = .*adminPage/);
 });
 
-const ASSET = 'https://app.example/LOCALDECK/__localdeck_asset/';
-const page = { blob: new Blob(['<!DOCTYPE html><html><head><title>Ä</title></head><body><script>localStorage.setItem("best", 7)</script></body></html>']), mimeType: 'text/html' };
+const { RUNTIME, runtimeScript, projectPolicy } = await import('../src/services/playerRuntime.ts');
 
-test('a project gets its own storage, and only its own pages can change it', async () => {
-  const sw = await worker({ items: { 'game-1': { runtimeSettings: {} } }, assets: { 'game-1/index.html': page, 'game-1/app.js': { blob: new Blob(['x']), mimeType: 'text/javascript' } }, clients: { a: { url: `${ASSET}game-1/index.html` }, b: { url: `${ASSET}other-2/index.html` } } });
-  const html = await (await sw.fetch(`${ASSET}game-1/index.html`)).text();
-  assert.ok(html.startsWith('<!DOCTYPE html><script>(function (saved, endpoint, limit)'), html.slice(0, 80));
-  assert.match(html, /<title>Ä<\/title>/);
-  assert.equal(await (await sw.fetch(`${ASSET}game-1/app.js`)).text(), 'x');
-  const save = (client, body) => sw.fetch(`${ASSET}game-1/__localdeck_save`, { method: 'POST', body: JSON.stringify(body), clientId: client });
-  assert.equal((await save('b', { local: { best: '99' } })).status, 403);
-  assert.equal((await save('', { local: { best: '99' } })).status, 403);
-  assert.equal((await save('a', { local: { best: 3 } })).status, 400);
-  assert.equal((await save('a', { local: { best: '7', name: '</script><script>alert(1)</script>' }, cookies: 'level=3' })).status, 204);
-  const again = await (await sw.fetch(`${ASSET}game-1/index.html`)).text();
-  assert.match(again, /"best":"7"/);
-  assert.match(again, /level=3/);
-  assert.doesNotMatch(again.slice(0, again.indexOf('</script>') + 9), /<\/script><script>alert/);
-  assert.equal((await sw.fetch(`${ASSET}game-1/__localdeck_save`, { method: 'POST', body: 'x'.repeat(5 * 1024 * 1024 + 1), clientId: 'a' })).status, 413);
-});
+function runtime(saved = { local: {}, cookies: '' }, named = {}, folder = '') {
+  const sent = [], timers = [], listeners = {};
+  class Base { constructor() { this.attributes = {}; } }
+  const setter = () => ({ get() { return this.value; }, set(value) { this.value = value; }, configurable: true, enumerable: true });
+  const element = name => { const Type = class extends Base {}; Object.defineProperty(Type.prototype, name === 'HTMLLinkElement' ? 'href' : 'src', setter()); return Type; };
+  const context = vm.createContext({ Proxy, Object, String, JSON, Date, Array, DOMException, Promise,
+    setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout: () => undefined,
+    addEventListener: (type, fn) => { listeners[type] = fn; },
+    parent: { postMessage: message => sent.push(JSON.parse(JSON.stringify(message))) },
+    fetch: async url => ({ url }), XMLHttpRequest: class { open(method, url) { this.url = url; } },
+    Element: class { setAttribute(name, value) { this[name] = value; } },
+    HTMLImageElement: element('HTMLImageElement'), HTMLMediaElement: element('HTMLMediaElement'), HTMLScriptElement: element('HTMLScriptElement'), HTMLSourceElement: element('HTMLSourceElement'), HTMLLinkElement: element('HTMLLinkElement'),
+    Audio: class { constructor(src) { this.src = src; } }, Worker: class { constructor(url) { this.url = url; } },
+  });
+  context.window = context;
+  context.document = { addEventListener: (type, fn) => { listeners['document:' + type] = fn; } };
+  vm.runInContext(runtimeScript(saved, 'tok-1', named, folder), context);
+  return { context, sent, timers, listeners, run: code => vm.runInContext(code, context) };
+}
 
-test('the replacement storage behaves like the real one', async () => {
-  const sw = await worker({ items: { 'g-1': { runtimeSettings: {} } }, assets: { 'g-1/index.html': page } });
-  const html = await (await sw.fetch(`${ASSET}g-1/index.html`)).text();
-  const code = html.slice(html.indexOf('<script>') + 8, html.indexOf('</script>'));
-  const sent = [], timers = [], page_ = {};
-  const context = vm.createContext({ Proxy, Object, String, JSON, Date, DOMException, setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout: () => undefined, addEventListener: () => undefined, fetch: (url, init) => { sent.push([url, JSON.parse(init.body)]); } });
-  context.window = context; context.document = page_;
-  vm.runInContext(code, context);
-  vm.runInContext('localStorage.setItem("best", 12); localStorage.name = "Ada"; sessionStorage.setItem("x", "1"); document.cookie = "level=4; path=/"; document.cookie = "old=1"; document.cookie = "old=; max-age=0";', context);
-  assert.equal(vm.runInContext('JSON.stringify([localStorage.getItem("best"), localStorage.length, localStorage.key(0), "name" in localStorage, localStorage.missing, document.cookie])', context), JSON.stringify(['12', 2, 'best', true, null, 'level=4']));
+test('projects keep localStorage and cookies through the player', () => {
+  const { run, sent, timers } = runtime({ local: { best: '3' }, cookies: 'a=1' });
+  run('localStorage.setItem("best", 12); localStorage.name = "Ada"; sessionStorage.setItem("x", "1"); document.cookie = "level=4; path=/"; document.cookie = "a=; max-age=0";');
+  assert.equal(run('JSON.stringify([localStorage.getItem("best"), localStorage.length, localStorage.key(1), "name" in localStorage, localStorage.missing, sessionStorage.x, document.cookie])'), JSON.stringify(['12', 2, 'name', true, null, '1', 'level=4']));
   timers.at(-1)();
-  assert.equal(sent.at(-1)[0], `${ASSET}g-1/__localdeck_save`);
-  assert.deepEqual(sent.at(-1)[1], { local: { best: '12', name: 'Ada' }, cookies: 'level=4' });
-  assert.throws(() => vm.runInContext('localStorage.setItem("big", "x".repeat(3 * 1024 * 1024))', context), /full/);
-  assert.equal(vm.runInContext('localStorage.getItem("big")', context), null);
+  assert.deepEqual(sent.at(-1), { local: { best: '12', name: 'Ada' }, cookies: 'level=4', localdeck: 'save', token: 'tok-1' });
+  assert.throws(() => run('localStorage.setItem("big", "x".repeat(3 * 1024 * 1024))'), /full/);
+  assert.equal(run('localStorage.getItem("big")'), null);
 });
 
-test('the internet is only open for projects that the person allowed', async () => {
-  const policy = async (internet) => {
-    const sw = await worker({ items: { 'p-1': { runtimeSettings: { internet } } }, assets: { 'p-1/index.html': page } });
-    return (await sw.fetch(`${ASSET}p-1/index.html`)).headers.get('Content-Security-Policy');
-  };
-  const closed = await policy(false), open = await policy(true);
-  assert.ok(!closed.includes(' https: '), closed);
-  assert.match(closed, /^sandbox allow-scripts[^;]*allow-modals/);
-  assert.match(open, /connect-src https:\/\/app\.example https: blob: wss:/);
-  assert.match(open, /script-src https:\/\/app\.example https: 'unsafe-inline'/);
-  assert.doesNotMatch(open.split(';')[0], /allow-same-origin/);
+test('files that scripts load by name come from the project, also from the root', async () => {
+  const named = { 'img/hero.png': 'data:image/png;base64,AA==', 'data/levels.json': 'data:application/json,[1]', 'music.mp3': 'data:audio/mpeg;base64,AA==' };
+  const { run } = runtime(undefined, named, 'pages');
+  assert.equal(run('var i = new HTMLImageElement(); i.src = "../img/hero.png"; i.src'), named['img/hero.png']);
+  assert.equal(run('(new Audio("/music.mp3")).src'), named['music.mp3']);
+  assert.equal((await run('fetch("/data/levels.json?v=2")')).url, named['data/levels.json']);
+  assert.equal(run('var x = new XMLHttpRequest(); x.open("GET", "../data/levels.json"); x.url'), named['data/levels.json']);
+  assert.equal(run('var s = new HTMLScriptElement(); s.src = "https://cdn.example/x.js"; s.src'), 'https://cdn.example/x.js');
 });
 
-test('a path from the root means a file of the project', async () => {
-  const sw = await worker({ assets: { 'p-1/css/style.css': { blob: new Blob(['body{}']), mimeType: 'text/css' } }, clients: { a: { url: `${ASSET}p-1/index.html` }, app: { url: 'https://app.example/LOCALDECK/' } } });
-  const response = await sw.fetch('https://app.example/css/style.css', { clientId: 'a' });
-  assert.equal(await response.text(), 'body{}');
-  assert.match(response.headers.get('Content-Security-Policy'), /^sandbox/);
+test('a link to another page asks the player to open it', () => {
+  const { listeners, sent } = runtime();
+  let prevented = false;
+  const link = { target: '', getAttribute: () => 'more/page2.html#top' };
+  listeners['document:click']({ target: { closest: () => link }, defaultPrevented: false, preventDefault: () => { prevented = true; } });
+  assert.ok(prevented);
+  assert.deepEqual(sent.at(-1), { localdeck: 'open', path: 'more/page2.html', hash: '#top', token: 'tok-1' });
+  listeners['document:click']({ target: { closest: () => ({ target: '', getAttribute: () => 'https://example.com' }) }, defaultPrevented: false, preventDefault: () => { throw new Error('must not stop links to websites'); } });
+});
+
+test('the page of a project can only reach the internet when the person allowed it', () => {
+  const closed = projectPolicy(false), open = projectPolicy(true);
+  assert.doesNotMatch(closed, /https:|wss:/);
+  assert.match(closed, /^default-src 'none'/);
+  assert.match(open, /connect-src data: blob: https: wss:/);
+  assert.doesNotMatch(RUNTIME, /<\/script/i);
+  assert.doesNotMatch(runtimeScript({ local: { a: '</script><script>alert(1)</script>' }, cookies: '' }, 't', {}, ''), /<\/script/i);
 });

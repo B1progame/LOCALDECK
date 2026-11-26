@@ -9,6 +9,8 @@ export const ROUTED_SANDBOX = 'allow-scripts allow-forms allow-pointer-lock allo
 export const PDF_SANDBOX = 'allow-downloads allow-same-origin';
 
 export type FramePlan =
+  /** An HTML page packed with all its files into one page (services/packPage). Works with and without the service worker. */
+  | { kind: 'packed'; sandbox: string }
   | { kind: 'routed'; sandbox: string }
   | { kind: 'blob'; mime: 'text/html'; sandbox: string }
   /** Chrome refuses PDFs in sandboxed frames. The blob is forced to application/pdf, so it can never run as HTML. */
@@ -17,13 +19,12 @@ export type FramePlan =
 
 export const isPdfPath = (path: string) => /\.pdf$/i.test(path);
 const isHtmlPath = (path: string) => /\.html?$/i.test(path);
-const isCodePath = (path: string) => /\.(html?|css|m?js)$/i.test(path);
 
 export function planFrame(path: string, packagePaths: string[], serviceWorkerActive: boolean): FramePlan {
   const pdf = isPdfPath(path);
   if (!pdf && !isHtmlPath(path)) return { kind: 'unavailable' };
-  if (serviceWorkerActive) return { kind: 'routed', sandbox: pdf ? PDF_SANDBOX : ROUTED_SANDBOX };
-  if (pdf) return { kind: 'blob', mime: 'application/pdf', sandbox: undefined };
-  // Without the service worker, relative files cannot be routed, so only single-file pages can run.
-  return packagePaths.filter(isCodePath).length === 1 ? { kind: 'blob', mime: 'text/html', sandbox: OPAQUE_SANDBOX } : { kind: 'unavailable' };
+  if (pdf) return serviceWorkerActive ? { kind: 'routed', sandbox: PDF_SANDBOX } : { kind: 'blob', mime: 'application/pdf', sandbox: undefined };
+  // Browsers do not let a service worker serve a frame with an opaque origin, so every file goes into the page.
+  void packagePaths;
+  return { kind: 'packed', sandbox: OPAQUE_SANDBOX };
 }
