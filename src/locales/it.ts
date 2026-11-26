@@ -1271,6 +1271,10 @@ const messages: Record<string, string> = {
   "Report it on GitHub": "Segnalalo su GitHub",
   "Could not reach the LocalDeck sharing service. Check your internet connection. The free service may also have reached its limit for today, then it works again tomorrow.": "Il servizio di condivisione di LocalDeck non è raggiungibile. Controlla la connessione. Forse il servizio gratuito ha anche raggiunto il limite di oggi, allora domani funziona di nuovo.",
   "Check your internet connection, then try again. The free service may also have reached its limit for today, then it works again tomorrow. The link itself is still fine.": "Controlla la connessione e riprova. Forse il servizio gratuito ha anche raggiunto il limite di oggi, allora domani funziona di nuovo. Il link in sé è a posto.",
+  "Hi, {0}!": "Ciao, {0}!",
+  "Hi!": "Ciao!",
+  "Licenses": "Licenze",
+  "The software LocalDeck is built with, and its authors.": "Il software con cui è fatto LocalDeck e i suoi autori.",
 };
 
 export default messages;

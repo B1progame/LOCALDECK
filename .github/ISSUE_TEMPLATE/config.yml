@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security problem
+    url: https://github.com/B1progame/LOCALDECK/security/advisories/new
+    about: Please report it privately.
+  - name: Data and account
+    url: https://b1progame.github.io/LOCALDECK/#/privacy
+    about: Questions about your data or your account.

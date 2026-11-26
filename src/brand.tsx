@@ -1,5 +1,6 @@
 /* The LocalDeck logo with its name. A small surprise: with the mouse a hand of cards comes out from behind the logo,
    on a touch screen a tap deals the whole deck across the screen. */
+import { still } from './fx';
 import { BookOpen, Gamepad2, Sparkles, Star } from 'lucide-react';
 
 const base = import.meta.env.BASE_URL;
@@ -10,8 +11,6 @@ const SIGNS = [
   'M6 12h4M8 10v4M15 13h.01M18 11h.01M17.32 5H6.68a4 4 0 0 0-3.98 3.59C2.6 9.42 2 14.46 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.41-1.41A2 2 0 0 1 9.83 16h4.34a2 2 0 0 1 1.42.59L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.55-.6-6.58-.68-7.26A4 4 0 0 0 17.32 5z',
   'M12 3l2.6 6.2 6.4.6-4.9 4.2 1.5 6.4L12 17l-5.6 3.4 1.5-6.4L3 9.8l6.4-.6z',
 ];
-
-const still = () => document.documentElement.classList.contains('reduce-motion') || matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let dealing = false;
 /** Deals the deck from this point across the screen. */

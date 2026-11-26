@@ -31,9 +31,10 @@ import { AuthActionPage, readAuthAction } from './authAction';
 import { demosEnabled, installDemos, removeDemos, syncDemos } from './demos';
 import { PackageBuilder } from './packageBuilder';
 import { Brand } from './brand';
+import { disco, manyClicks } from './fx';
 import { ShareArt } from './shareArt';
 import { LoginExperience } from './authForm';
-import { AccountProfileOffer, Avatar, ProfileSettings, useProfile } from './profile';
+import { AccountProfileOffer, AvatarCoin, pokeAvatar, ProfileSettings, useProfile } from './profile';
 import { BUNDLE_FORMAT } from './services/aiBundle';
 import { SharedPage, downloadBlob } from './sharedPage';
 import { ShareLinkField, ShareList, type ShareRecord } from './shareList';
@@ -67,6 +68,8 @@ const NAV: Array<{ page: Page; label: string; icon: React.ComponentType<{ size?:
   { page: 'learning', label: t('Learning hub'), icon: BookOpen }, { page: 'games', label: t('Games & apps'), icon: Gamepad2 },
   { page: 'collections', label: t('Collections'), icon: Archive }, { page: 'sharing', label: t('Shared links'), icon: Cloud },
 ];
+/** Seven quick clicks on the light switch. */
+const themeClicks = manyClicks(7, disco, 4500);
 /** Only admins load this. Everyone else never gets its code. */
 const AdminPage = lazy(() => import('./adminPage').then(module => ({ default: module.AdminPage })));
 const PENDING_SHARE_KEY = 'localdeck-pending-share';
@@ -433,7 +436,7 @@ function App() {
       {!isLoginPage && <header className="topbar">
         <Brand className="topbar-logo" label={t('LocalDeck home')} name={false}/>
         <div className="breadcrumbs"><span>{t('My library')}</span><span className="crumb-separator">/</span><b>{pageTitle}</b></div>
-        <div className="top-actions"><span className={`offline-pill ${connection}`} role="status"><i />{connection === 'offline-ready' ? t('Offline-ready') : connection === 'online' ? t('Online') : t('Offline')}</span><button className="search-trigger" onClick={() => setSearchOpen(true)}><Search size={16} /><span>{t('Search anything')}</span><kbd>{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'}</kbd></button><button className="icon-button theme-toggle" onClick={toggleLight} aria-label={t('Switch between light and dark appearance')} title={t('Light / dark')}><Sun size={18} className="icon-sun"/><Moon size={18} className="icon-moon"/></button><button className="avatar-small" aria-label={t('Your profile and settings')} onClick={() => go('settings')}><Avatar size={32}/></button></div>
+        <div className="top-actions"><span className={`offline-pill ${connection}`} role="status"><i />{connection === 'offline-ready' ? t('Offline-ready') : connection === 'online' ? t('Online') : t('Offline')}</span><button className="search-trigger" onClick={() => setSearchOpen(true)}><Search size={16} /><span>{t('Search anything')}</span><kbd>{/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'}</kbd></button><button className="icon-button theme-toggle" onClick={() => { toggleLight(); themeClicks(); }} aria-label={t('Switch between light and dark appearance')} title={t('Light / dark')}><Sun size={18} className="icon-sun"/><Moon size={18} className="icon-moon"/></button><button className="avatar-small" aria-label={t('Your profile and settings')} onClick={event => { pokeAvatar(event.currentTarget); go('settings'); }}><AvatarCoin size={32}/></button></div>
       </header>}
       <ItemActionsContext.Provider value={itemActions}><AnimatePresence initial={false}>
         <motion.div key={`${currentPage}-${route.sharedHash ?? ''}`} className="page-content" {...routeMotion}>
@@ -471,7 +474,7 @@ function NavItem({ page, active, label, icon: Icon, count, onNavigate }: { page:
 
 function ProfileRow({ onNavigate }: { onNavigate: () => void }) {
   const { name } = useProfile();
-  return <a className="profile-row" href="#/settings" onClick={onNavigate} title={t('Edit your name and picture')}><Avatar size={32}/><span><b>{name || t('Your space')}</b><small>{t('Saved on this device')}</small></span><ShieldCheck size={16} /></a>;
+  return <a className="profile-row" href="#/settings" onClick={event => { pokeAvatar(event.currentTarget); onNavigate?.(); }} title={t('Edit your name and picture')}><AvatarCoin size={32}/><span className="profile-hello" aria-hidden="true">{name ? t('Hi, {0}!', name) : t('Hi!')}</span><span><b>{name || t('Your space')}</b><small>{t('Saved on this device')}</small></span><ShieldCheck size={16} /></a>;
 }
 
 function StorageMini({ storage, items }: { storage: { usage?: number; quota?: number; persisted?: boolean }; items: LibraryItem[] }) {
@@ -618,6 +621,7 @@ function SettingsPage({notify,appearance,setAppearance,demosOn,busy,onDemos,redu
     </div></section>
     <section className="settings-section"><h2>{t('About')}</h2><div className="settings-list">
       <a className="setting-row setting-link" href="#/privacy"><span><b>{t('Privacy')}</b><small>{t('What LocalDeck stores, where, and whom it contacts.')}</small></span><ShieldCheck size={18}/><ArrowRight size={15}/></a>
+      <a className="setting-row setting-link" href={`${base}licenses.txt`} target="_blank" rel="noopener noreferrer"><span><b>{t('Licenses')}</b><small>{t('The software LocalDeck is built with, and its authors.')}</small></span><FileText size={18}/><ArrowRight size={15}/></a>
       <a className="setting-row setting-link" href="https://github.com/B1progame/LOCALDECK" target="_blank" rel="noopener noreferrer"><span><b>{t('LocalDeck on GitHub')}</b><small>{t('Browse the source code and follow project updates.')}</small></span><Code2 size={18}/><ArrowRight size={15}/></a>
     </div></section>
   </>;

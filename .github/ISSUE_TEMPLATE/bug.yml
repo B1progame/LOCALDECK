@@ -1,0 +1,34 @@
+name: Bug
+description: Something does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Issues are public. Please leave out names, email addresses and links with a key (the part after "#"). German and English are both fine.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens?
+      description: And what should happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can I see it too?
+      placeholder: |
+        1. Open ...
+        2. Click on ...
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and browser
+      placeholder: iPhone 13, Safari 18
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Screenshot or messages

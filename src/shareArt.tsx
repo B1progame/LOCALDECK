@@ -3,6 +3,7 @@
 import { t } from './i18n';
 import { useEffect, useRef } from 'react';
 import { useStillMotion } from './a11y';
+import { burst, burstFrom, manyClicks } from './fx';
 
 /** One ball takes this long from the project through the lock to the friend. Lock and pulse keep in step with it. */
 const ROUND = '4.5s';
@@ -10,11 +11,36 @@ const FLIGHT = 'M92 262 C 130 262, 150 214, 196 212 L 224 212 C 270 214, 290 262
 /** Dots behind the ball, each one smaller and paler. */
 const TAIL = 11;
 
+const CODE = [...'01#$%&*+=?§{}<>/ABCDEF7a9x'];
+/** A surprise in the picture: the lock spills its secret code, the project its ideas, and the friend is happy. */
+const lockClicks = manyClicks(5, () => {
+  const lock = document.querySelector('.sa-vault');
+  if (!lock) return;
+  const { left, top, width, height } = lock.getBoundingClientRect();
+  for (let wave = 0; wave < 4; wave++) window.setTimeout(() => burst(left + width / 2, top + height / 2, { glyphs: ['🗝', '🔑', '✦', '★'], colors: ['#fde047', '#fbbf24', '#fff'], count: 22, far: 190 + wave * 40, size: 24 }), wave * 170);
+  lock.animate([{ rotate: '0deg', scale: 1 }, { rotate: '360deg', scale: 1.35 }, { rotate: '720deg', scale: 1 }], { duration: 1300, easing: 'cubic-bezier(.3, 1.4, .5, 1)' });
+}, 3200);
+function poke(event: React.MouseEvent<HTMLElement>): void {
+  const part = (event.target as Element).closest('.sa-vault, .sa-project, .sa-friend');
+  if (!part) return;
+  if (part.matches('.sa-vault')) {
+    part.animate([{ rotate: '0deg' }, { rotate: '-9deg' }, { rotate: '8deg' }, { rotate: '-5deg' }, { rotate: '3deg' }, { rotate: '0deg' }], { duration: 520 });
+    burstFrom(part, { glyphs: CODE, colors: ['#c4b5fd', '#a78bfa', '#7dd3fc', '#ffffff'], count: 34, far: 150, up: 20, size: 17 });
+    lockClicks();
+  } else if (part.matches('.sa-friend')) {
+    part.animate([{ translate: '0 0' }, { translate: '0 -18px' }, { translate: '0 0' }, { translate: '0 -8px' }, { translate: '0 0' }], { duration: 760, easing: 'ease-out' });
+    burstFrom(part, { glyphs: ['♥', '♥', '☺', '★'], colors: ['#6ee7b7', '#fb7185', '#fde047'], count: 18, far: 90 });
+  } else {
+    part.animate([{ rotate: '0deg', scale: 1 }, { rotate: '-12deg', scale: 1.15 }, { rotate: '360deg', scale: 1 }], { duration: 900, easing: 'cubic-bezier(.3, 1.3, .5, 1)' });
+    burstFrom(part, { glyphs: ['<>', '★', '▶', '♪', '?', '✎'], colors: ['#7dd3fc', '#818cf8', '#fde047', '#ffffff'], count: 18, far: 95 });
+  }
+}
+
 export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   const svg = useRef<SVGSVGElement>(null);
   const still = useStillMotion();
   useEffect(() => { if (still) svg.current?.pauseAnimations(); else svg.current?.unpauseAnimations(); }, [still]);
-  return <div className={`share-art share-art-${mode}`} aria-hidden="true">
+  return <div className={`share-art share-art-${mode}`} aria-hidden="true" onClick={poke}>
     <svg ref={svg} viewBox="10 96 400 300" className="share-art-svg">
       <defs>
         <linearGradient id="sa-vault" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#c4b5fd"/><stop offset=".55" stopColor="#8b5cf6"/><stop offset="1" stopColor="#5b21b6"/></linearGradient>
@@ -55,17 +81,17 @@ export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
       </circle>
 
       {/* source: your project */}
-      <g className="sa-node sa-float-a">
+      <g className="sa-float-a"><g className="sa-node sa-project">
         <rect x="32" y="232" width="64" height="60" rx="14" fill="url(#sa-card)"/>
         <rect x="42" y="244" width="30" height="5" rx="2.5" fill="#fff" opacity=".9"/>
         <rect x="42" y="254" width="44" height="4" rx="2" fill="#fff" opacity=".5"/>
         <rect x="42" y="263" width="36" height="4" rx="2" fill="#fff" opacity=".5"/>
         <path d="M44 280 l6 -6 l6 4 l8 -9 l10 11 z" fill="#fff" opacity=".7"/>
         <text x="64" y="312" textAnchor="middle" className="sa-label">{t('Your project')}</text>
-      </g>
+      </g></g>
 
       {/* destination: a friend */}
-      <g className="sa-node sa-float-b">
+      <g className="sa-float-b"><g className="sa-node sa-friend">
         <circle cx="356" cy="262" r="30" fill="url(#sa-friend)"/>
         <circle cx="356" cy="254" r="9" fill="#fff" opacity=".95"/>
         <path d="M340 278 a16 13 0 0 1 32 0 z" fill="#fff" opacity=".95"/>
@@ -74,7 +100,7 @@ export function ShareArt({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
           <path d="M373 240 l3.5 3.5 l6.5 -7" fill="none" stroke="#10b981" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
         </g>
         <text x="356" y="312" textAnchor="middle" className="sa-label">{t('A friend')}</text>
-      </g>
+      </g></g>
 
       {/* the vault: encryption happens here, in your browser */}
       <circle cx="210" cy="204" r="92" fill="url(#sa-core)" filter="url(#sa-soft)">

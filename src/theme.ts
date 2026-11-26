@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { turnTheme } from './fx';
 
 export type ThemeId = 'system' | 'obsidian' | 'midnight' | 'forest' | 'rose' | 'pearl';
 export type Appearance = { theme: ThemeId; accent: string | null };
@@ -85,6 +87,8 @@ export function applyAppearance(value: Appearance): void {
 
 export function useAppearance() {
   const [appearance, setAppearanceState] = useState<Appearance>(readAppearance);
+  const current = useRef(appearance);
+  current.current = appearance;
   useEffect(() => {
     applyAppearance(appearance);
     if (appearance.theme !== 'system') return;
@@ -94,11 +98,11 @@ export function useAppearance() {
     return () => media.removeEventListener('change', onChange);
   }, [appearance]);
   const setAppearance = useCallback((next: Partial<Appearance>) => {
-    setAppearanceState(current => {
-      const merged = { ...current, ...next };
-      try { localStorage.setItem(KEY, JSON.stringify(merged)); } catch { /* storage unavailable */ }
-      return merged;
-    });
+    const merged = { ...current.current, ...next };
+    current.current = merged;
+    try { localStorage.setItem(KEY, JSON.stringify(merged)); } catch { /* storage unavailable */ }
+    if (resolve(merged.theme) === document.documentElement.dataset.theme) { setAppearanceState(merged); return; }
+    turnTheme(() => { flushSync(() => setAppearanceState(merged)); applyAppearance(merged); }, () => document.documentElement.dataset.theme === 'pearl');
   }, []);
   const isLight = () => document.documentElement.dataset.theme === 'pearl';
   /** Quick toggle in the top bar: switches between Pearl and the dark preset. */

@@ -133,4 +133,10 @@ cloudflare/           optional encrypted-sharing Worker (D1 + KV)
 tests/                node:test suites
 ```
 
+## 📄 More
+
+[What changed](CHANGELOG.md) · [Help](SUPPORT.md) · [Contributing](CONTRIBUTING.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Report a security problem](.github/SECURITY.md) · [Licenses of others](docs/LICENSES.md)
+
+**License:** Copyright (c) 2026 B1progame, all rights reserved. You may use the website and look at the code, but not publish or copy it. What you make with LocalDeck is yours. The details are in [LICENSE.md](LICENSE.md).
+
 <p align="center"><sub>Made for the things you make. Saved on your device. Yours to keep.</sub></p>

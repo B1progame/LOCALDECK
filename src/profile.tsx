@@ -3,6 +3,7 @@ import { t } from './i18n';
 import { useRef, useState } from 'react';
 import { ImagePlus, Trash2, UserRound } from 'lucide-react';
 import { create } from 'zustand';
+import { burstFrom, manyClicks, rain, still } from './fx';
 
 export type Profile = { name: string; avatar: string | null };
 const KEY = 'localdeck-profile';
@@ -89,6 +90,22 @@ export function Avatar({ size = 30, className = '' }: { size?: number; className
   return <span className={`avatar ${className}`} style={{ width: size, height: size, fontSize: size * .42 }} aria-hidden="true">
     {avatar ? <img src={avatar} alt=""/> : name.trim() ? name.trim()[0]!.toUpperCase() : <UserRound size={size * .55}/>}
   </span>;
+}
+
+/** The picture is a coin: with the mouse it turns over. A click lets hearts fly, four quick clicks let pictures rain. */
+export function AvatarCoin({ size }: { size: number }) {
+  return <span className="avatar-coin" style={{ width: size, height: size }} aria-hidden="true">
+    <Avatar size={size}/><span className="avatar avatar-back"><img src={`${import.meta.env.BASE_URL}icon-192.png`} alt="" draggable={false}/></span>
+  </span>;
+}
+let coin: Element | null = null;
+const coinClicks = manyClicks(4, () => { const face = coin?.querySelector('.avatar'); if (face) rain(face); }, 2600);
+export function pokeAvatar(within: Element): void {
+  coin = within.querySelector('.avatar-coin');
+  if (!coin || still()) return;
+  coin.animate([{ transform: 'rotateY(0)' }, { transform: 'rotateY(1080deg)' }], { duration: 1100, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+  burstFrom(coin, { glyphs: ['♥', '★', '✦', '♥'], colors: ['#fb7185', '#fde047', '#c4b5fd', '#f472b6'], count: 16, far: 80, up: 26 });
+  coinClicks();
 }
 
 export function ProfileSettings({ notify, account }: { notify: (message: string, error?: boolean) => void; account?: AccountInfo | null }) {

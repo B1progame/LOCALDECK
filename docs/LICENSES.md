@@ -1,6 +1,6 @@
 # Licenses of what LocalDeck uses
 
-Everything below may be used for free, also commercially, and may be passed on. Passing it on yourself means keeping the license text and the copyright notice with it.
+Everything below is made by others. It may be used for free, also commercially, and may be passed on. Passing it on yourself means keeping the license text and the copyright notice with it.
 
 ## AI models
 
@@ -28,4 +28,4 @@ The files of the models for the processor were converted to GGUF by Unsloth (Qwe
 | protobuf.js | BSD 3-Clause |
 | Inter (font) | SIL Open Font License 1.1 |
 
-There is no package with a license that would force LocalDeck to publish its own code (GPL, AGPL). Checked with `license-checker` on 25 November 2026.
+There is no package with a license that would force LocalDeck to publish its own code (GPL, AGPL). Checked with `license-checker` on 25 November 2026. The full texts with the names of the authors are in [`public/licenses.txt`](../public/licenses.txt) (`npm run licenses` writes it anew) and in the app under **Settings → About → Licenses**. LocalDeck itself has its [own license](../LICENSE.md).
