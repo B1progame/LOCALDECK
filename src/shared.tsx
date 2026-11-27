@@ -182,6 +182,17 @@ export function matchesQuery(item: LibraryItem, query: string): boolean {
 export const isHtmlItem = (item: LibraryItem) => /\.html?$/i.test(item.entryFile);
 export function itemSubtitle(item: LibraryItem): string { return [TYPE_LABEL[item.type], item.subject || item.genre].filter(Boolean).join(' · '); }
 
+/** Asks for the new files of a project. The input is made here, because a menu is gone once an entry is chosen.
+    Call it directly from a click, or the browser does not open the file dialog. */
+export function pickProjectFile(item: LibraryItem, update: ItemActions['update']) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = PROJECT_FILES;
+  input.onchange = () => { const file = input.files?.[0]; if (file) void update(item, file); };
+  input.click();
+}
+const PROJECT_FILES = '.zip,.html,.htm,.pdf,application/zip,text/html,application/pdf';
+
 /** Menu entries shared by the card dropdown, list rows and right-click. */
 export function ItemMenu({ item, onClose }: { item: LibraryItem; onClose: () => void }) {
   const a = useItemActions();
@@ -226,6 +237,7 @@ export function ItemMenu({ item, onClose }: { item: LibraryItem; onClose: () => 
     <button role="menuitem" onClick={run(() => a.details(item))}><Info size={15}/> {t('View details')}</button>
     <button role="menuitem" onClick={run(() => a.edit(item))}><Pencil size={15}/> {t('Edit details')}</button>
     {isHtmlItem(item) && <button role="menuitem" onClick={run(() => a.editCode(item))}><Code2 size={15}/> {t('Edit HTML code')}</button>}
+    <button role="menuitem" onClick={run(() => pickProjectFile(item, a.update))}><RefreshCw size={15}/> {t('Replace this project’s files')}</button>
     <button role="menuitem" onClick={run(() => a.collect(item))}><FolderPlus size={15}/> {t('Add to collection')}</button>
     <button role="menuitem" onClick={run(() => a.share(item))}><Share2 size={15}/> {t('Create encrypted link')}</button>
     <button role="menuitem" onClick={run(() => a.duplicate(item))}><Copy size={15}/> {t('Make a copy')}</button>
@@ -268,7 +280,7 @@ export function ItemCard({ item, index = 0, compact = false }: { item: LibraryIt
         <button className="icon-button item-menu-button" onClick={() => setMenu(v => !v)} aria-expanded={menu} aria-label={t('More actions for {0}', item.title)}><MoreHorizontal size={18}/></button>
       </div>
       <div className="item-foot"><span>{plural(item.fileCount, '{0} · {1} file', '{0} · {1} files', bytes(item.storageSize), item.fileCount)}</span>
-        <input ref={updateInput} className="visually-hidden" type="file" accept=".zip,.html,.htm,.pdf,application/zip,text/html,application/pdf" onChange={event => void handleUpdate(event)} tabIndex={-1}/>
+        <input ref={updateInput} className="visually-hidden" type="file" accept={PROJECT_FILES} onChange={event => void handleUpdate(event)} tabIndex={-1}/>
         <button className="update-project-button" onClick={() => updateInput.current?.click()} disabled={updating} aria-label={t('Update {0} project files', item.title)} title={t('Replace this project’s files')}><RefreshCw size={12} className={updating ? 'spin' : ''}/>{updating ? t('Updating…') : t('Update')}</button>
       </div>
       {menu && <ItemMenu item={item} onClose={() => setMenu(false)} />}

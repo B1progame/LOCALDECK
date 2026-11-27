@@ -6,6 +6,7 @@ import {
   Archive, ArrowLeft, ArrowRight, BookOpen, Camera, Clock3, Code2, FileText, FolderPlus, Gamepad2, Heart, LayoutGrid,
   Library, List, ListFilter, MoreHorizontal, Pencil, Play, Plus, Search, Share2, ShieldCheck, Sparkles, Upload, X,
   type LucideIcon,
+  RefreshCw,
 } from 'lucide-react';
 import { db } from './services/database';
 import { HeroLogo } from './heroLogo';
@@ -19,7 +20,7 @@ import { getAssets, hasPhotoCover, type ItemSort } from './services/library';
 import type { Collection, ContentType, LibraryAsset, LibraryItem } from './types';
 import {
   Chips, CountUp, EmptyState, ItemCard, ItemMenu, ItemRow, LEARNING_TYPES, OPEN_VERB, PLAY_TYPES, PageHeading, Shelf, TYPE_ICON, TYPE_LABEL, TYPE_PLURAL,
-  bytes, colorFor, coverBackground, friendlyDate, go, isHtmlItem, itemSubtitle, matchesQuery, useItemActions, type Page,
+  bytes, colorFor, coverBackground, friendlyDate, go, isHtmlItem, itemSubtitle, matchesQuery, pickProjectFile, useItemActions, type Page,
 } from './shared';
 
 type View = 'grid' | 'list';
@@ -296,6 +297,7 @@ export function ItemDetailsPage({ item, collections }: { item: LibraryItem | und
         <section className="panel details-tools"><h2>{t('Manage')}</h2>
           {isHtmlItem(item) && <button className="button" onClick={() => a.takeCover(item)}><Camera size={15}/> {t('Photo of the project as cover')}</button>}
           {hasPhotoCover(item) && <button className="button" onClick={() => a.dropCover(item)}>{t('Remove the photo')}</button>}
+          <button className="button" onClick={() => pickProjectFile(item, a.update)}><RefreshCw size={15}/> {t('Replace this project’s files')}</button>
           <button className="button" onClick={() => a.exportOne(item)}>{t('Export as ZIP')}</button>
           <button className="button" onClick={() => a.duplicate(item)}>{t('Make a copy')}</button>
           <button className="button danger-button" onClick={() => a.remove(item)}>{t('Remove from library')}</button>
